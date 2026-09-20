@@ -83,4 +83,33 @@ slime/
 
 ## 11. Hors périmètre V1
 
-Musique, leaderboard en ligne, autres types de plateformes (cassable, éphémère, rebondissante), personnalisation, PWA.
+Musique, leaderboard en ligne, personnalisation, PWA.
+
+---
+
+# V2 (post-lancement)
+
+## 12. Nouveaux types de plateformes
+
+- **Cassable** (grise fissurée) : se fissure à l'atterrissage, casse 0,5 s après (particules + son) ; le slime doit re-sauter vite.
+- **Éphémère** (blanche translucide clignotante) : disparaît dès qu'on saute depuis ou qu'on glisse de son bord — usage unique.
+- **Rebondissante** (orange à chevrons) : rebond automatique à l'atterrissage (vy = −400, vitesse horizontale conservée avec un minimum de +140 vers l'avant si faible) ; pas de charge possible dessus.
+- Génération : basique 38 %, dynamique 13 %, cassable 11 %, collante 10 %, éphémère 10 %, rebondissante 10 %, basique-à-pics 8 % ; cassable/éphémère après 25 s, rebondissante après 45 s.
+- Atteignabilité étendue : depuis une rebondissante, le saut sortant simulé est le rebond fixe.
+
+## 13. Visée 360° et branches bonus
+
+- Suppression du verrou « vers la droite » : la visée est libre à 360°, la caméra continue d'avancer → revenir en arrière est un vrai risque.
+- Branches bonus : après ~30 s, 35 % des plateformes principales ancrent une branche de 1 plateforme (2 cellules) placée **en arrière** (3-6 cellules) et ±2 rangées, avec une **bille dorée** (50 pts, ×5) et une bille normale en chemin.
+- La garantie d'atteignabilité s'applique aux branches (saut vers l'arrière simulé depuis l'ancrage) ; anti-chevauchement avec le chemin principal.
+
+## 14. Musique
+
+- Séquenceur chiptune 16 pas (basse + mélodie pentatonique) joué via ZzFX, volume discret.
+- Tempo lié à la caméra : 112 → 150 BPM quand la vitesse passe de 40 à 120 px/s.
+- Joue uniquement en partie ; **M** (clavier) ou l'icône son (coin haut-gauche, tactile) coupe tout ; préférence persistée.
+
+## 15. Record local
+
+- `localStorage` (`slime_best`) : meilleur score, affiché à l'écran titre (« RECORD : N »).
+- À la mort si battu : « NOUVEAU RECORD ! » clignotant, **sans le chiffre** ; sauvegarde à la mort uniquement.

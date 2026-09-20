@@ -9,21 +9,30 @@ Ouvrir `index.html` dans un navigateur — c'est tout. Le jeu est un fichier uni
 ### Contrôles (PC & mobile)
 
 - **Maintenir** clic / appui tactile : charge la puissance du saut
-- **Bouger le curseur** pendant l'appui : vise la trajectoire
+- **Bouger le curseur** pendant l'appui : vise la trajectoire **dans n'importe quelle direction** — même en arrière pour aller chercher les billes dorées (au risque de te faire rattraper !)
 - **Relâcher** : sauter
+- **M** ou l'icône son (coin haut-gauche) : couper/réactiver le son
 - La **taille du slime = ta vie** : les pics la réduisent, à zéro c'est fini
 - Ne te fais pas rattraper par le bord gauche, ne tombe pas dans le vide
 - Le mur de pics à droite t'empêche de dépasser la caméra
-- Les billes rapportent des points (score caché !)
+- Les billes rapportent des points (score caché !), la **bille dorée vaut 50** — elle est toujours au bout d'un détour risqué
 
 ### Types de plateformes
 
 | Couleur | Type | Effet |
 |---|---|---|
-| Verte | Basique | Standard |
+| Verte | Basique | Standard (parfois des pics rouges dessus) |
 | Brune | Collante | Affaiblit ton prochain saut (×0.8) |
 | Bleue | Dynamique | Monte et descend |
+| Grise fissurée | Cassable | Se casse 0,5 s après l'atterrissage |
+| Blanche translucide | Éphémère | Disparaît dès que tu la quittes |
+| Orange à chevrons | Rebondissante | Te relance automatiquement vers le haut |
 | Pics rouges | Danger | Perte de taille au contact |
+
+### Musique & record
+
+- Boucle chiptune procédurale dont le tempo suit la vitesse de la caméra (112 → 150 BPM)
+- Meilleur score sauvegardé localement, affiché à l'écran titre ; un « NOUVEAU RECORD ! » (sans le chiffre) signale quand tu bats le mien
 
 ## Déploiement Netlify
 

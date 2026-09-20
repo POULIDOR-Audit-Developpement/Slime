@@ -10,6 +10,7 @@ body{display:flex;align-items:center;justify-content:center}
 canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/litecanvas@0.302.0/dist/dist.min.js"></script>
+<script>window.litecanvas || document.write('<script src="https://unpkg.com/litecanvas@0.302.0/dist/dist.min.js"><\/script>')</script>
 </head>
 <body>
 <script>
@@ -94,6 +95,7 @@ litecanvas({ width: 480, height: 270, autoscale: true })
 
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
 const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
+const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
 
 const COLORS = [
   '#0d0d21', '#191936', '#232348', '#2e2e5e',
@@ -104,7 +106,11 @@ const COLORS = [
   '#ffd83d', '#ff9d2e',
   '#e23b3b', '#8f1f1f',
   '#f4f4f4', '#0a0a12',
-  '#6fdc4f', '#8a8ab0'
+  '#6fdc4f', '#8a8ab0',
+  '#9aa0ac', '#6b7280', '#3f4652',
+  '#d8e8f4', '#a8bccb', '#7e93a3',
+  '#cc6d1a', '#8f4a0f',
+  '#ffd700'
 ]
 const C_BG0 = 0, C_BG1 = 1, C_BG2 = 2, C_BG3 = 3
 const C_SLIME = 4, C_SLIME_D = 5, C_SLIME_L = 6
@@ -114,12 +120,21 @@ const C_D_TOP = 13, C_D_SIDE = 14, C_D_DARK = 15
 const C_YELLOW = 16, C_ORANGE = 17
 const C_RED = 18, C_RED_D = 19
 const C_WHITE = 20, C_BLACK = 21, C_GREEN = 22, C_GRAY = 23
+const C_CR_TOP = 24, C_CR_SIDE = 25, C_CR_DARK = 26
+const C_GH_TOP = 27, C_GH_SIDE = 28, C_GH_DARK = 29
+const C_BO_SIDE = 30, C_BO_DARK = 31
+const C_GOLD = 32
 
 const SFX_JUMP = [,,392,,.03,.12,1,3.6,,69,,,,,,,,.95,.1]
 const SFX_COIN = [,,1675,,.06,.24,1,1.82,,,837,.06]
 const SFX_HURT = [,,537,.02,.02,.22,1,1.59,-6.98,4.97]
 const SFX_DIE = [,,333,.01,0,.9,4,1.9,,,,,,.5,,.6]
 const SFX_LAND = [2,.8,999,,,,,1.5,,.3,-99,.1,1.63,,,.11,.22]
+
+const MUSIC_BASS = [0.15, 0, 55, 0.01, 0.1, 0.9, 1, 1.6]
+const MUSIC_LEAD = [0.08, 0, 220, 0.005, 0.05, 0.4, 1, 3]
+const BASS_PAT = [55, 0, 55, 0, 65, 0, 55, 0, 49, 0, 49, 0, 58, 0, 65, 0]
+const LEAD_PAT = [220, 0, 262, 0, 294, 0, 330, 294, 0, 262, 0, 220, 0, 196, 220, 0]
 
 const LETTERS = {
   S: ['.####', '#....', '.###.', '....#', '####.'],
@@ -134,11 +149,13 @@ let camX = 0, camSpd = 40, elapsed = 0
 let platforms = [], balls = [], particles = []
 let slime = null
 let charge = { on: false, t: 0, id: -1, aim: { x: 0, y: 0 } }
-let ballsCollected = 0, scoreCode = null, deathT = 0, shakeT = 0
+let ballsCollected = 0, goldsCollected = 0, scoreCode = null, deathT = 0, shakeT = 0
+let muted = false, best = 0, newRecord = false
+let musicStep = 0, musicT = 0
 
 function rowY(r) { return ROW0 + r * RS }
 function slimeR() { return 9 + slime.size * 3 }
-function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 }
+function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS }
 
 function h32(n) {
   n = Math.imul(n ^ (n >>> 16), 2246822519)
@@ -146,9 +163,8 @@ function h32(n) {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296
 }
 
-function simLand(sx, sy, ang, v, target) {
+function simLandV(sx, sy, vx, vy, target) {
   let x = sx, y = sy
-  let vx = Math.cos(ang) * v, vy = Math.sin(ang) * v
   const dt = 1 / 60, r = 13
   for (let i = 0; i < 240; i++) {
     vy += GRAV * dt
@@ -161,14 +177,23 @@ function simLand(sx, sy, ang, v, target) {
   return false
 }
 
-function canReach(a, target, mul) {
-  const sx = a.x + a.w - 10, sy = a.y - 12
+function canReach(a, target, mul, dirX) {
+  dirX = dirX || 1
+  const sx = dirX > 0 ? a.x + a.w - 10 : a.x + 10
+  const sy = a.y - 12
   for (const p of [1, 0.85]) {
     for (let k = 0; k < 7; k++) {
-      if (simLand(sx, sy, 0.5 + k * 0.13, VMAX * p * mul, target)) return true
+      const base = 0.5 + k * 0.13
+      const ang = dirX > 0 ? base : Math.PI - base
+      const v = VMAX * p * mul
+      if (simLandV(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target)) return true
     }
   }
   return false
+}
+
+function canReachBounce(a, target) {
+  return simLandV(a.x + a.w - 10, a.y - 12, BOUNCE_VX, -BOUNCE_VY, target)
 }
 
 function spawnBalls(a, b, gapCells) {
@@ -184,19 +209,47 @@ function spawnBalls(a, b, gapCells) {
   }
 }
 
+function spawnBranch(anchor) {
+  if (elapsed < 30 || rand() > 0.35) return
+  const dRow = rand() < 0.5 ? -2 : 2
+  const row = clamp(anchor.row + dRow, 0, 4)
+  if (row === anchor.row) return
+  const p = { x: anchor.x - randi(3, 6) * CELL, row, y: rowY(row), baseY: rowY(row), w: 2 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null, branch: true }
+  if (p.x < camX + 30) return
+  for (const q of platforms) {
+    if (q.dead) continue
+    if (p.x < q.x + q.w + 8 && p.x + p.w > q.x - 8 && Math.abs(p.y - q.y) < 24) return
+  }
+  if (!canReach(anchor, p, 1, -1)) return
+  platforms.push(p)
+  balls.push({ x: p.x + p.w / 2, y: p.y - 14, o: false, taken: false, gold: true })
+  balls.push({ x: p.x + p.w + CELL, y: (p.y + anchor.y) / 2 - 8, o: rand() < 0.4, taken: false })
+}
+
 function spawnNext() {
   const last = platforms[platforms.length - 1]
   const D = Math.min(elapsed / 75, 1)
   for (let attempt = 0; attempt < 24; attempt++) {
     let gap = 2 + randi(0, Math.round(2 * D))
     let dRow = randi(-2, 2)
-    let type
     const roll = rand()
-    type = roll < 0.15 ? 'sticky' : (roll < 0.3 ? 'dynamic' : 'basic')
-    let cells = type === 'basic' ? randi(2, 5) : randi(2, 3)
+    let type
+    if (roll < 0.38) type = 'basic'
+    else if (roll < 0.51) type = 'dynamic'
+    else if (roll < 0.62) type = elapsed > 25 ? 'crumble' : 'basic'
+    else if (roll < 0.72) type = 'sticky'
+    else if (roll < 0.82) type = elapsed > 25 ? 'ghost' : 'basic'
+    else if (roll < 0.92) type = elapsed > 45 ? 'bouncy' : 'basic'
+    else type = 'basic'
+    let cells
+    if (type === 'basic') cells = randi(2, 5)
+    else if (type === 'dynamic' || type === 'sticky' || type === 'ghost') cells = randi(2, 3)
+    else if (type === 'crumble') cells = randi(2, 4)
+    else cells = 2
     if (elapsed < 10) { gap = Math.min(gap, 2); dRow = clamp(dRow, -1, 1); type = 'basic'; cells = randi(3, 4) }
     if (dRow === -2 && gap > 2) dRow = -1
     if (last.type === 'sticky') { gap = Math.min(gap, 3); if (dRow < -1) dRow = -1; if (dRow === -1 && gap > 2) gap = 2 }
+    if (last.type === 'bouncy' && dRow < -1) dRow = -1
     const row = clamp(last.row + dRow, 0, 4)
     const p = { x: last.x + last.w + gap * CELL, row, y: rowY(row), baseY: rowY(row), w: cells * CELL, type, amp: 0, spd: 0, ph: 0, spike: null }
     if (type === 'dynamic') {
@@ -210,9 +263,12 @@ function spawnNext() {
       p.spike = { x1: p.x + p.w * 0.28, x2: p.x + p.w * 0.78 }
     }
     const checkY = type === 'dynamic' ? p.baseY - p.amp * 0.7 : p.y
-    if (canReach(last, { x: p.x, y: checkY, w: p.w }, last.type === 'sticky' ? STICKY_MUL : 1)) {
+    const target = { x: p.x, y: checkY, w: p.w }
+    const ok = last.type === 'bouncy' ? canReachBounce(last, target) : canReach(last, target, last.type === 'sticky' ? STICKY_MUL : 1, 1)
+    if (ok) {
       platforms.push(p)
       spawnBalls(last, p, gap)
+      spawnBranch(p)
       return
     }
   }
@@ -227,8 +283,18 @@ function genUntil() {
 }
 
 function cleanup() {
-  platforms = platforms.filter(p => p.x + p.w > camX - 80)
+  platforms = platforms.filter(p => !p.dead && p.x + p.w > camX - 80)
   balls = balls.filter(b => !b.taken && b.x > camX - 40)
+}
+
+function killPlat(p, color) {
+  if (p.dead) return
+  p.dead = true
+  burst(p.x + p.w / 2, p.y + 6, color, 10, 110)
+  if (slime.groundPlat === p) {
+    slime.grounded = false
+    slime.groundPlat = null
+  }
 }
 
 function burst(x, y, color, n, pow) {
@@ -245,6 +311,8 @@ function startGame() {
   balls = []
   particles = []
   ballsCollected = 0
+  goldsCollected = 0
+  newRecord = false
   scoreCode = null
   deathT = 0
   shakeT = 0
@@ -271,7 +339,13 @@ function die() {
   if (state === 'over') return
   state = 'over'
   deathT = 0
-  scoreCode = makeCode(currentScore())
+  const s = currentScore()
+  newRecord = s > best && s > 0
+  if (newRecord) {
+    best = s
+    try { localStorage.setItem('slime_best', String(best)) } catch (e) {}
+  }
+  scoreCode = makeCode(s)
   shakeT = 0.4
   sfx(SFX_DIE)
   burst(slime.x, slime.y, C_SLIME, 24, 220)
@@ -281,12 +355,14 @@ function die() {
 function doJump() {
   const p = 0.12 + 0.88 * Math.min(charge.t / CHARGE_T, 1)
   const v = lerp(VMIN, VMAX, p) * slime.jumpMul
-  let dx = charge.aim.x - slime.x
-  let dy = charge.aim.y - slime.y
-  if (dx < 8) dx = 8
-  const ang = clamp(Math.atan2(dy, dx), -0.95, 1.35)
+  const gp = slime.groundPlat
+  const ang = Math.atan2(charge.aim.y - slime.y, charge.aim.x - slime.x)
   slime.vx = Math.cos(ang) * v
   slime.vy = Math.sin(ang) * v
+  if (gp && gp.type === 'ghost') {
+    killPlat(gp, C_GH_SIDE)
+    sfx(SFX_COIN, -4, 0.4)
+  }
   slime.grounded = false
   slime.groundPlat = null
   slime.jumpMul = 1
@@ -294,12 +370,20 @@ function doJump() {
 }
 
 function land(p) {
+  if (p.type === 'bouncy') {
+    slime.vy = -BOUNCE_VY
+    if (Math.abs(slime.vx) < BOUNCE_VX) slime.vx = BOUNCE_VX
+    slime.squashT = 0.12
+    sfx(SFX_LAND, -2, 0.7)
+    return
+  }
   slime.grounded = true
   slime.groundPlat = p
   slime.vy = 0
   slime.y = p.y - slime.r
   slime.squashT = 0.1
   slime.jumpMul = p.type === 'sticky' ? STICKY_MUL : 1
+  if (p.type === 'crumble' && !p.crackT) p.crackT = CRUMBLE_T
   sfx(SFX_LAND, 0, 0.2)
 }
 
@@ -308,6 +392,10 @@ function updSlime(dt) {
   if (slime.grounded) {
     const p = slime.groundPlat
     if (!p || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
+      if (p && p.type === 'ghost') {
+        killPlat(p, C_GH_SIDE)
+        sfx(SFX_COIN, -4, 0.4)
+      }
       slime.grounded = false
       slime.groundPlat = null
     } else {
@@ -355,11 +443,17 @@ function updSlime(dt) {
 function updBalls() {
   for (const b of balls) {
     if (b.taken) continue
-    if (dist(slime.x, slime.y, b.x, b.y) < slime.r + 6) {
+    if (dist(slime.x, slime.y, b.x, b.y) < slime.r + (b.gold ? 9 : 6)) {
       b.taken = true
-      ballsCollected++
-      sfx(SFX_COIN)
-      burst(b.x, b.y, b.o ? C_ORANGE : C_YELLOW, 6, 90)
+      if (b.gold) {
+        goldsCollected++
+        sfx(SFX_COIN, 2, 1.2)
+        burst(b.x, b.y, C_GOLD, 14, 160)
+      } else {
+        ballsCollected++
+        sfx(SFX_COIN)
+        burst(b.x, b.y, b.o ? C_ORANGE : C_YELLOW, 6, 90)
+      }
     }
   }
 }
@@ -376,6 +470,7 @@ function updParticles(dt) {
 
 function update(dt) {
   if (dt > 1) dt /= 1000
+  if (iskeypressed('m')) toggleMute()
   if (state === 'title') { camX += 14 * dt; return }
   if (state === 'over') { deathT += dt; updParticles(dt); if (shakeT > 0) shakeT -= dt; return }
   elapsed += dt
@@ -386,6 +481,14 @@ function update(dt) {
   cleanup()
   for (const p of platforms) {
     if (p.type === 'dynamic') p.y = p.baseY + Math.sin(T * p.spd + p.ph) * p.amp
+    if (p.crackT > 0) {
+      p.crackT -= dt
+      if (p.crackT <= 0) {
+        p.crackT = 0
+        killPlat(p, C_CR_SIDE)
+        sfx(SFX_DIE, 2, 0.3)
+      }
+    }
   }
   updSlime(dt)
   if (charge.on) {
@@ -394,11 +497,29 @@ function update(dt) {
   }
   updBalls()
   updParticles(dt)
+  musicT -= dt
+  if (musicT < -0.5) musicT = 0
+  const bpm = lerp(112, 150, (camSpd - 40) / 80)
+  while (musicT <= 0) {
+    musicStep = (musicStep + 1) % 16
+    const bf = BASS_PAT[musicStep]
+    if (bf) { const a = MUSIC_BASS.slice(); a[2] = bf; sfx(a) }
+    const mf = LEAD_PAT[musicStep]
+    if (mf) { const a = MUSIC_LEAD.slice(); a[2] = mf; sfx(a) }
+    musicT += 60 / bpm / 4
+  }
   if (slime.x + slime.r < camX) die()
   if (slime.y - slime.r > H + 30) die()
 }
 
+function toggleMute() {
+  muted = !muted
+  try { localStorage.setItem('slime_muted', muted ? '1' : '0') } catch (e) {}
+  volume(muted ? 0 : 0.5)
+}
+
 function tap(x, y, touchId) {
+  if (x < 28 && y < 28) { toggleMute(); return }
   if (state === 'title') { startGame(); return }
   if (state === 'over') { if (deathT > 0.7) startGame(); return }
   if (slime.grounded && !charge.on) {
@@ -479,6 +600,10 @@ function drawTitle() {
   textsize(12)
   text(W / 2, 196, 'Clique ou touche pour commencer', C_GREEN)
   alpha(1)
+  if (best > 0) {
+    textsize(11)
+    text(W / 2, 224, 'RECORD : ' + best, C_GOLD)
+  }
   textalign('start', 'top')
 }
 
@@ -501,6 +626,7 @@ function drawBlob(x, y, r, sx, sy, blink) {
 }
 
 function drawPlat(p) {
+  if (p.dead) return
   if (p.type === 'sticky') {
     rectfill(p.x, p.y, p.w, 7, C_S_TOP)
     rectfill(p.x, p.y + 7, p.w, 7, C_S_SIDE)
@@ -515,6 +641,28 @@ function drawPlat(p) {
     rectfill(p.x, p.y + 6, p.w, 8, C_D_SIDE)
     rectfill(p.x, p.y + 14, p.w, 2, C_D_DARK)
     for (let c = 4; c < p.w - 4; c += 16) rectfill(p.x + c, p.y + 2, 8, 2, C_WHITE)
+  } else if (p.type === 'crumble') {
+    const jx = p.crackT > 0 ? rand(-1.5, 1.5) : 0
+    rectfill(p.x + jx, p.y, p.w, 6, C_CR_TOP)
+    rectfill(p.x + jx, p.y + 6, p.w, 8, C_CR_SIDE)
+    rectfill(p.x + jx, p.y + 14, p.w, 2, C_CR_DARK)
+    rectfill(p.x + p.w * 0.3, p.y + 1, 2, 5, C_CR_DARK)
+    rectfill(p.x + p.w * 0.6, p.y + 2, 2, 4, C_CR_DARK)
+    rectfill(p.x + p.w * 0.45, p.y + 3, 2, 4, C_CR_DARK)
+  } else if (p.type === 'ghost') {
+    alpha(0.5 + 0.25 * Math.sin(T * 6))
+    rectfill(p.x, p.y, p.w, 6, C_GH_TOP)
+    rectfill(p.x, p.y + 6, p.w, 8, C_GH_SIDE)
+    rectfill(p.x, p.y + 14, p.w, 2, C_GH_DARK)
+    alpha(1)
+  } else if (p.type === 'bouncy') {
+    rectfill(p.x, p.y, p.w, 6, C_ORANGE)
+    rectfill(p.x, p.y + 6, p.w, 8, C_BO_SIDE)
+    rectfill(p.x, p.y + 14, p.w, 2, C_BO_DARK)
+    for (let c = 6; c < p.w - 10; c += 14) {
+      shape([p.x + c, p.y + 5, p.x + c + 5, p.y + 1, p.x + c + 10, p.y + 5])
+      fill(C_WHITE)
+    }
   } else {
     rectfill(p.x, p.y, p.w, 6, C_P_TOP)
     rectfill(p.x, p.y + 6, p.w, 8, C_P_SIDE)
@@ -531,6 +679,15 @@ function drawPlat(p) {
 }
 
 function drawBall(b) {
+  if (b.gold) {
+    const pu = 1 + 0.12 * Math.sin(T * 5)
+    alpha(0.4)
+    circ(b.x, b.y, 10 * pu, C_GOLD)
+    alpha(1)
+    circfill(b.x, b.y, 6.5, C_GOLD)
+    circfill(b.x - 2, b.y - 2, 2, C_WHITE)
+    return
+  }
   circfill(b.x, b.y, 4, b.o ? C_ORANGE : C_YELLOW)
   circfill(b.x - 1.5, b.y - 1.5, 1.3, C_WHITE)
 }
@@ -538,10 +695,7 @@ function drawBall(b) {
 function drawTrajectory() {
   const p = 0.12 + 0.88 * Math.min(charge.t / CHARGE_T, 1)
   const v = lerp(VMIN, VMAX, p) * slime.jumpMul
-  let dx = charge.aim.x - slime.x
-  let dy = charge.aim.y - slime.y
-  if (dx < 8) dx = 8
-  const ang = clamp(Math.atan2(dy, dx), -0.95, 1.35)
+  const ang = Math.atan2(charge.aim.y - slime.y, charge.aim.x - slime.x)
   let x = slime.x, y = slime.y
   let vx = Math.cos(ang) * v, vy = Math.sin(ang) * v
   const dt = 1 / 60
@@ -554,6 +708,7 @@ function drawTrajectory() {
     let hit = false
     if (vy >= 0) {
       for (const p2 of platforms) {
+        if (p2.dead) continue
         if (x > p2.x - 6 && x < p2.x + p2.w + 6 && y + slime.r >= p2.y && y + slime.r <= p2.y + 14) { hit = true; break }
       }
     }
@@ -563,7 +718,7 @@ function drawTrajectory() {
       alpha(1)
       idx++
     }
-    if (hit || y > H + 40) break
+    if (hit || y > H + 40 || x < camX - 40 || x > camX + W + 30) break
   }
 }
 
@@ -652,8 +807,14 @@ function drawOver() {
   textalign('center', 'top')
   textsize(26)
   text(W / 2, 44, 'PERDU !', C_RED, 'bold')
+  if (newRecord) {
+    alpha(0.55 + 0.45 * Math.sin(T * 6))
+    textsize(13)
+    text(W / 2, 78, 'NOUVEAU RECORD !', C_GOLD, 'bold')
+    alpha(1)
+  }
   textsize(9)
-  text(W / 2, 96, 'CODE DE SCORE', C_GRAY)
+  text(W / 2, 100, 'CODE DE SCORE', C_GRAY)
   rectfill(58, 110, W - 116, 32, C_BG1)
   rect(58, 110, W - 116, 32, C_GRAY)
   textsize(9)
@@ -686,12 +847,32 @@ function draw() {
   drawVoid()
   drawHUD()
   if (state === 'over') drawOver()
+  drawSoundIcon()
+}
+
+function drawSoundIcon() {
+  alpha(0.85)
+  rectfill(9, 11, 5, 8, C_WHITE)
+  shape([14, 11, 22, 5, 22, 25, 14, 19])
+  fill(C_WHITE)
+  if (muted) {
+    line(24, 9, 31, 21, C_RED)
+    line(31, 9, 24, 21, C_RED)
+  } else {
+    circ(25, 15, 4, C_WHITE)
+    circ(25, 15, 7, C_WHITE)
+  }
+  alpha(1)
 }
 
 function init() {
   pal(COLORS, C_WHITE)
   textsize(9)
-  volume(0.5)
+  try {
+    best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
+    muted = localStorage.getItem('slime_muted') === '1'
+  } catch (e) {}
+  volume(muted ? 0 : 0.5)
   const cv = canvas()
   cv.style.imageRendering = 'pixelated'
 }
