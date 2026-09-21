@@ -67,6 +67,43 @@ check('pattern invalide détecté', Patterns.validatePattern(bad).length > 0)
 // 6. Layout par défaut + applyLayout via Phys
 check('layout par défaut', Patterns.getLayout().walls.ceil === 28)
 
+// 6b. Physique réglable : défauts, setPhys, bornes, garde vmax >= vmin + 50
+const phDef = Phys.phys()
+check('phys défauts (slime 14, grav 620)', phDef.slimeR === 14 && phDef.grav === 620 && phDef.vmax === 360)
+check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 14 && Patterns.getLayout().phys.chargeT === 0.55)
+Phys.setPhys({ grav: 800, slimeR: 10 })
+check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 210)
+Phys.setPhys({ vmin: 400, vmax: 200, grav: 99999 })
+check('bornes + garde vmax', Phys.phys().grav === 1000 && Phys.phys().vmin === 400 && Phys.phys().vmax >= 450)
+Phys.setPhys(null)
+check('setPhys(null) -> défauts', Phys.phys().grav === 620 && Phys.phys().slimeR === 14)
+
+// 6c. Résilience du stockage : backup (_bak) + récupération au chargement
+const storeKey = 'slime_patterns_v1', bakKey = 'slime_patterns_v1_bak'
+check('statut initial : vide', Patterns.loadStatus() === 'vide')
+Patterns.setLayout({ phys: { grav: 777 } })
+Patterns.setPatternsRaw([JSON.parse(JSON.stringify(defs[0]))])
+check('backup écrit à chaque sauvegarde', !!storeStub[bakKey])
+storeStub[storeKey] = '{oops pas du JSON'
+check('load : statut recupere', Patterns.load() && Patterns.loadStatus() === 'recupere')
+check('layout récupéré depuis le backup', Patterns.getLayout().phys.grav === 777)
+check('pool récupéré (backup = sauvegarde précédente)', Patterns.getPatterns().length === 0)
+check('clé principale auto-réparée', (() => { try { return JSON.parse(storeStub[storeKey]).format === 'slime-patterns@1' } catch (e) { return false } })())
+storeStub[storeKey] = 'garbage'
+storeStub[bakKey] = 'garbage'
+Patterns.load()
+check('tout illisible : défauts + statut corrompu', Patterns.loadStatus() === 'corrompu' && Patterns.getLayout().phys.grav === 620)
+Patterns.setLayout(null)
+Patterns.load()
+check('store sain : statut ok', Patterns.loadStatus() === 'ok')
+// Un layout persisté avec phys applique bien la config à la simu
+Patterns.setLayout({ phys: { slimeR: 16, grav: 700 } })
+check('layout.phys persisté', Patterns.getLayout().phys.slimeR === 16 && Patterns.getLayout().phys.grav === 700)
+Phys.setPhys(Patterns.getLayout().phys)
+check('simu utilise le layout', Phys.phys().slimeR === 16 && Phys.phys().grav === 700)
+Patterns.setLayout(null)
+check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 14)
+
 // 7. Pin mode test
 Patterns.pin(defs[3])
 const sec = Patterns.spawnSection(last, 0)

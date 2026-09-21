@@ -41,11 +41,15 @@ function drawOuterFrame() {
   }
   c.restore()
 }
-const VERSION = '3.0'
+const VERSION = '3.1'
 // Murs de damage issus du layout éditable (onglet VUE de l'éditeur).
 let WALL = { ceil: TIP_T, left: TIP_L, right: SPIKE_W }
 // Réglages globaux des plateformes (onglet VUE), surchargés par plateforme.
 let PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
+// Raccourci : physique courante (onglet PHYS de l'éditeur -> layout.phys).
+const PH = () => Phys.phys()
+// Largeur de dessin du sprite de référence (pour un rayon de 18).
+const SLIME_DRAW_W = 44
 
 function applyLayout() {
   const l = Patterns.getLayout()
@@ -59,7 +63,8 @@ function applyLayout() {
       spdMul: Math.max(0.5, Math.min(2, +l.plat.spdMul || 1))
     }
   }
-  Phys.setWalls(WALL)
+  Phys.setWalls(l && l.walls ? l.walls : null)
+  Phys.setPhys(l && l.phys ? l.phys : null)
 }
 
 const COLORS = [
@@ -120,8 +125,13 @@ let ballsCollected = 0, goldsCollected = 0, scoreCode = null, deathT = 0, shakeT
 let best = 0, newRecord = false
 let testMode = false, testSecT = 0
 
-function slimeR() { return 18 }
+function slimeR() { return PH().slimeR }
+function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
 function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS }
+function camRatio() {
+  const P = PH()
+  return clamp((camSpd - P.camBase) / Math.max(1, P.camMax - P.camBase), 0, 1)
+}
 function fmtTime(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60)
   return m + ':' + String(s).padStart(2, '0')
@@ -196,7 +206,11 @@ function startGame() {
   // Départ : plateforme + slime centrés au milieu de l'écran.
   const first = { x: VW / 2 - (5 * CELL) / 2, row: 2, y: rowY(2), baseY: rowY(2), w: 5 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null }
   platforms.push(first)
-  slime = { x: VW / 2, y: rowY(2) - 18, vx: 0, vy: 0, size: 3, grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0 }
+  slime = {
+    x: VW / 2, y: rowY(2) - slimeR(), vx: 0, vy: 0, size: 3,
+    grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0,
+    coyote: PH().coyote, buffer: 0, bufferRel: false, bufferId: -1, bufferAim: null
+  }
   slime.r = slimeR()
   let guard = 0
   while (platforms[platforms.length - 1].x + platforms[platforms.length - 1].w < VW * 2 && guard++ < 60) spawnNext()
@@ -207,7 +221,7 @@ function startGame() {
 function damage() {
   if (slime.invuln > 0) return
   slime.size--
-  slime.invuln = 1.3
+  slime.invuln = PH().invuln
   shakeT = 0.25
   sfx(SFX_HURT)
   burst(slime.x, slime.y, C_SLIME, 8, 120)
@@ -233,8 +247,9 @@ function die() {
 }
 
 function doJump() {
-  const p = 0.12 + 0.88 * Math.min(charge.t / CHARGE_T, 1)
-  const v = lerp(VMIN, VMAX, p) * slime.jumpMul
+  const P = PH()
+  const p = 0.12 + 0.88 * Math.min(charge.t / P.chargeT, 1)
+  const v = lerp(P.vmin, P.vmax, p) * slime.jumpMul
   const gp = slime.groundPlat
   const ang = Math.atan2(charge.aim.y - slime.y, charge.aim.x - slime.x)
   slime.vx = Math.cos(ang) * v
@@ -246,15 +261,38 @@ function doJump() {
   slime.grounded = false
   slime.groundPlat = null
   slime.jumpMul = 1
+  slime.coyote = 0
+  slime.buffer = 0
   runStarted = true
   sfx(SFX_JUMP)
 }
 
+// Consomme un appui mémorisé en l'air (jump buffer) à l'atterrissage :
+// doigt encore posé -> la charge démarre ; déjà relâché -> saut faible immédiat.
+function consumeBuffer() {
+  if (!(slime.buffer > 0)) { slime.buffer = 0; return }
+  const rel = slime.bufferRel, id = slime.bufferId, aim = slime.bufferAim
+  slime.buffer = 0
+  if (charge.on) return
+  if (aim) charge.aim = aim
+  if (rel) {
+    charge.t = 0
+    charge.on = false
+    doJump()
+  } else {
+    charge.on = true
+    charge.t = 0
+    charge.id = id
+  }
+}
+
 function land(p) {
   if (p.type === 'bouncy') {
-    slime.vy = -BOUNCE_VY
-    if (Math.abs(slime.vx) < BOUNCE_VX) slime.vx = BOUNCE_VX
+    const P = PH()
+    slime.vy = -P.bounceVy
+    if (Math.abs(slime.vx) < P.bounceVx) slime.vx = P.bounceVx
     slime.squashT = 0.12
+    slime.buffer = 0
     sfx(SFX_LAND, -2, 0.7)
     return
   }
@@ -263,16 +301,18 @@ function land(p) {
   slime.vy = 0
   slime.y = p.y - slime.r
   slime.squashT = 0.1
-  slime.jumpMul = p.type === 'sticky' ? STICKY_MUL : 1
+  slime.jumpMul = p.type === 'sticky' ? PH().stickyMul : 1
   if (p.type === 'crumble' && !p.crackT) p.crackT = p.crumbleT || PLAT.crumbleT
   if (p.type === 'dynamic' && !p.timerSet) {
     p.timerSet = true
     p.timer = p.dynLife || PLAT.dynLife
   }
   sfx(SFX_LAND, 0, 0.2)
+  consumeBuffer()
 }
 
 function updSlime(dt) {
+  const P = PH()
   const prevY = slime.y
   if (slime.grounded) {
     const p = slime.groundPlat
@@ -283,17 +323,22 @@ function updSlime(dt) {
       }
       slime.grounded = false
       slime.groundPlat = null
+      // Quitter le sol sans sauter : fenêtre de coyote encore disponible.
     } else {
       slime.vx *= Math.pow(0.002, dt)
       if (Math.abs(slime.vx) < 2) slime.vx = 0
       slime.x += slime.vx * dt
       slime.y = p.y - slime.r
+      slime.coyote = P.coyote
+      slime.buffer = 0
     }
   }
   if (!slime.grounded) {
-    slime.vy += GRAV * dt
-    if (slime.vy > 520) slime.vy = 520
-    slime.vx *= Math.pow(0.6, dt)
+    if (slime.coyote > 0) slime.coyote -= dt
+    if (slime.buffer > 0) slime.buffer -= dt
+    slime.vy += P.grav * dt
+    if (slime.vy > P.fallMax) slime.vy = P.fallMax
+    slime.vx *= Math.pow(P.dragAir, dt)
     slime.x += slime.vx * dt
     slime.y += slime.vy * dt
     if (slime.y - slime.r < WALL.ceil) {
@@ -326,9 +371,9 @@ function updSlime(dt) {
       }
       if (wl.spiked) {
         damage()
-        if (wl.kind === 'ceil') slime.vy = Math.max(slime.vy, 120)
+        if (wl.kind === 'ceil') slime.vy = Math.max(slime.vy, 120 * P.hurtRecoil)
         else {
-          slime.vy = -240
+          slime.vy = -240 * P.hurtRecoil
           slime.grounded = false
           slime.groundPlat = null
         }
@@ -338,7 +383,7 @@ function updSlime(dt) {
   }
   for (const p of platforms) {
     if (p.spike && slime.y + slime.r > p.y - 10 && slime.y + slime.r < p.y + 4 && slime.x > p.spike.x1 - 4 && slime.x < p.spike.x2 + 4) {
-      slime.vy = -240
+      slime.vy = -240 * P.hurtRecoil
       slime.grounded = false
       slime.groundPlat = null
       damage()
@@ -347,12 +392,12 @@ function updSlime(dt) {
   }
   if (slime.x - slime.r < camX + WALL.left) {
     slime.x = camX + WALL.left + slime.r
-    if (slime.vx < 0) slime.vx = 140
+    if (slime.vx < 0) slime.vx = 140 * P.hurtRecoil
     damage()
   }
   if (slime.x + slime.r > camX + VW - WALL.right) {
     slime.x = camX + VW - WALL.right - slime.r
-    if (slime.vx > 0) slime.vx = -120
+    if (slime.vx > 0) slime.vx = -120 * P.hurtRecoil
     damage()
   }
   if (slime.invuln > 0) slime.invuln -= dt
@@ -398,13 +443,14 @@ function update(dt) {
   if (!runStarted) {
     if (charge.on) {
       charge.t += dt
-      if (!slime.grounded) charge.on = false
+      if (!slime.grounded && slime.coyote <= 0) charge.on = false
     }
     updParticles(dt)
     return
   }
   elapsed += dt
-  camSpd = testMode ? 55 : Math.min(40 + Math.floor(elapsed / 10) * 5, 120)
+  const P = PH()
+  camSpd = testMode ? 55 : Math.min(P.camBase + Math.floor(elapsed / P.camRampT) * 5, P.camMax)
   camX += camSpd * dt
   if (testMode) testSecT += dt
   if (shakeT > 0) shakeT -= dt
@@ -432,11 +478,11 @@ function update(dt) {
   updSlime(dt)
   if (charge.on) {
     charge.t += dt
-    if (!slime.grounded) charge.on = false
+    if (!slime.grounded && slime.coyote <= 0) charge.on = false
   }
   updBalls()
   updParticles(dt)
-  Music.tick(dt, (camSpd - 40) / 80)
+  Music.tick(dt, camRatio())
   if (slime.x + slime.r < camX) die()
   if (slime.y - slime.r > VH + 30) die()
 }
@@ -454,11 +500,19 @@ function tap(px, py, touchId) {
     if (hitBtn(x, y, BTN_REPLAY)) { startGame(); return }
     return
   }
-  if (slime.grounded && !charge.on) {
-    charge.on = true
-    charge.t = 0
-    charge.id = touchId
-    charge.aim = { x: clamp(x, 0, VW) + camX, y: clamp(y, 0, VH) }
+  if (slime.grounded || slime.coyote > 0) {
+    if (!charge.on) {
+      charge.on = true
+      charge.t = 0
+      charge.id = touchId
+      charge.aim = { x: clamp(x, 0, VW) + camX, y: clamp(y, 0, VH) }
+    }
+  } else if (PH().jumpBuffer > 0) {
+    // En l'air : l'appui est mémorisé et sera consommé à l'atterrissage.
+    slime.buffer = PH().jumpBuffer
+    slime.bufferRel = false
+    slime.bufferId = touchId
+    slime.bufferAim = { x: clamp(x, 0, VW) + camX, y: clamp(y, 0, VH) }
   }
 }
 
@@ -473,6 +527,8 @@ function untap(x, y, touchId) {
   if (charge.on && touchId === charge.id) {
     charge.on = false
     doJump()
+  } else if (slime.buffer > 0 && touchId === slime.bufferId) {
+    slime.bufferRel = true
   }
 }
 
@@ -785,15 +841,16 @@ function drawBall(b) {
 }
 
 function drawTrajectory() {
-  const p = 0.12 + 0.88 * Math.min(charge.t / CHARGE_T, 1)
-  const v = lerp(VMIN, VMAX, p) * slime.jumpMul
+  const P = PH()
+  const p = 0.12 + 0.88 * Math.min(charge.t / P.chargeT, 1)
+  const v = lerp(P.vmin, P.vmax, p) * slime.jumpMul
   const ang = Math.atan2(charge.aim.y - slime.y, charge.aim.x - slime.x)
   let x = slime.x, y = slime.y
   let vx = Math.cos(ang) * v, vy = Math.sin(ang) * v
   const dt = 1 / 60
   let idx = 0
   for (let i = 0; i < 100; i++) {
-    vy += GRAV * dt
+    vy += P.grav * dt
     x += vx * dt
     y += vy * dt
     if (y - slime.r < WALL.ceil) { y = WALL.ceil + slime.r; if (vy < 0) vy = 0 }
@@ -824,12 +881,12 @@ function drawSlime() {
     else key = (Math.floor(T * 3) % 2 ? 'idle0' : 'idle1') + suffix
     let sx = 1, sy = 1
     if (charge.on) {
-      const c = Math.min(charge.t / CHARGE_T, 1)
+      const c = Math.min(charge.t / PH().chargeT, 1)
       sy = 1 - 0.26 * c
       sx = 1 + 0.2 * c
     }
     if (slime.invuln > 0) alpha(Math.floor(T * 14) % 2 === 0 ? 1 : 0.45)
-    Sprites.draw(key, slime.x, feet, 44, sx, sy)
+    Sprites.draw(key, slime.x, feet, slimeDrawW(), sx, sy)
     alpha(1)
     return
   }
@@ -837,7 +894,7 @@ function drawSlime() {
   const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
   let sx = 1, sy = 1
   if (charge.on) {
-    const c = Math.min(charge.t / CHARGE_T, 1)
+    const c = Math.min(charge.t / PH().chargeT, 1)
     sy = 1 - 0.28 * c
     sx = 1 + 0.22 * c
   } else if (slime.squashT > 0) {
@@ -927,7 +984,7 @@ function drawHUD() {
       }
     }
   }
-  const ratio = (camSpd - 40) / 80
+  const ratio = camRatio()
   const gx = VW - 76, gy = 56, r = 14
   rectfill(VW - 98, 32, 90, 30, C_FRAME, 10)
   rect(VW - 98, 32, 90, 30, C_BLACK, 2)
@@ -1128,7 +1185,7 @@ function draw() {
   for (const p of platforms) drawPlat(p)
   for (const b of balls) if (!b.taken) drawBall(b)
   drawParticles()
-  if (state === 'over' && Sprites.ready) Sprites.draw('splat', slime.x, slime.y + slime.r * 0.9, 66)
+  if (state === 'over' && Sprites.ready) Sprites.draw('splat', slime.x, slime.y + slime.r * 0.9, slimeDrawW() * 1.5)
   else drawSlime()
   if (charge.on) drawTrajectory()
   pop()
@@ -1165,7 +1222,9 @@ function init() {
   try {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
   } catch (e) {}
-  Patterns.load()
+  const st = Patterns.load()
+  if (st === 'recupere') console.warn('SLIME : stockage illisible — backup restauré')
+  else if (st === 'invalide' || st === 'corrompu') console.warn('SLIME : stockage illisible — réglages par défaut utilisés')
   applyLayout()
   setupTestMode()
   Music.restore()

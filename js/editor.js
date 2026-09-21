@@ -29,11 +29,14 @@ const Ed = (() => {
     'sticky', 'dynStrip', 'voidBand', 'hudHead', 'big', 'mid', 'small', 'splat']
 
   // ---------- état ----------
-  let mode = 'patterns'            // 'patterns' | 'layout'
+  let mode = 'patterns'            // 'patterns' | 'layout' | 'phys'
+  let layoutTool = 'select'        // outil local du mode VUE : select | decor | erase
   let patterns = []                // référence vivante vers le store
   let selId = null                 // id du pattern sélectionné
-  let selKind = null               // 'plat' | 'ball' | 'decor' | 'anchor'
+  let selKind = null               // sélection primaire : 'plat' | 'ball' | 'decor' | 'wall' | 'anchor'
   let selIdx = -1
+  let selMulti = []                // sélection multiple : [{kind, idx}] (contient aussi la primaire)
+  let clip = null                  // presse-papiers interne : { plats, balls, walls, decors }
   let tool = 'select'              // select | plat | ball | gold | decor | wall | erase
   let platType = 'basic'
   let platCells = 3
@@ -47,8 +50,49 @@ const Ed = (() => {
 
   let cv, ctx, listEl, propsEl, toolbarEl, coordsEl, statusEl, storeInfoEl
   let fileInput
+  let storeNote = ''               // note de stockage (origine + diagnostics de chargement)
 
   function selPattern() { return patterns.find(p => p.id === selId) || null }
+
+  // ---------- sélection multiple ----------
+  function isSel(kind, i) {
+    return (selKind === kind && selIdx === i) || selMulti.some(s => s.kind === kind && s.idx === i)
+  }
+  // Tous les éléments sélectionnés (primaire + multi, sans doublon).
+  function selItems() {
+    const out = selMulti.slice()
+    if (selKind && selKind !== 'anchor' && selIdx >= 0 &&
+        !out.some(s => s.kind === selKind && s.idx === selIdx)) out.push({ kind: selKind, idx: selIdx })
+    return out
+  }
+  function clearSel() { selKind = null; selIdx = -1; selMulti = [] }
+  function setSingleSel(kind, idx) {
+    selKind = kind; selIdx = idx
+    selMulti = kind && kind !== 'anchor' && idx >= 0 ? [{ kind, idx }] : []
+  }
+  function objAt(pat, kind, idx) {
+    if (!pat) return null
+    if (kind === 'plat') return pat.platforms[idx]
+    if (kind === 'ball') return pat.balls[idx]
+    if (kind === 'decor') return pat.decor[idx]
+    if (kind === 'wall') return pat.walls ? pat.walls[idx] : null
+    return null
+  }
+  function primarySel() {
+    const last = selMulti[selMulti.length - 1]
+    if (last) { selKind = last.kind; selIdx = last.idx }
+    else if (selKind !== 'anchor') { selKind = null; selIdx = -1 }
+  }
+  // Snapshot des positions au début d'un glisser (source de vérité du déplacement).
+  function snapshotSelection(pat) {
+    const out = []
+    for (const s of selItems()) {
+      const obj = objAt(pat, s.kind, s.idx)
+      if (!obj) continue
+      out.push({ kind: s.kind, idx: s.idx, x: obj.x, y: obj.y, row: obj.row, yOff: obj.yOff })
+    }
+    return out
+  }
 
   // ---------- utilitaires ----------
   function flash(msg, ko) {
@@ -376,18 +420,29 @@ const Ed = (() => {
     ctx.scale(s, s)
     ctx.translate(-camX, 0)
     for (let i = 0; i < pat.decor.length; i++) {
-      drawDecorEditor(ctx, pat.decor[i], selKind === 'decor' && selIdx === i, x => x, y => y, 1)
+      drawDecorEditor(ctx, pat.decor[i], isSel('decor', i), x => x, y => y, 1)
     }
     if (pat.walls) for (let i = 0; i < pat.walls.length; i++) {
-      drawWallEditor(ctx, pat.walls[i], selKind === 'wall' && selIdx === i)
+      drawWallEditor(ctx, pat.walls[i], isSel('wall', i))
     }
     for (let i = 0; i < pat.platforms.length; i++) {
-      drawPlatEditor(ctx, pat.platforms[i], selKind === 'plat' && selIdx === i)
+      drawPlatEditor(ctx, pat.platforms[i], isSel('plat', i))
     }
     for (let i = 0; i < pat.balls.length; i++) {
-      drawBallEditor(ctx, pat.balls[i], selKind === 'ball' && selIdx === i)
+      drawBallEditor(ctx, pat.balls[i], isSel('ball', i))
     }
     ctx.restore()
+    // rectangle de sélection (Ctrl + glisser sur le vide)
+    if (drag && drag.marquee) {
+      const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1)
+      const w = Math.abs(drag.x1 - drag.x0), h = Math.abs(drag.y1 - drag.y0)
+      ctx.fillStyle = 'rgba(62,203,62,.12)'
+      ctx.fillRect(x, y, w, h)
+      ctx.strokeStyle = COL.ok; ctx.lineWidth = 1
+      ctx.setLineDash([5, 4])
+      ctx.strokeRect(x + 0.5, y + 0.5, w, h)
+      ctx.setLineDash([])
+    }
     // --- retour espace écran : badges de validation ---
     const v = drawValidation(ctx, pat)
     // aperçu de placement (espace monde)
@@ -540,12 +595,16 @@ const Ed = (() => {
   function draw() {
     const dpr = window.devicePixelRatio || 1
     const cw = cv.clientWidth, chh = cv.clientHeight
-    if (cv.width !== cw * dpr || cv.height !== chh * dpr) {
-      cv.width = cw * dpr; cv.height = chh * dpr
+    if (mode === 'phys') {
+      // Vue réglages pleine page : pas de canvas, on garde juste la décroissance du flash.
+    } else {
+      if (cv.width !== cw * dpr || cv.height !== chh * dpr) {
+        cv.width = cw * dpr; cv.height = chh * dpr
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      if (mode === 'layout') drawLayout()
+      else drawPatterns()
     }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    if (mode === 'patterns') drawPatterns()
-    else drawLayout()
     if (flashT > 0) {
       flashT -= 1 / 60
       if (flashT <= 0) { statusEl.textContent = ''; statusEl.className = '' }
@@ -558,9 +617,10 @@ const Ed = (() => {
 
   function renderProps() {
     if (mode === 'layout') return renderPropsLayout()
+    if (mode === 'phys') return renderPropsPhys()
     const pat = selPattern()
     if (!pat) {
-      propsEl.innerHTML = `<div class="empty">Crée un pattern avec « + Nouveau »,<br>ou copie le pool par défaut pour l'éditer.<br><br>• molette : défiler<br>• clic : placer / sélectionner<br>• Suppr : effacer la sélection</div>`
+      propsEl.innerHTML = `<div class="empty">Crée un pattern avec « + Nouveau »,<br>ou copie le pool par défaut pour l'éditer.<br><br>• molette : défiler<br>• clic : placer / sélectionner<br>• Ctrl+clic / Ctrl+glisser : multi-sélection<br>• Ctrl+C / Ctrl+V : copier / coller<br>• Suppr : effacer la sélection</div>`
       return
     }
     const v = Patterns.validatePatternJumps(pat)
@@ -576,6 +636,9 @@ const Ed = (() => {
       <div class="row"><span class="badge ${bad ? 'ko' : 'ok'}">${bad ? bad + ' saut(s) KO' : 'Chaîne valide'}</span>
       <span style="color:var(--dim);font-size:11px">${pat.platforms.length} plat. · ${(pat.walls || []).length} mur(s) · ${pat.balls.length} billes · ${Patterns.patternWidth(pat)}px</span></div>
       <h3>Objet sélectionné</h3>`
+    if (selMulti.length > 1) {
+      html += `<div class="note" style="margin:0 0 6px;padding:4px 6px;background:var(--panel2);border:1px solid var(--line)"><b style="color:var(--gold)">${selMulti.length} objets sélectionnés</b> — propriétés du dernier cliqué. Suppr / flèches / Ctrl+C s'appliquent à tous.</div>`
+    }
     if (selKind === 'wall' && pat.walls && pat.walls[selIdx]) {
       const wl = pat.walls[selIdx]
       html += `<div class="row"><label>Type</label>
@@ -626,7 +689,7 @@ const Ed = (() => {
       <div class="row"><label>Y</label><input type="number" id="oDY" value="${d.y}"/></div>
       <div class="row"><label>Largeur</label><input type="number" id="oDW" min="10" value="${d.w}"/></div>`
     } else {
-      html += `<div class="note">Aucun objet sélectionné. Outil « Flèche » pour déplacer, gomme pour supprimer. Flèches du clavier : ajustement fin.</div>`
+      html += `<div class="note">Aucun objet sélectionné. Outil « Flèche » pour déplacer, gomme pour supprimer. Flèches du clavier : ajustement fin.<br><br><b>Multi-sélection</b> : Ctrl ou Shift+clic (ajouter/retirer), Ctrl ou Shift+glisser sur le vide (rectangle). Glisser un élément déjà sélectionné déplace tout le groupe ; un clic simple sans glisser réduit la sélection à cet élément.<br><b>Raccourcis</b> : Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+A, Suppr, Échap.</div>`
     }
     propsEl.innerHTML = html
     bindProps(pat)
@@ -730,7 +793,13 @@ const Ed = (() => {
     <div class="row"><label>Dyn. vie</label><input type="range" id="pDynLife" min="10" max="100" step="5" value="${Math.round(L.plat.dynLife * 10)}"/><span class="val" id="pDynLifeV">${L.plat.dynLife.toFixed(1)} s</span></div>
     <div class="row"><label>Dyn. vit.</label><input type="range" id="pSpdMul" min="5" max="20" value="${Math.round(L.plat.spdMul * 10)}"/><span class="val" id="pSpdMulV">${L.plat.spdMul.toFixed(1)} ×</span></div>
     <div class="note">Cassable : délai avant casse. Dynamique : durée de vie après atterrissage et vitesse d'oscillation globale. Une plateforme peut surcharger ces valeurs (onglet PATTERNS, case « réglage global »).</div>
-    <h3>Décor</h3>`
+    <h3>Décor</h3>
+    <div class="row"><label>Asset</label><select id="lDSprite">${DECOR_SPRITES.map(k => `<option value="${k}" ${decorSprite === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
+    <div class="row">
+      <button id="lToolSelect" class="tool" title="Déplacer un asset posé">Déplacer</button>
+      <button id="lToolDecor" class="tool" title="Poser l'asset choisi (un clic sur la vue)">Poser</button>
+      <button id="lToolErase" class="tool" title="Supprimer un asset">Gomme</button>
+    </div>`
     if (selKind === 'decor' && L.decor[selIdx]) {
       const d = L.decor[selIdx]
       html += `<div class="row"><label>Sprite</label><select id="oDSprite">${DECOR_SPRITES.map(k => `<option value="${k}" ${d.sprite === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
@@ -739,9 +808,9 @@ const Ed = (() => {
       <div class="row"><label>Largeur</label><input type="number" id="oDW" min="10" value="${d.w}"/></div>
       <div class="row"><button id="oDel" class="danger">Supprimer ce décor</button></div>`
     } else {
-      html += `<div class="note">Outil « Décor » : clique pour poser un asset. Outil « Flèche » : déplacer. Molette + Ctrl : zoom.</div>
-      <div class="row"><button id="btnResetL">Réinitialiser les murs</button></div>`
+      html += `<div class="note">Choisis un asset, clique « Poser » puis clique sur la vue. « Déplacer » : glisser un asset posé. Molette + Ctrl : zoom.</div>`
     }
+    html += `<div class="row"><button id="btnResetL">Réinitialiser les murs</button></div>`
     propsEl.innerHTML = html
     const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn) }
     const wallUpd = () => {
@@ -768,15 +837,97 @@ const Ed = (() => {
       persistSilent()
     }
     on('pCrumb', 'input', platUpd); on('pDynLife', 'input', platUpd); on('pSpdMul', 'input', platUpd)
+    on('lDSprite', 'change', e => { decorSprite = e.target.value })
+    on('lToolSelect', 'click', () => setLTool('select'))
+    on('lToolDecor', 'click', () => setLTool('decor'))
+    on('lToolErase', 'click', () => setLTool('erase'))
     on('oDSprite', 'change', e => { L.decor[selIdx].sprite = e.target.value; Patterns.setLayout(L); persistSilent(); renderProps() })
     on('oDX', 'change', e => { L.decor[selIdx].x = parseInt(e.target.value, 10) || 0; Patterns.setLayout(L); persistSilent() })
     on('oDY', 'change', e => { L.decor[selIdx].y = parseInt(e.target.value, 10) || 0; Patterns.setLayout(L); persistSilent() })
     on('oDW', 'change', e => { L.decor[selIdx].w = Math.max(10, parseInt(e.target.value, 10) || 60); Patterns.setLayout(L); persistSilent() })
     on('oDel', 'click', () => { L.decor.splice(selIdx, 1); selKind = null; selIdx = -1; Patterns.setLayout(L); persistSilent(); renderProps() })
     on('btnResetL', 'click', () => {
-      Patterns.setLayout({ walls: { ceil: TIP_T, left: TIP_L, right: SPIKE_W }, decor: L.decor })
+      Patterns.setLayout({ walls: { ceil: TIP_T, left: TIP_L, right: SPIKE_W }, plat: L.plat, phys: L.phys, decor: L.decor })
       Phys.setWalls(Patterns.getLayout().walls)
       renderProps(); flash('Murs réinitialisés')
+    })
+    setLTool(layoutTool)
+  }
+
+  // ---------- onglet PHYS ----------
+  // [groupe, [[clé, libellé, min, max, pas, format], ...]]
+  const PHYS_SLIDERS = [
+    ['Slime', [
+      ['slimeR', 'Taille', 8, 18, 1, v => Math.round(v) + ' px']
+    ]],
+    ['Saut', [
+      ['grav', 'Gravité', 300, 1000, 10, v => Math.round(v)],
+      ['vmin', 'Saut min', 100, 400, 5, v => Math.round(v)],
+      ['vmax', 'Saut max', 200, 600, 5, v => Math.round(v)],
+      ['chargeT', 'Charge max', 0.15, 1.2, 0.05, v => (+v).toFixed(2) + ' s'],
+      ['fallMax', 'Chute max', 300, 900, 10, v => Math.round(v)],
+      ['dragAir', 'Traînée air', 0.2, 1, 0.05, v => (+v).toFixed(2)]
+    ]],
+    ['Rebond & collant', [
+      ['bounceVy', 'Rebond VY', 250, 650, 5, v => Math.round(v)],
+      ['bounceVx', 'Rebond VX', 60, 300, 5, v => Math.round(v)],
+      ['stickyMul', 'Puiss. collant', 0.4, 1, 0.05, v => '×' + (+v).toFixed(2)]
+    ]],
+    ['Dégâts', [
+      ['invuln', 'Invincible', 0.3, 3, 0.1, v => (+v).toFixed(1) + ' s'],
+      ['hurtRecoil', 'Recul', 0.5, 2, 0.05, v => '×' + (+v).toFixed(2)]
+    ]],
+    ['Caméra', [
+      ['camBase', 'Vitesse base', 20, 100, 5, v => Math.round(v)],
+      ['camMax', 'Vitesse max', 60, 200, 5, v => Math.round(v)],
+      ['camRampT', 'Palier', 4, 30, 1, v => Math.round(v) + ' s']
+    ]],
+    ['Game feel', [
+      ['coyote', 'Coyote', 0, 0.25, 0.01, v => (+v).toFixed(2) + ' s'],
+      ['jumpBuffer', 'Buffer saut', 0, 0.25, 0.01, v => (+v).toFixed(2) + ' s']
+    ]]
+  ]
+  const physDef = key => { for (const [, rows] of PHYS_SLIDERS) { const r = rows.find(r => r[0] === key); if (r) return r } return null }
+
+  function renderPropsPhys() {
+    const L = Patterns.getLayout()
+    const ph = L.phys
+    let html = `<div class="physHead">
+      <div>
+        <h3>Physique du jeu</h3>
+        <div class="note">Appliqué au jeu en direct ; la validation ✓/✗ des sauts et le playtest utilisent ces valeurs. Inclus dans l'export .json et le code compact. Coyote : sauter juste après avoir quitté une plateforme. Buffer : un appui en l'air est mémorisé et déclenché à l'atterrissage.</div>
+      </div>
+      <button id="btnResetPhys">Réinitialiser la physique</button>
+    </div>
+    <div class="physGrid">`
+    for (const [grp, rows] of PHYS_SLIDERS) {
+      html += `<div class="physCard"><h3>${grp}</h3>`
+      for (const [key, label, min, max, step, fmt] of rows) {
+        html += `<div class="row"><label>${label}</label><input type="range" id="ph_${key}" min="${min}" max="${max}" step="${step}" value="${ph[key]}"/><span class="val" id="ph_${key}V">${fmt(ph[key])}</span></div>`
+      }
+      html += `</div>`
+    }
+    html += `</div>`
+    propsEl.innerHTML = html
+    const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn) }
+    const upd = key => {
+      const el = document.getElementById('ph_' + key)
+      if (!el) return
+      const def = physDef(key)
+      ph[key] = parseFloat(el.value)
+      Patterns.setLayout(L)
+      Phys.setPhys(L.phys)
+      const v = document.getElementById('ph_' + key + 'V')
+      if (v) v.textContent = def[5](ph[key])
+      persistSilent()
+    }
+    for (const [, rows] of PHYS_SLIDERS) for (const [key] of rows) on('ph_' + key, 'input', () => upd(key))
+    on('btnResetPhys', 'click', () => {
+      Patterns.setLayout({ walls: L.walls, plat: L.plat, decor: L.decor, phys: null })
+      const L2 = Patterns.getLayout()
+      Phys.setWalls(L2.walls)
+      Phys.setPhys(L2.phys)
+      renderProps(); flash('Physique réinitialisée')
     })
   }
 
@@ -784,9 +935,9 @@ const Ed = (() => {
   function refreshList(rerenderProps) {
     if (rerenderProps !== false) renderProps()
     const defActive = Patterns.usingDefaults()
-    storeInfoEl.textContent = defActive
+    storeInfoEl.textContent = (defActive
       ? 'Jeu : pool PAR DÉFAUT (' + Patterns.defaults().length + ' sections) — tes patterns remplaceront le pool dès qu\'il en contient.'
-      : 'Jeu : TON pool (' + patterns.length + ' sections)'
+      : 'Jeu : TON pool (' + patterns.length + ' sections)') + storeNote
     if (!patterns.length) {
       listEl.innerHTML = `<div class="hint">Aucun pattern personnel.<br><br>Le jeu tourne avec le <b>pool par défaut</b> (20 sections validées).<br><br>« + Nouveau » pour créer, ou « Pool par défaut » pour copier les 20 sections et les éditer.</div>`
       return
@@ -867,7 +1018,10 @@ const Ed = (() => {
     const res = Patterns.importData(text)
     if (!res.ok) { flash('Import impossible : ' + res.error, true); return }
     const n = res.data.patterns.length
-    const mode = patterns.length && confirm('OK pour ' + n + ' pattern(s) trouvé(s) dans « ' + sourceName + ' ».\n\nRemplacer ta liste actuelle ?\n• OK = Remplacer\n• Annuler = Fusionner (ajouter les nouveaux)') ? 'replace' : 'merge'
+    const layoutNote = res.data.layout && patterns.length
+      ? '\n\n⚠ L\'import contient un réglage de vue (murs, physique, décor) qui REMPLACERA l\'actuel en cas de remplacement.'
+      : ''
+    const mode = patterns.length && confirm('OK pour ' + n + ' pattern(s) trouvé(s) dans « ' + sourceName + ' ».\n\nRemplacer ta liste actuelle ?\n• OK = Remplacer\n• Annuler = Fusionner (ajouter les nouveaux)' + layoutNote) ? 'replace' : 'merge'
     Patterns.applyImport(res, mode)
     patterns = Patterns.getPatterns()
     refreshList()
@@ -907,6 +1061,137 @@ const Ed = (() => {
     if (!p) { flash('Sélectionne un pattern à tester', true); return }
     if (!Patterns.validatePatternJumps(p).ok && !confirm('Ce pattern contient des sauts impossibles. Tester quand même ?')) return
     window.open('index.html?pattern=' + encodeURIComponent(Patterns.patternToCode(p)), '_blank')
+  }
+
+  // ---------- presse-papiers d'éléments (interne à l'éditeur) ----------
+  function clipCount(c) { return c.plats.length + c.balls.length + c.walls.length + c.decors.length }
+
+  function clipBBox(c) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
+    for (const p of c.plats) {
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, platRight(p))
+      y0 = Math.min(y0, rowY(p.row)); y1 = Math.max(y1, rowY(p.row) + 30)
+    }
+    for (const wl of c.walls) {
+      x0 = Math.min(x0, wl.x); x1 = Math.max(x1, wl.x + wl.cells * CELL)
+    }
+    for (const b of c.balls) {
+      x0 = Math.min(x0, b.x - 8); x1 = Math.max(x1, b.x + 8)
+      const by = rowY(b.row) + b.yOff
+      y0 = Math.min(y0, by - 8); y1 = Math.max(y1, by + 8)
+    }
+    for (const d of c.decors) {
+      x0 = Math.min(x0, d.x); x1 = Math.max(x1, d.x + d.w)
+      y0 = Math.min(y0, d.y); y1 = Math.max(y1, d.y + decorH(d))
+    }
+    return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+  }
+
+  function copySelection(cut) {
+    const pat = selPattern()
+    if (!pat) return
+    const items = selItems()
+    if (!items.length) { flash('Rien à copier', true); return }
+    const c = { plats: [], balls: [], walls: [], decors: [] }
+    for (const s of items) {
+      const obj = objAt(pat, s.kind, s.idx)
+      if (!obj) continue
+      const clone = JSON.parse(JSON.stringify(obj))
+      if (s.kind === 'plat') c.plats.push(clone)
+      else if (s.kind === 'ball') c.balls.push(clone)
+      else if (s.kind === 'wall') c.walls.push(clone)
+      else if (s.kind === 'decor') c.decors.push(clone)
+    }
+    const n = clipCount(c)
+    if (!n) { flash('Rien à copier', true); return }
+    clip = c
+    if (cut) {
+      deleteSelection(pat)
+      flash(n + ' élément' + (n > 1 ? 's' : '') + ' coupé' + (n > 1 ? 's' : ''))
+    } else {
+      flash(n + ' élément' + (n > 1 ? 's' : '') + ' copié' + (n > 1 ? 's' : ''))
+    }
+  }
+
+  function pasteClipboard() {
+    const pat = selPattern()
+    if (!pat) return
+    if (!clip || !clipCount(clip)) { flash('Presse-papiers vide', true); return }
+    const bb = clipBBox(clip)
+    // coin haut-gauche du bloc ancré sous la souris si elle est sur la vue, sinon décalé d'une case
+    const dyw = mouse.inside ? mouse.wy - bb.y : 0
+    const dx = mouse.inside ? snapCell(mouse.wx) - bb.x : CELL
+    const dRow = Math.round(dyw / RS)
+    if (!pat.walls) pat.walls = []
+    const sel = []
+    for (const p of clip.plats) {
+      const q = JSON.parse(JSON.stringify(p))
+      q.x = Math.max(CELL, snapCell(q.x + dx))
+      q.row = clampN(q.row + dRow, 0, 4)
+      pat.platforms.push(q); sel.push({ kind: 'plat', idx: pat.platforms.length - 1 })
+    }
+    for (const wl of clip.walls) {
+      const q = JSON.parse(JSON.stringify(wl))
+      q.x = Math.max(CELL, snapCell(q.x + dx))
+      q.row = clampN(q.row + dRow, 0, 4)
+      pat.walls.push(q); sel.push({ kind: 'wall', idx: pat.walls.length - 1 })
+    }
+    for (const b of clip.balls) {
+      const q = JSON.parse(JSON.stringify(b))
+      const oldRow = q.row
+      q.x = Math.round(q.x + dx)
+      q.row = clampN(oldRow + dRow, 0, 4)
+      q.yOff = Math.round((q.yOff || 0) + dyw - (q.row - oldRow) * RS)
+      pat.balls.push(q); sel.push({ kind: 'ball', idx: pat.balls.length - 1 })
+    }
+    for (const d of clip.decors) {
+      const q = JSON.parse(JSON.stringify(d))
+      q.x = Math.round(q.x + dx)
+      q.y = Math.round(q.y + dyw)
+      pat.decor.push(q); sel.push({ kind: 'decor', idx: pat.decor.length - 1 })
+    }
+    selMulti = sel
+    primarySel()
+    persist()
+    flash(sel.length + ' élément' + (sel.length > 1 ? 's' : '') + ' collé' + (sel.length > 1 ? 's' : ''))
+  }
+
+  function deleteSelection(pat, quiet) {
+    const items = selItems()
+    if (!items.length) return false
+    // suppression par kind, indices décroissants pour préserver les indices restants
+    const byKind = { plat: [], ball: [], wall: [], decor: [] }
+    for (const s of items) if (byKind[s.kind]) byKind[s.kind].push(s.idx)
+    let n = 0
+    for (const k of ['plat', 'ball', 'wall', 'decor']) {
+      byKind[k].sort((a, b) => b - a)
+      for (const i of byKind[k]) {
+        if (k === 'plat') pat.platforms.splice(i, 1)
+        else if (k === 'ball') pat.balls.splice(i, 1)
+        else if (k === 'wall') pat.walls.splice(i, 1)
+        else pat.decor.splice(i, 1)
+        n++
+      }
+    }
+    clearSel()
+    persist()
+    if (!quiet) flash(n + ' élément' + (n > 1 ? 's' : '') + ' supprimé' + (n > 1 ? 's' : ''))
+    return n > 0
+  }
+
+  function selectAllItems() {
+    const pat = selPattern()
+    if (!pat) return
+    selMulti = []
+    for (let i = 0; i < pat.platforms.length; i++) selMulti.push({ kind: 'plat', idx: i })
+    if (pat.walls) for (let i = 0; i < pat.walls.length; i++) selMulti.push({ kind: 'wall', idx: i })
+    for (let i = 0; i < pat.balls.length; i++) selMulti.push({ kind: 'ball', idx: i })
+    for (let i = 0; i < pat.decor.length; i++) selMulti.push({ kind: 'decor', idx: i })
+    primarySel()
+    refreshList(false); renderProps()
+    if (selMulti.length) {
+      flash(selMulti.length + ' élément' + (selMulti.length > 1 ? 's' : '') + ' sélectionné' + (selMulti.length > 1 ? 's' : ''))
+    }
   }
 
   // ---------- toolbar ----------
@@ -950,8 +1235,8 @@ const Ed = (() => {
     document.getElementById('tWallM').addEventListener('click', () => { wallCells = clampN(wallCells - 1, 1, 3); updWallV() })
     document.getElementById('tWallP').addEventListener('click', () => { wallCells = clampN(wallCells + 1, 1, 3); updWallV() })
     document.getElementById('tSprite').addEventListener('change', e => { decorSprite = e.target.value })
-    document.getElementById('tZoomM').addEventListener('click', () => setZoom(zoom - 0.25))
-    document.getElementById('tZoomP').addEventListener('click', () => setZoom(zoom + 0.25))
+    document.getElementById('tZoomM').addEventListener('click', () => setZoom(zoomNext(-1)))
+    document.getElementById('tZoomP').addEventListener('click', () => setZoom(zoomNext(1)))
     document.getElementById('tFit').addEventListener('click', () => { camX = -6 * CELL; setZoom(1) })
     setTool('select')
     setCells(3)
@@ -967,7 +1252,7 @@ const Ed = (() => {
     grpWall.style.display = (t === 'wall') ? 'flex' : 'none'
     grpDecor.style.display = (t === 'decor') ? 'flex' : 'none'
     const hints = {
-      select: 'Clic : sélectionner · glisser : déplacer · Suppr : effacer · flèches : ajuster',
+      select: 'Clic : sélectionner · glisser : déplacer la sélection · Ctrl/Shift+clic : multi · Ctrl/Shift+glisser (vide) : rectangle · Ctrl+C/V : copier/coller · Suppr : effacer · flèches : ajuster',
       plat: 'Clic : poser · 1-6 : type de plateforme',
       wall: 'Clic : poser · glisser : hauteur (ligne de la pointe) · piques réglables à droite',
       ball: 'Clic : poser une bille',
@@ -975,7 +1260,8 @@ const Ed = (() => {
       decor: 'Clic : poser l\'asset choisi',
       erase: 'Clic sur un élément : le supprimer'
     }
-    document.getElementById('tbHint').textContent = mode === 'layout' ? 'Glisse les poignées dorées pour ajuster les murs' : hints[t]
+    document.getElementById('tbHint').textContent = mode === 'layout' ? 'Glisse les poignées dorées pour ajuster les murs'
+      : mode === 'phys' ? 'Aperçu lecture : la validation ✓/✗ suit la physique' : hints[t]
     cv.style.cursor = t === 'select' ? 'default' : 'crosshair'
   }
 
@@ -990,8 +1276,24 @@ const Ed = (() => {
     if (v) v.textContent = platCells + ' case' + (platCells > 1 ? 's' : '')
   }
 
+  // Zoom : 10 % mini. Paliers fins (10 %) sous 50 %, puis 25 % au-dessus.
+  const ZOOM_MIN = 0.1, ZOOM_MAX = 4
+  function zoomNext(dir) {
+    const small = [0.1, 0.2, 0.3, 0.4, 0.5]
+    const q = v => Math.round(v * 4) / 4
+    if (dir < 0) {
+      if (zoom > 0.5 + 1e-6) return Math.max(0.5, q(zoom) - 0.25)
+      for (let i = small.length - 1; i >= 0; i--) if (zoom > small[i] + 1e-6) return small[i]
+      return ZOOM_MIN
+    }
+    if (zoom < 0.5 - 1e-6) {
+      for (let i = 0; i < small.length; i++) if (zoom < small[i] - 1e-6) return small[i]
+    }
+    return Math.min(ZOOM_MAX, q(zoom) + 0.25)
+  }
+
   function setZoom(z) {
-    zoom = clampN(Math.round(z * 4) / 4, 0.5, 4)
+    zoom = clampN(Math.round(z * 100) / 100, ZOOM_MIN, ZOOM_MAX)
     const v = document.getElementById('tZoomV')
     if (v) v.textContent = Math.round(zoom * 100) + '%'
   }
@@ -1000,10 +1302,60 @@ const Ed = (() => {
     mode = m
     document.getElementById('tabPatterns').classList.toggle('on', m === 'patterns')
     document.getElementById('tabLayout').classList.toggle('on', m === 'layout')
-    selKind = null
-    selIdx = -1
-    setTool(mode === 'layout' ? 'select' : tool)
+    document.getElementById('tabPhys').classList.toggle('on', m === 'phys')
+    // VUE : plein cadre (liste + toolbar masquées) ; PHYS : réglages pleine page.
+    const mainEl = document.querySelector('main')
+    mainEl.classList.toggle('layout', m === 'layout')
+    mainEl.classList.toggle('phys', m === 'phys')
+    if (m === 'layout') setLTool('select')
+    applyPropsW(m === 'phys')
+    clearSel()
+    setTool(mode === 'patterns' ? tool : 'select')
     renderProps()
+  }
+
+  // Outil local du mode VUE (la toolbar globale y est masquée).
+  function setLTool(t) {
+    layoutTool = t
+    for (const [id, tt] of [['lToolSelect', 'select'], ['lToolDecor', 'decor'], ['lToolErase', 'erase']]) {
+      const el = document.getElementById(id)
+      if (el) el.classList.toggle('on', tt === layoutTool)
+    }
+    if (cv) cv.style.cursor = layoutTool === 'select' ? 'default' : 'crosshair'
+  }
+
+  // ---------- largeur du panneau propriétés (poignée + persistance) ----------
+  const PROPS_W = { min: 200, max: 560, key: 'slime_props_w' }
+  function applyPropsW(clear) {
+    if (!propsEl) return
+    if (clear) { propsEl.style.width = ''; return }
+    try {
+      const w = parseInt(localStorage.getItem(PROPS_W.key) || '0', 10)
+      propsEl.style.width = w >= PROPS_W.min && w <= PROPS_W.max ? w + 'px' : ''
+    } catch (e) {}
+  }
+
+  function initResizer() {
+    const handle = document.getElementById('propsResize')
+    if (!handle) return
+    handle.addEventListener('pointerdown', e => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startW = propsEl.getBoundingClientRect().width
+      handle.classList.add('on')
+      const move = ev => {
+        const w = Math.round(Math.max(PROPS_W.min, Math.min(PROPS_W.max, startW + startX - ev.clientX)))
+        propsEl.style.width = w + 'px'
+      }
+      const up = () => {
+        handle.classList.remove('on')
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        try { localStorage.setItem(PROPS_W.key, String(parseInt(propsEl.style.width, 10) || 0)) } catch (e2) {}
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+    })
   }
 
   // ---------- événements canvas ----------
@@ -1015,6 +1367,7 @@ const Ed = (() => {
   function onDown(e) {
     const { sx, sy } = canvasPos(e)
     if (mode === 'layout') return onDownLayout(sx, sy)
+    if (mode === 'phys') return // aperçu lecture
     const pat = selPattern()
     const wx = s2wX(sx), wy = s2wY(sy)
     if (!pat) return
@@ -1026,7 +1379,7 @@ const Ed = (() => {
         else if (h.kind === 'ball') pat.balls.splice(h.idx, 1)
         else if (h.kind === 'decor') pat.decor.splice(h.idx, 1)
         else if (h.kind === 'wall') pat.walls.splice(h.idx, 1)
-        selKind = null; selIdx = -1
+        clearSel()
         persist(); renderProps()
       }
       return
@@ -1036,48 +1389,71 @@ const Ed = (() => {
       const row = clampN(Math.round((wy - ROW0) / RS), 0, 4)
       const wl = { x: snapCell(wx), row, cells: wallCells, kind: wallKind, spiked: true }
       pat.walls.push(wl)
-      selKind = 'wall'; selIdx = pat.walls.length - 1
+      setSingleSel('wall', pat.walls.length - 1)
       persist(); renderProps()
-      drag = { kind: 'wall', idx: selIdx, dx: 0, dy: 0 }
+      drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
       return
     }
     if (tool === 'plat') {
       const row = clampN(Math.round((wy - ROW0) / RS), 0, 4)
       const p = { x: snapCell(wx), row, cells: platCells, type: platType, yOff: 0, amp: platType === 'dynamic' ? 20 : 0, spd: platType === 'dynamic' ? 1.5 : 0, spike: null }
       pat.platforms.push(p)
-      selKind = 'plat'; selIdx = pat.platforms.length - 1
+      setSingleSel('plat', pat.platforms.length - 1)
       persist(); renderProps()
-      drag = { kind: 'plat', idx: selIdx, dx: 0, dy: 0 }
+      drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
       return
     }
     if (tool === 'ball' || tool === 'gold') {
       const row = clampN(Math.round((wy - ROW0) / RS), 0, 4)
       const b = { x: Math.round(wx), row, yOff: Math.round(wy - rowY(row)), gold: tool === 'gold' }
       pat.balls.push(b)
-      selKind = 'ball'; selIdx = pat.balls.length - 1
+      setSingleSel('ball', pat.balls.length - 1)
       persist(); renderProps()
-      drag = { kind: 'ball', idx: selIdx, dx: 0, dy: 0 }
+      drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
       return
     }
     if (tool === 'decor') {
       const d = { sprite: decorSprite, x: Math.round(wx), y: Math.round(wy), w: 60 }
       pat.decor.push(d)
-      selKind = 'decor'; selIdx = pat.decor.length - 1
+      setSingleSel('decor', pat.decor.length - 1)
       persist(); renderProps()
-      drag = { kind: 'decor', idx: selIdx, dx: 0, dy: 0 }
+      drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
       return
     }
     // select
     const h = hitTest(wx, wy, pat)
+    if ((e.ctrlKey || e.metaKey || e.shiftKey) && (!h || h.kind !== 'anchor')) {
+      if (h) {
+        // Ctrl/Shift+clic : ajoute/retire l'élément de la sélection multiple
+        const found = selMulti.findIndex(s => s.kind === h.kind && s.idx === h.idx)
+        if (found >= 0) selMulti.splice(found, 1)
+        else selMulti.push({ kind: h.kind, idx: h.idx })
+        if (found < 0) { selKind = h.kind; selIdx = h.idx }
+        else primarySel()
+        refreshList(false); renderProps()
+        // le glisser qui suit déplace toute la sélection
+        drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
+      } else {
+        // Ctrl/Shift+glisser sur le vide : rectangle de sélection (additif)
+        drag = { marquee: true, x0: sx, y0: sy, x1: sx, y1: sy }
+      }
+      return
+    }
     if (h) {
-      selKind = h.kind; selIdx = h.idx
-      if (h.kind === 'anchor') { drag = { kind: 'anchor' } }
-      else {
-        let ox = 0, oy = 0
-        if (h.kind === 'plat') { ox = pat.platforms[h.idx].x - wx; oy = 0 }
-        else if (h.kind === 'ball') { ox = pat.balls[h.idx].x - wx; oy = pat.balls[h.idx].yOff - (wy - rowY(pat.balls[h.idx].row)) }
-        else if (h.kind === 'decor') { ox = pat.decor[h.idx].x - wx; oy = pat.decor[h.idx].y - wy }
-        drag = { kind: h.kind, idx: h.idx, dx: ox, dy: oy }
+      if (h.kind === 'anchor') {
+        setSingleSel('anchor', -1)
+        drag = { kind: 'anchor' }
+      } else {
+        const inGroup = selMulti.length > 1 && selMulti.some(s => s.kind === h.kind && s.idx === h.idx)
+        if (inGroup) {
+          // comme dans les éditeurs usuels : glisser un élément déjà sélectionné
+          // déplace TOUT le groupe ; sans mouvement, le clic réduira la
+          // sélection à cet élément (géré dans onUp).
+          drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat), collapse: h }
+        } else {
+          setSingleSel(h.kind, h.idx)
+          drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
+        }
       }
       refreshList(false); renderProps()
     } else {
@@ -1097,7 +1473,7 @@ const Ed = (() => {
     for (const g of grips) {
       if (Math.abs(wx - g.x) < 14 && Math.abs(wy - g.y) < 14) { drag = { grip: g.k }; return }
     }
-    if (tool === 'erase') {
+    if (layoutTool === 'erase') {
       for (let i = L.decor.length - 1; i >= 0; i--) {
         const d = L.decor[i]
         if (wx >= d.x && wx <= d.x + d.w && wy >= d.y && wy <= d.y + decorH(d)) {
@@ -1106,7 +1482,7 @@ const Ed = (() => {
       }
       return
     }
-    if (tool === 'decor') {
+    if (layoutTool === 'decor') {
       L.decor.push({ sprite: decorSprite, x: Math.round(wx), y: Math.round(wy), w: 60 })
       selKind = 'decor'; selIdx = L.decor.length - 1
       Patterns.setLayout(L); renderProps(); persistSilent()
@@ -1143,26 +1519,27 @@ const Ed = (() => {
     const pat = selPattern()
     if (mode === 'patterns' && pat) {
       const wx = s2wX(sx), wy = s2wY(sy)
-      if (drag.kind === 'plat') {
-        const p = pat.platforms[drag.idx]
-        p.x = snapCell(wx + drag.dx)
-        p.row = clampN(Math.round((wy - ROW0) / RS), 0, 4)
-        persistSilent()
-      } else if (drag.kind === 'wall') {
-        const wl = pat.walls[drag.idx]
-        wl.x = snapCell(wx + drag.dx)
-        wl.row = clampN(Math.round((wy - ROW0) / RS), 0, 4)
-        persistSilent()
-      } else if (drag.kind === 'ball') {
-        const b = pat.balls[drag.idx]
-        b.x = Math.round(wx + drag.dx)
-        const row = clampN(Math.round((wy - ROW0 + drag.dy) / RS), 0, 4)
-        b.row = row
-        b.yOff = Math.round(wy + drag.dy - rowY(row))
-        persistSilent()
-      } else if (drag.kind === 'decor') {
-        const d = pat.decor[drag.idx]
-        d.x = Math.round(wx + drag.dx); d.y = Math.round(wy + drag.dy)
+      if (drag.marquee) {
+        drag.x1 = sx; drag.y1 = sy
+      } else if (drag.kind === 'multi') {
+        // déplacement groupé : delta appliqué au snapshot pris au pointerdown
+        const dx = wx - drag.sx0, dy = wy - drag.sy0
+        if (drag.collapse && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) drag.moved = true
+        for (const o of drag.orig) {
+          const obj = objAt(pat, o.kind, o.idx)
+          if (!obj) continue
+          if (o.kind === 'plat' || o.kind === 'wall') {
+            obj.x = Math.max(CELL, snapCell(o.x + dx))
+            obj.row = clampN(o.row + Math.round(dy / RS), 0, 4)
+          } else if (o.kind === 'ball') {
+            obj.x = Math.round(o.x + dx)
+            const row = clampN(o.row + Math.round(dy / RS), 0, 4)
+            obj.row = row
+            obj.yOff = Math.round(o.yOff + (dy - (row - o.row) * RS))
+          } else if (o.kind === 'decor') {
+            obj.x = Math.round(o.x + dx); obj.y = Math.round(o.y + dy)
+          }
+        }
         persistSilent()
       } else if (drag.kind === 'anchor') {
         const r = clampN(Math.round((wy - ROW0) / RS), 0, 4)
@@ -1188,13 +1565,55 @@ const Ed = (() => {
     if (now - propsLayoutT > 150) { propsLayoutT = now; renderProps() }
   }
 
-  function onUp() { drag = null }
+  function onUp() {
+    if (drag && drag.marquee) finishMarquee()
+    else if (drag && drag.collapse && !drag.moved) {
+      // clic sans glisser sur un élément du groupe : sélection réduite à lui seul
+      setSingleSel(drag.collapse.kind, drag.collapse.idx)
+      renderProps()
+    }
+    drag = null
+  }
+
+  // Fin du rectangle de sélection : tout élément intersectant rejoint la sélection.
+  function finishMarquee() {
+    const pat = selPattern()
+    if (!pat) return
+    const wx0 = s2wX(Math.min(drag.x0, drag.x1)), wx1 = s2wX(Math.max(drag.x0, drag.x1))
+    const wy0 = s2wY(Math.min(drag.y0, drag.y1)), wy1 = s2wY(Math.max(drag.y0, drag.y1))
+    const hitR = (x0, y0, x1, y1) => x0 <= wx1 && x1 >= wx0 && y0 <= wy1 && y1 >= wy0
+    const add = []
+    for (let i = 0; i < pat.platforms.length; i++) {
+      const p = pat.platforms[i]
+      if (hitR(p.x, platY(p) - 8, platRight(p), platY(p) + 30)) add.push({ kind: 'plat', idx: i })
+    }
+    if (pat.walls) for (let i = 0; i < pat.walls.length; i++) {
+      const g = wallGeom(pat.walls[i])
+      if (hitR(g.x, g.y1, g.x + g.w, g.y2)) add.push({ kind: 'wall', idx: i })
+    }
+    for (let i = 0; i < pat.balls.length; i++) {
+      const b = pat.balls[i], by = rowY(b.row) + b.yOff
+      if (hitR(b.x - 10, by - 10, b.x + 10, by + 10)) add.push({ kind: 'ball', idx: i })
+    }
+    for (let i = 0; i < pat.decor.length; i++) {
+      const d = pat.decor[i]
+      if (hitR(d.x, d.y, d.x + d.w, d.y + decorH(d))) add.push({ kind: 'decor', idx: i })
+    }
+    for (const a of add) {
+      if (!selMulti.some(s => s.kind === a.kind && s.idx === a.idx)) selMulti.push(a)
+    }
+    primarySel()
+    refreshList(false); renderProps()
+    if (add.length) {
+      flash(selMulti.length + ' élément' + (selMulti.length > 1 ? 's' : '') + ' sélectionné' + (selMulti.length > 1 ? 's' : ''))
+    }
+  }
 
   function onWheel(e) {
     if (mode !== 'patterns') return
     e.preventDefault()
     if (e.ctrlKey) {
-      setZoom(zoom + (e.deltaY < 0 ? 0.25 : -0.25))
+      setZoom(zoomNext(e.deltaY < 0 ? 1 : -1))
     } else {
       camX += (e.deltaY + e.deltaX) / scale()
     }
@@ -1203,39 +1622,39 @@ const Ed = (() => {
   function onKey(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return
     const pat = selPattern()
-    if (e.key === 'Escape') { selKind = null; selIdx = -1; renderProps(); return }
-    if (mode === 'layout') return
+    // presse-papiers & sélection multiple (Ctrl/⌘ + C X V A)
+    if ((e.ctrlKey || e.metaKey) && mode === 'patterns') {
+      const k = e.key.toLowerCase()
+      if (k === 'c') { e.preventDefault(); copySelection(false); return }
+      if (k === 'x') { e.preventDefault(); copySelection(true); return }
+      if (k === 'v') { e.preventDefault(); pasteClipboard(); return }
+      if (k === 'a') { e.preventDefault(); selectAllItems(); return }
+    }
+    if (e.key === 'Escape') { clearSel(); renderProps(); return }
+    if (mode !== 'patterns') return
     const types = ['basic', 'sticky', 'dynamic', 'crumble', 'ghost', 'bouncy']
     if (/^[1-6]$/.test(e.key)) { platType = types[parseInt(e.key, 10) - 1]; document.getElementById('tType').value = platType; if (tool !== 'plat') setTool('plat'); return }
     const toolKeys = { s: 'select', a: 'plat', w: 'wall', b: 'ball', g: 'gold', d: 'decor', e: 'erase' }
-    if (toolKeys[e.key.toLowerCase()]) { setTool(toolKeys[e.key.toLowerCase()]); return }
+    if (!e.ctrlKey && !e.metaKey && toolKeys[e.key.toLowerCase()]) { setTool(toolKeys[e.key.toLowerCase()]); return }
     if (!pat) return
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (selKind === 'plat') pat.platforms.splice(selIdx, 1)
-      else if (selKind === 'ball') pat.balls.splice(selIdx, 1)
-      else if (selKind === 'decor') pat.decor.splice(selIdx, 1)
-      else if (selKind === 'wall') pat.walls.splice(selIdx, 1)
-      else return
-      selKind = null; selIdx = -1
-      persist(); renderProps()
-      return
-    }
-    if (selKind && selIdx >= 0) {
+    if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(pat); return }
+    if (selKind || selMulti.length) {
       const step = e.shiftKey ? 8 : 1
-      let obj, move
-      if (selKind === 'plat') { obj = pat.platforms[selIdx]; move = (dx, dr) => { obj.x = Math.max(CELL, obj.x + dx); obj.row = clampN(obj.row + dr, 0, 4) } }
-      else if (selKind === 'wall') { obj = pat.walls[selIdx]; move = (dx, dr) => { obj.x = Math.max(CELL, obj.x + dx); obj.row = clampN(obj.row + dr, 0, 4) } }
-      else if (selKind === 'ball') { obj = pat.balls[selIdx]; move = (dx, dy) => { obj.x += dx; obj.yOff += dy } }
-      else if (selKind === 'decor') { obj = pat.decor[selIdx]; move = (dx, dy) => { obj.x += dx; obj.y += dy } }
-      if (obj && move) {
-        if (e.key === 'ArrowLeft') move(-step, 0)
-        else if (e.key === 'ArrowRight') move(step, 0)
-        else if (e.key === 'ArrowUp') move(0, -step)
-        else if (e.key === 'ArrowDown') move(0, step)
-        else return
-        e.preventDefault()
-        persistSilent()
+      let dx = 0, dy = 0
+      if (e.key === 'ArrowLeft') dx = -step
+      else if (e.key === 'ArrowRight') dx = step
+      else if (e.key === 'ArrowUp') dy = -step
+      else if (e.key === 'ArrowDown') dy = step
+      else return
+      e.preventDefault()
+      for (const s of selItems()) {
+        const obj = objAt(pat, s.kind, s.idx)
+        if (!obj) continue
+        if (s.kind === 'plat' || s.kind === 'wall') { obj.x = Math.max(CELL, obj.x + dx); obj.row = clampN(obj.row + dy, 0, 4) }
+        else if (s.kind === 'ball') { obj.x += dx; obj.yOff += dy }
+        else if (s.kind === 'decor') { obj.x += dx; obj.y += dy }
       }
+      persistSilent()
     }
   }
 
@@ -1251,13 +1670,23 @@ const Ed = (() => {
     storeInfoEl = document.getElementById('storeInfo')
     fileInput = document.getElementById('fileImport')
 
-    Patterns.load()
+    applyPropsW()
+    initResizer()
+    const st = Patterns.load()
     Phys.setWalls(Patterns.getLayout().walls)
+    Phys.setPhys(Patterns.getLayout().phys)
+    // Note de stockage : les réglages sont locaux à CE navigateur ET à CETTE
+    // origine (localhost ≠ IP LAN ≠ domaine) — confusion = « resets » apparents.
+    storeNote = ' · stockage : ' + ((window.location && window.location.origin) || 'file://') +
+      (st === 'recupere' ? ' · ⚠ stockage illisible, backup restauré' : '') +
+      (st === 'invalide' || st === 'corrompu' ? ' · ⚠ stockage illisible, défauts utilisés' : '')
+    if (st === 'recupere' || st === 'invalide' || st === 'corrompu') console.warn('SLIME éditeur :', storeNote)
     patterns = Patterns.getPatterns()
     Sprites.load()
 
     document.getElementById('tabPatterns').addEventListener('click', () => setMode('patterns'))
     document.getElementById('tabLayout').addEventListener('click', () => setMode('layout'))
+    document.getElementById('tabPhys').addEventListener('click', () => setMode('phys'))
     document.getElementById('btnNew').addEventListener('click', newPattern)
     document.getElementById('btnDefaults').addEventListener('click', installDefaults)
     document.getElementById('btnExport').addEventListener('click', exportJson)

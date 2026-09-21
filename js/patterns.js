@@ -5,6 +5,7 @@
 const Patterns = (() => {
   const FORMAT = 'slime-patterns@1'
   const STORE_KEY = 'slime_patterns_v1'
+  const BAK_KEY = 'slime_patterns_v1_bak'
   const TYPES = ['basic', 'sticky', 'dynamic', 'crumble', 'ghost', 'bouncy']
 
   // Pool embarqué par défaut (généré + validé par tools/gen_defaults.mjs).
@@ -12,8 +13,8 @@ const Patterns = (() => {
   const DEFAULT_PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
 
   // Complète et borne un layout en place (compat anciens saves/exports sans
-  // `plat`). Conserve l'identité des objets walls/plat : l'éditeur mute ces
-  // références à travers ses sliders.
+  // `plat` ni `phys`). Conserve l'identité des objets walls/plat/phys :
+  // l'éditeur mute ces références à travers ses sliders.
   function normalizeLayout(l) {
     const out = l && typeof l === 'object' ? l : {}
     const w = out.walls && typeof out.walls === 'object' ? out.walls : {}
@@ -26,6 +27,7 @@ const Patterns = (() => {
     p.dynLife = clampN(+p.dynLife || DEFAULT_PLAT.dynLife, 1, 10)
     p.spdMul = clampN(+p.spdMul || DEFAULT_PLAT.spdMul, 0.5, 2)
     out.plat = p
+    out.phys = Phys.normalize(out.phys)
     if (!Array.isArray(out.decor)) out.decor = []
     return out
   }
@@ -160,7 +162,7 @@ const Patterns = (() => {
     if (!a || !b) return false
     return a.type === 'bouncy'
       ? Phys.canReachBounce(a, targetOf(b), walls)
-      : Phys.canReach(a, targetOf(b), a.type === 'sticky' ? STICKY_MUL : 1, 1, walls)
+      : Phys.canReach(a, targetOf(b), a.type === 'sticky' ? Phys.phys().stickyMul : 1, 1, walls)
   }
 
   // Valide le chaînage ancrage -> 1re plateforme puis chaque paire consécutive.
@@ -262,30 +264,55 @@ const Patterns = (() => {
     } catch (e) { return [] }
   }
 
+  // Chargement du store. Si la clé principale est illisible (corruption,
+  // écriture partielle…), on tente la sauvegarde de secours (`_bak`, une
+  // version en arrière) avant de retomber sur les défauts. Le statut est
+  // exposé via loadStatus() : 'vide' | 'ok' | 'recupere' | 'invalide' | 'corrompu'.
+  let loadStatusVar = 'vide'
+  function readStore(key) {
+    // 'ok' : store chargé dans `store` ; sinon renvoie le diagnostic.
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return 'vide'
+      const d = JSON.parse(raw)
+      if (!d || d.format !== FORMAT || !Array.isArray(d.patterns)) return 'invalide'
+      store = {
+        format: FORMAT,
+        patterns: d.patterns.filter(p => validatePattern(p).length === 0),
+        layout: d.layout || null
+      }
+      return 'ok'
+    } catch (e) { return 'corrompu' }
+  }
   function load() {
     store = { patterns: [], layout: null }
-    try {
-      const raw = localStorage.getItem(STORE_KEY)
-      if (raw) {
-        const d = JSON.parse(raw)
-        if (d && d.format === FORMAT) {
-          store = {
-            format: FORMAT,
-            patterns: Array.isArray(d.patterns) ? d.patterns.filter(p => validatePattern(p).length === 0) : [],
-            layout: d.layout || null
-          }
-        }
+    let st = readStore(STORE_KEY)
+    if (st === 'corrompu' || st === 'invalide') {
+      const st2 = readStore(BAK_KEY)
+      if (st2 === 'ok') {
+        st = 'recupere'
+        writeMain() // auto-réparation de la clé principale (le backup reste intact)
       }
-    } catch (e) {}
+    }
+    loadStatusVar = st
     layout = normalizeLayout(store.layout)
     return store
   }
 
-  function save() {
+  function writeMain() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({ format: FORMAT, patterns: store.patterns, layout }))
     } catch (e) {}
   }
+  function save() {
+    // Conserve la version précédente comme secours avant d'écraser.
+    try {
+      const prev = localStorage.getItem(STORE_KEY)
+      if (prev) localStorage.setItem(BAK_KEY, prev)
+    } catch (e) {}
+    writeMain()
+  }
+  function loadStatus() { return loadStatusVar }
 
   function getPatterns() { return store.patterns }
   function getLayout() { return layout }
@@ -373,7 +400,7 @@ const Patterns = (() => {
 
   return {
     FORMAT, TYPES,
-    load, save,
+    load, save, loadStatus,
     getPatterns, setPatterns, setPatternsRaw, getLayout, setLayout,
     usingDefaults, installDefaults, resetUser,
     defaults, validatePattern, validatePatternJumps,

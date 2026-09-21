@@ -8,6 +8,62 @@ const TIP_T = CEIL + 12, TIP_L = 11
 const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
 const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
 
+// Réglages physique mutables (onglet PHYS de l'éditeur, section `phys` du
+// layout). Les constantes ci-dessus restent les valeurs par défaut.
+// - slimeR : rayon de collision ET de validation du slime (sprite dessiné à
+//   l'échelle 44 px pour un rayon de 18).
+// - grav / vmin / vmax / chargeT / fallMax / dragAir : le cœur du « snappy ».
+// - bounceVy/bounceVx : relance automatique des plateformes orange.
+// - stickyMul : puissance du saut après une plateforme collante.
+// - invuln : durée d'invincibilité après un coup ; hurtRecoil : échelle des
+//   reculs infligés par les piques et murs.
+// - coyote : fenêtre pour sauter après avoir quitté une plateforme ;
+//   jumpBuffer : un appui en l'air est mémorisé et déclenché à l'atterrissage.
+// - camBase / camMax / camRampT : courbe de vitesse de la caméra
+//   (base, plafond, secondes entre chaque palier de +5).
+const PHYS_DEF = {
+  slimeR: 14,
+  grav: GRAV, vmin: VMIN, vmax: VMAX, chargeT: CHARGE_T,
+  fallMax: 520, dragAir: 0.6,
+  bounceVy: BOUNCE_VY, bounceVx: BOUNCE_VX, stickyMul: STICKY_MUL,
+  invuln: 1.3, hurtRecoil: 1,
+  coyote: 0.08, jumpBuffer: 0.1,
+  camBase: 40, camMax: 120, camRampT: 10
+}
+
+// Borne une valeur numérique ; hors bornes ou non numérique -> défaut.
+function physBound(v, def, lo, hi) {
+  v = +v
+  return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def
+}
+
+function normPhys(n) {
+  const d = PHYS_DEF
+  n = n && typeof n === 'object' ? n : {}
+  const out = {
+    slimeR: physBound(n.slimeR, d.slimeR, 8, 18),
+    grav: physBound(n.grav, d.grav, 300, 1000),
+    vmin: physBound(n.vmin, d.vmin, 100, 400),
+    vmax: physBound(n.vmax, d.vmax, 200, 600),
+    chargeT: physBound(n.chargeT, d.chargeT, 0.15, 1.2),
+    fallMax: physBound(n.fallMax, d.fallMax, 300, 900),
+    dragAir: physBound(n.dragAir, d.dragAir, 0.2, 1),
+    bounceVy: physBound(n.bounceVy, d.bounceVy, 250, 650),
+    bounceVx: physBound(n.bounceVx, d.bounceVx, 60, 300),
+    stickyMul: physBound(n.stickyMul, d.stickyMul, 0.4, 1),
+    invuln: physBound(n.invuln, d.invuln, 0.3, 3),
+    hurtRecoil: physBound(n.hurtRecoil, d.hurtRecoil, 0.5, 2),
+    coyote: physBound(n.coyote, d.coyote, 0, 0.25),
+    jumpBuffer: physBound(n.jumpBuffer, d.jumpBuffer, 0, 0.25),
+    camBase: physBound(n.camBase, d.camBase, 20, 100),
+    camMax: physBound(n.camMax, d.camMax, 60, 200),
+    camRampT: physBound(n.camRampT, d.camRampT, 4, 30)
+  }
+  // Garde-fou : la puissance max doit rester discriminante face au min.
+  if (out.vmax < out.vmin + 50) out.vmax = Math.min(600, out.vmin + 50)
+  return out
+}
+
 function rowY(r) { return ROW0 + r * RS }
 
 const Phys = (() => {
@@ -26,20 +82,31 @@ const Phys = (() => {
 
   function getWalls() { return wallsCfg }
 
+  // Physique courante (défauts tant que setPhys n'est pas appelé).
+  let physCfg = normPhys(null)
+
+  function setPhys(next) { physCfg = normPhys(next) }
+  function getPhys() { return physCfg }
+
   // Simulation pas-à-pas (60 Hz, 4 s) : le slime lancé depuis (sx, sy) avec la
   // vélocité (vx, vy) retombe-t-il sur la plateforme target ?
+  // Même test d'atterrissage que le jeu : traversée du plan de la plateforme
+  // entre l'image précédente et l'image courante (insensible aux grandes
+  // vitesses de chute).
   // `walls` : murs verticaux optionnels [{ x, y1, y2, w, spiked }] — la
   // trajectoire qui les traverse est invalidée (le sommet, lui, reste
   // atteignable : l'atterrissage est testé avant l'obstacle).
   function simLandV(sx, sy, vx, vy, target, walls) {
+    const P = physCfg
     let x = sx, y = sy
-    const dt = 1 / 60, r = 13
+    const dt = 1 / 60, r = P.slimeR
     for (let i = 0; i < 240; i++) {
-      vy += GRAV * dt
+      const py = y
+      vy += P.grav * dt
       x += vx * dt
       y += vy * dt
       if (y - r < wallsCfg.ceil) { y = wallsCfg.ceil + r; if (vy < 0) vy = 0 }
-      if (vy >= 0 && x > target.x - 3 && x < target.x + target.w + 3 && y + r >= target.y && y + r <= target.y + 16) return true
+      if (vy >= 0 && x > target.x - 3 && x < target.x + target.w + 3 && py + r <= target.y + 8 && y + r >= target.y) return true
       if (walls) {
         for (let j = 0; j < walls.length; j++) {
           const wl = walls[j]
@@ -62,7 +129,7 @@ const Phys = (() => {
       for (let k = 0; k < 7; k++) {
         const base = 0.5 + k * 0.13
         const ang = dirX > 0 ? -base : -(Math.PI - base)
-        const v = VMAX * p * (mul || 1)
+        const v = physCfg.vmax * p * (mul || 1)
         if (simLandV(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target, walls)) return true
       }
     }
@@ -71,8 +138,8 @@ const Phys = (() => {
 
   // Rebond automatique d'une plateforme orange : trajectoire fixe.
   function canReachBounce(a, target, walls) {
-    return simLandV(a.x + a.w - 10, a.y - 12, BOUNCE_VX, -BOUNCE_VY, target, walls)
+    return simLandV(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls)
   }
 
-  return { setWalls, walls: getWalls, simLandV, canReach, canReachBounce }
+  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachBounce }
 })()
