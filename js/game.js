@@ -298,6 +298,10 @@ function land(p) {
   slime.squashT = 0.1
   slime.jumpMul = p.type === 'sticky' ? STICKY_MUL : 1
   if (p.type === 'crumble' && !p.crackT) p.crackT = CRUMBLE_T
+  if (p.type === 'dynamic' && !p.timerSet) {
+    p.timerSet = true
+    p.timer = 4
+  }
   sfx(SFX_LAND, 0, 0.2)
 }
 
@@ -305,8 +309,8 @@ function updSlime(dt) {
   const prevY = slime.y
   if (slime.grounded) {
     const p = slime.groundPlat
-    if (!p || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
-      if (p && p.type === 'ghost') {
+    if (!p || p.dead || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
+      if (p && p.type === 'ghost' && !p.dead) {
         killPlat(p, C_GH_SIDE)
         sfx(SFX_COIN, -4, 0.4)
       }
@@ -328,6 +332,7 @@ function updSlime(dt) {
     if (slime.y - slime.r < CEIL) { slime.y = CEIL + slime.r; if (slime.vy < 0) slime.vy = 0 }
     if (slime.vy >= 0) {
       for (const p of platforms) {
+        if (p.dead) continue
         if (slime.x > p.x - 6 && slime.x < p.x + p.w + 6 && prevY + slime.r <= p.y + 8 && slime.y + slime.r >= p.y) {
           land(p)
           break
@@ -403,6 +408,14 @@ function update(dt) {
         sfx(SFX_DIE, 2, 0.3)
       }
     }
+    if (p.timerSet) {
+      p.timer -= dt
+      if (p.timer <= 0) {
+        p.timer = 0
+        killPlat(p, C_BLUE_L)
+        sfx(SFX_DIE, 2, 0.3)
+      }
+    }
   }
   updSlime(dt)
   if (charge.on) {
@@ -456,11 +469,24 @@ function drawBG() {
     rectfill(x, CEIL, 64, VH - CEIL, h2 < 0.5 ? C_BLUE_D : C_BLUE)
     if (h < 0.45) rectfill(x + 6 + h * 26, 36 + h3 * 130, 24 + h2 * 22, 70 + h * 90, C_BLUE_L)
   })
+  if (Sprites.ready) {
+    const bw = 350
+    const off1 = -(camX * 0.08 % (bw + 280))
+    alpha(0.42)
+    for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, 210)
+    alpha(0.85)
+    const off2 = -(camX * 0.3 % 760)
+    for (let k = 0; k < 3; k++) {
+      const h1 = h32(k * 13 + 5), h2v = h32(k * 29 + 11)
+      Sprites.drawImage('bgPanel' + (1 + (h1 * 4 | 0)), off2 + k * 380 + h1 * 220, 74 + h2v * 90, 60)
+    }
+    alpha(1)
+  }
   bgLayer(0.28, 77, (x, h, h2, h3) => {
     if (h < 0.22) rectfill(x + h2 * 40, 30 + h3 * 180, 14, 3, C_BLUE_XD)
     if (h > 0.5 && h < 0.62) rectfill(x + h3 * 40, 40 + h2 * 160, 3, 26, C_BLUE_XD)
     if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
-    if (h > 0.86) rectfill(x + h2 * 40, 100 + h3 * 110, 18, 3, C_BLUE_HI)
+    if (h > 0.86) rectfill(x + h2 * 40, 100 + h * 90, 18, 3, C_BLUE_HI)
   })
 }
 
@@ -587,6 +613,46 @@ function drawPlat(p) {
   if (p.dead) return
   const n = Math.round(p.w / CELL)
   const jx = p.type === 'crumble' && p.crackT > 0 ? rand(-1.5, 1.5) : 0
+  if (Sprites.ready) {
+    if (p.type === 'ghost') alpha(0.5 + 0.25 * Math.sin(T * 6))
+    if (p.type === 'sticky') {
+      Sprites.drawImage('sticky', p.x + jx - 2, p.y - 4, p.w + 6, Math.min(54, (p.w + 6) * 0.5))
+    } else if (p.type === 'dynamic') {
+      const h = clamp(p.w * 0.14, 13, 19)
+      Sprites.drawImage('dynStrip', p.x + jx, p.y, p.w, h)
+      if (p.timerSet && p.timer < 1.5) {
+        alpha(0.25 + 0.25 * Math.sin(T * 12))
+        rectfill(p.x + jx, p.y, p.w, h, C_RED)
+        alpha(1)
+      }
+    } else {
+      const keys = { basic: 'tileGreen', crumble: 'tileGray', ghost: 'tileGhost', bouncy: 'tileOrange' }
+      for (let i = 0; i < n; i++) {
+        const tx = p.x + jx + i * CELL
+        Sprites.drawImage(keys[p.type] || 'tileGreen', tx, p.y, CELL, 24)
+        if (p.type === 'crumble') {
+          rectfill(tx + 9, p.y + 6, 2, 8, C_CR_DARK)
+          rectfill(tx + 20, p.y + 10, 2, 6, C_CR_DARK)
+        }
+        if (p.type === 'bouncy') {
+          shape([tx + 7, p.y + 14, tx + 13, p.y + 7, tx + 19, p.y + 14])
+          fill(C_WHITE)
+          shape([tx + 15, p.y + 14, tx + 21, p.y + 7, tx + 27, p.y + 14])
+          fill(C_WHITE)
+        }
+      }
+    }
+    if (p.type === 'ghost') alpha(1)
+    if (p.spike) {
+      for (let sx = p.spike.x1; sx + 8 <= p.spike.x2 + 0.1; sx += 8) {
+        shape([sx, p.y + 1, sx + 4, p.y - 10, sx + 8, p.y + 1])
+        fill(C_RED_D)
+        shape([sx + 1, p.y + 1, sx + 4, p.y - 7, sx + 7, p.y + 1])
+        fill(C_RED)
+      }
+    }
+    return
+  }
   if (p.type === 'ghost') alpha(0.5 + 0.25 * Math.sin(T * 6))
   if (p.type === 'sticky') {
     rectfill(p.x - 1, p.y - 1, p.w + 2, 34, C_BLACK, 8)
@@ -745,7 +811,11 @@ function drawCeiling() {
 function drawFrameEdges() {
   drawCheckerBand(0, CEIL, 9, VH - CEIL, 9)
   drawCheckerBand(VW - 9, CEIL, 9, VH - CEIL, 9)
-  drawCheckerBand(0, VH - 14, VW, 14, 7)
+  if (Sprites.ready) {
+    Sprites.drawSrc('voidBand', 0, 0, 960, 92, 0, VH - 24, VW, 24)
+  } else {
+    drawCheckerBand(0, VH - 14, VW, 14, 7)
+  }
 }
 
 function drawVoid() {
@@ -755,24 +825,22 @@ function drawVoid() {
 }
 
 function drawHUD() {
-  rectfill(8, VH - 27, 122, 23, C_FRAME, 9)
-  rect(8, VH - 27, 122, 23, C_BLACK, 9)
+  rectfill(8, VH - 30, 150, 26, C_FRAME, 12)
+  rect(8, VH - 30, 150, 26, C_BLACK, 12)
   if (Sprites.ready) {
-    Sprites.draw('big', 24, VH - 8, 26)
+    Sprites.drawImage('hudHead', 11, VH - 27, 32)
   } else {
-    circfill(20, VH - 14, 8, C_SLIME)
-    rectfill(12, VH - 14, 16, 8, C_SLIME)
-    circfill(17, VH - 16, 1.6, C_WHITE)
-    circfill(23, VH - 16, 1.6, C_WHITE)
+    circfill(24, VH - 17, 9, C_SLIME)
+    rectfill(16, VH - 17, 18, 9, C_SLIME)
+    circfill(21, VH - 19, 1.6, C_WHITE)
+    circfill(27, VH - 19, 1.6, C_WHITE)
   }
-  for (let i = 0; i < 3; i++) {
-    const filled = i < slime.size
-    const col = !filled ? C_LIFE_EMPTY : (slime.size === 1 ? (Math.floor(T * 6) % 2 ? C_RED : C_SLIME) : C_SLIME)
-    rectfill(38 + i * 28, VH - 21, 26, 12, col, 4)
-    rect(38 + i * 28, VH - 21, 26, 12, C_BLACK, 4)
-  }
+  const fillW = Math.round(100 * slime.size / 3)
+  rectfill(48, VH - 24, 104, 16, C_LIFE_EMPTY, 8)
+  if (fillW > 0) rectfill(50, VH - 22, fillW, 12, C_SLIME, 6)
+  if (fillW > 8) rectfill(53, VH - 21, fillW - 8, 3, C_SLIME_L)
   const ratio = (camSpd - 40) / 80
-  const gx = VW - 50, gy = 26, r = 17
+  const gx = VW - 50, gy = 30, r = 17
   for (let i = 0; i <= 10; i++) {
     const a0 = Math.PI * (1 - i / 10)
     const col = i < 5 ? C_SLIME : i < 8 ? C_ORANGE : C_RED
@@ -780,9 +848,12 @@ function drawHUD() {
   }
   const na = Math.PI * (1 - ratio)
   line(gx, gy, gx + Math.cos(na) * (r - 5), gy - Math.sin(na) * (r - 5), C_WHITE)
-  circfill(gx, gy, 2, C_WHITE)
+  if (Sprites.ready) {
+    Sprites.rotated('needle', na + 1.05, gx, gy, 0.68, 0.88)
+  }
+  circfill(gx, gy, 2.5, C_BLACK)
   textsize(8)
-  text(VW - 76, 2, 'VITESSE', C_WHITE)
+  text(VW - 78, 2, 'VITESSE', C_WHITE)
   textsize(9)
   if (slime.x - slime.r < camX + 40) {
     alpha(0.4 + 0.3 * Math.sin(T * 12))

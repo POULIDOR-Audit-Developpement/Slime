@@ -43,7 +43,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 |---|---|---|
 | Verte | Basique | Standard (parfois des pics rouges dessus) |
 | Brune | Collante | Affaiblit ton prochain saut (×0.8) |
-| Bleue | Dynamique | Monte et descend |
+| Bleue (horloges) | Dynamique | Monte et descend — se désintègre 4 s après le premier contact (clignote en rouge pour prévenir) |
 | Grise fissurée | Cassable | Se casse 0,5 s après l'atterrissage |
 | Blanche translucide | Éphémère | Disparaît dès que tu la quittes |
 | Orange à chevrons | Rebondissante | Te relance automatiquement vers le haut |
