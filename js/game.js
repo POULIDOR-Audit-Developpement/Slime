@@ -1,11 +1,34 @@
 litecanvas({
-  width: 960,
-  height: 540,
   autoscale: true
 })
 
-const SCALE = 2
 const VW = 480, VH = 270
+let VSC = 1, VOX = 0, VOY = 0
+let framePattern = null
+
+function calcView() {
+  VSC = Math.min(W / VW, H / VH)
+  VOX = (W - VW * VSC) / 2
+  VOY = (H - VH * VSC) / 2
+}
+
+function buildFramePattern() {
+  const img = paint(30, 30, () => {
+    rectfill(0, 0, 30, 30, C_FRAME)
+    rectfill(0, 0, 15, 15, C_FRAME_L)
+    rectfill(15, 15, 15, 15, C_FRAME_L)
+  })
+  framePattern = ctx().createPattern(img, 'repeat')
+}
+
+function drawOuterFrame() {
+  const c = ctx()
+  c.save()
+  c.setTransform(1, 0, 0, 1, 0, 0)
+  c.fillStyle = framePattern || '#131735'
+  c.fillRect(0, 0, W, H)
+  c.restore()
+}
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
 const VERSION = '2.2'
 const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
@@ -68,7 +91,7 @@ let ballsCollected = 0, goldsCollected = 0, scoreCode = null, deathT = 0, shakeT
 let best = 0, newRecord = false
 
 function rowY(r) { return ROW0 + r * RS }
-function slimeR() { return 9 + slime.size * 3 }
+function slimeR() { return 18 }
 function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS }
 
 function h32(n) {
@@ -430,8 +453,9 @@ function update(dt) {
 }
 
 function tap(px, py, touchId) {
-  const x = px / SCALE
-  const y = py / SCALE
+  calcView()
+  const x = (px - VOX) / VSC
+  const y = (py - VOY) / VSC
   if (x < 28 && y < 28) { Music.toggle(); return }
   if (state === 'title') { startGame(); return }
   if (state === 'over') { if (deathT > 0.7) startGame(); return }
@@ -439,12 +463,15 @@ function tap(px, py, touchId) {
     charge.on = true
     charge.t = 0
     charge.id = touchId
-    charge.aim = { x: x + camX, y }
+    charge.aim = { x: clamp(x, 0, VW) + camX, y: clamp(y, 0, VH) }
   }
 }
 
 function tapping(px, py, touchId) {
-  if (charge.on && touchId === charge.id) charge.aim = { x: px / SCALE + camX, y: py / SCALE }
+  calcView()
+  if (charge.on && touchId === charge.id) {
+    charge.aim = { x: clamp((px - VOX) / VSC, 0, VW) + camX, y: clamp((py - VOY) / VSC, 0, VH) }
+  }
 }
 
 function untap(x, y, touchId) {
@@ -745,29 +772,25 @@ function drawTrajectory() {
 
 function drawSlime() {
   const feet = slime.y + slime.r * 0.92
+  const suffix = slime.size >= 3 ? '' : slime.size === 2 ? '_orange' : '_red'
   if (Sprites.ready) {
-    let key, w
-    const blinkFrame = slime.invuln > 0 && Math.floor(T * 14) % 2 === 0
-    if (slime.squashT > 0) { key = 'land'; w = 50 }
-    else if (blinkFrame) { key = 'hurt'; w = 44 }
-    else if (!slime.grounded) {
-      if (slime.vy < 60) { key = 'jump'; w = 40 } else { key = 'fall'; w = 44 }
-    } else if (slime.size === 3) {
-      key = Math.floor(T * 3) % 2 ? 'idle0' : 'idle1'
-      w = 44
-    } else if (slime.size === 2) { key = 'mid'; w = 37 } else { key = 'small'; w = 29 }
+    let key
+    if (slime.squashT > 0) key = 'land' + suffix
+    else if (!slime.grounded) key = slime.vy < 60 ? 'jump' + suffix : 'fall' + suffix
+    else key = (Math.floor(T * 3) % 2 ? 'idle0' : 'idle1') + suffix
     let sx = 1, sy = 1
     if (charge.on) {
       const c = Math.min(charge.t / CHARGE_T, 1)
       sy = 1 - 0.26 * c
       sx = 1 + 0.2 * c
     }
-    alpha(slime.invuln > 0 && !blinkFrame ? 0.7 : 1)
-    Sprites.draw(key, slime.x, feet, w, sx, sy)
+    if (slime.invuln > 0) alpha(Math.floor(T * 14) % 2 === 0 ? 1 : 0.45)
+    Sprites.draw(key, slime.x, feet, 44, sx, sy)
     alpha(1)
     return
   }
   const blink = slime.invuln > 0 && Math.floor(T * 18) % 2 === 0
+  const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
   let sx = 1, sy = 1
   if (charge.on) {
     const c = Math.min(charge.t / CHARGE_T, 1)
@@ -782,8 +805,17 @@ function drawSlime() {
     sx = 1 - 0.1 * st
   }
   alpha(blink ? 0.35 : 1)
-  drawBlob(slime.x, slime.y, slime.r, sx, sy, false)
+  push(slime.x, slime.y, 0, sx, sy)
+  circfill(0, -slime.r * 0.3, slime.r * 0.92 + 2, C_BLACK)
+  rectfill(-slime.r * 0.92 - 2, -slime.r * 0.3, (slime.r * 0.92 + 2) * 2, slime.r * 1.3 + 2, C_BLACK)
+  circfill(0, -slime.r * 0.3, slime.r * 0.92, col)
+  rectfill(-slime.r * 0.92, -slime.r * 0.3, slime.r * 1.84, slime.r * 1.3, col)
+  circfill(-slime.r * 0.3, -slime.r * 0.35, slime.r * 0.18, C_WHITE)
+  circfill(slime.r * 0.22, -slime.r * 0.35, slime.r * 0.18, C_WHITE)
+  circfill(-slime.r * 0.24, -slime.r * 0.33, slime.r * 0.09, C_BLACK)
+  circfill(slime.r * 0.28, -slime.r * 0.33, slime.r * 0.09, C_BLACK)
   alpha(1)
+  pop()
 }
 
 function drawParticles() {
@@ -836,9 +868,14 @@ function drawHUD() {
     circfill(27, VH - 19, 1.6, C_WHITE)
   }
   const fillW = Math.round(100 * slime.size / 3)
+  const lifeCol = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
   rectfill(48, VH - 24, 104, 16, C_LIFE_EMPTY, 8)
-  if (fillW > 0) rectfill(50, VH - 22, fillW, 12, C_SLIME, 6)
-  if (fillW > 8) rectfill(53, VH - 21, fillW - 8, 3, C_SLIME_L)
+  if (fillW > 0) rectfill(50, VH - 22, fillW, 12, lifeCol, 6)
+  if (fillW > 8) {
+    alpha(0.5)
+    rectfill(53, VH - 21, fillW - 8, 3, C_WHITE)
+    alpha(1)
+  }
   const ratio = (camSpd - 40) / 80
   const gx = VW - 50, gy = 30, r = 17
   for (let i = 0; i <= 10; i++) {
@@ -848,10 +885,8 @@ function drawHUD() {
   }
   const na = Math.PI * (1 - ratio)
   line(gx, gy, gx + Math.cos(na) * (r - 5), gy - Math.sin(na) * (r - 5), C_WHITE)
-  if (Sprites.ready) {
-    Sprites.rotated('needle', na + 1.05, gx, gy, 0.68, 0.88)
-  }
-  circfill(gx, gy, 2.5, C_BLACK)
+  Sprites.rotated('needleH', -na, gx - 3, gy, 0.08, 0.5, 0.5)
+  circfill(gx - 3, gy, 2.5, C_BLACK)
   textsize(8)
   text(VW - 78, 2, 'VITESSE', C_WHITE)
   textsize(9)
@@ -912,9 +947,11 @@ function drawSoundIcon() {
 }
 
 function draw() {
-  ctx().setTransform(SCALE, 0, 0, SCALE, 0, 0)
+  calcView()
+  drawOuterFrame()
+  ctx().setTransform(VSC, 0, 0, VSC, VOX, VOY)
   drawBG()
-  if (state === 'title') { drawTitle(); drawSoundIcon(); drawVignette(); return }
+  if (state === 'title') { drawTitle(); drawSoundIcon(); drawVignette(); rect(-1, -1, VW + 2, VH + 2, C_BLACK); return }
   const shx = shakeT > 0 ? rand(-3, 3) : 0
   const shy = shakeT > 0 ? rand(-3, 3) : 0
   push(Math.round(-camX) + shx, shy)
@@ -926,12 +963,30 @@ function draw() {
   if (charge.on) drawTrajectory()
   pop()
   drawSpikeWall()
+  drawEdgeSpikes()
   drawCeiling()
   drawFrameEdges()
   drawHUD()
   if (state === 'over') drawOver()
   drawSoundIcon()
   drawVignette()
+  ctx().setTransform(VSC, 0, 0, VSC, VOX, VOY)
+  rect(-1, -1, VW + 2, VH + 2, C_BLACK)
+}
+
+function drawEdgeSpikes() {
+  for (let y = CEIL + 6; y < VH - 16; y += 11) {
+    shape([2, y, 11, y + 5.5, 2, y + 11])
+    fill(C_RED_D)
+    shape([3, y + 1, 10, y + 5.5, 3, y + 10])
+    fill(C_RED)
+  }
+  for (let x = 14; x < VW - 14; x += 11) {
+    shape([x, CEIL + 3, x + 5.5, CEIL + 12, x + 11, CEIL + 3])
+    fill(C_RED_D)
+    shape([x + 1, CEIL + 4, x + 5.5, CEIL + 11, x + 10, CEIL + 4])
+    fill(C_RED)
+  }
 }
 
 function init() {
@@ -942,4 +997,5 @@ function init() {
   } catch (e) {}
   Music.restore()
   Sprites.load()
+  buildFramePattern()
 }

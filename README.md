@@ -32,7 +32,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 - **Bouger le curseur** pendant l'appui : vise la trajectoire **dans n'importe quelle direction** — même en arrière pour aller chercher les billes dorées (au risque de te faire rattraper !)
 - **Relâcher** : sauter
 - **M** ou l'icône son (coin haut-gauche) : couper/réactiver le son
-- La **taille du slime = ta vie** : les pics la réduisent, à zéro c'est fini
+- La **couleur du slime = ta vie** : vert → orange → rouge à chaque coup des pics, à rouge fatigué un dernier coup et c'est fini
 - Ne te fais pas rattraper par le bord gauche, ne tombe pas dans le vide
 - Le mur de pics à droite t'empêche de dépasser la caméra
 - Les billes rapportent des points (score caché !), la **bille dorée vaut 50** — elle est toujours au bout d'un détour risqué
@@ -64,6 +64,7 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 ## Tech
 
 - Moteur : [Litecanvas](https://litecanvas.js.org) v0.302.0 via CDN jsDelivr (fallback unpkg)
-- Rendu 960×540, coordonnées virtuelles 480×270, pixel art 100 % procédural (zéro asset)
+- Canvas plein écran adaptatif : le terrain reste en coordonnées 480×270 (zoom auto), les bords se prolongent en cadre damier — aucune bande vide
+- Piques muraux gauche/haut/droite, sprites du slime fournis avec variantes de dégâts (vert/orange/rouge)
 - Génération procédurale avec garantie d'atteignabilité (simulation physique de chaque saut)
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)

@@ -56,3 +56,12 @@ save(load(36), 'needle', 48)
 save(load(66), 'bg_big', 700)
 for i, n in zip((62, 63, 64, 65), range(4)):
     save(load(i), f'bg_panel{n + 1}', 120)
+
+SLIME_BASES = ['idle0', 'idle1', 'jump', 'fall', 'land']
+TIERS = {'orange': (255, 157, 46), 'red': (226, 59, 59)}
+for base in SLIME_BASES:
+    im = Image.open(f'{OUT}/{base}.png')
+    for tier, col in TIERS.items():
+        save(recolor_green(im, col), f'{base}_{tier}')
+
+save(load(48), 'needle_h', 56)

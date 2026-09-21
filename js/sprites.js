@@ -24,7 +24,13 @@ const Sprites = (() => {
     bgPanel1: 'bg_panel1',
     bgPanel2: 'bg_panel2',
     bgPanel3: 'bg_panel3',
-    bgPanel4: 'bg_panel4'
+    bgPanel4: 'bg_panel4',
+    needleH: 'needle_h'
+  }
+  for (const base of ['idle0', 'idle1', 'jump', 'fall', 'land']) {
+    for (const tier of ['orange', 'red']) {
+      defs[base + '_' + tier] = base + '_' + tier
+    }
   }
   const imgs = {}
   let loaded = 0
@@ -76,15 +82,17 @@ const Sprites = (() => {
     return true
   }
 
-  function rotated(key, angle, px, py, ax, ay) {
+  function rotated(key, angle, px, py, ax, ay, scale) {
     const im = imgs[key]
     if (!im || !im.width || !im.complete) return false
     const c = ctx()
+    const w = im.width * (scale || 1)
+    const h = im.height * (scale || 1)
     c.save()
     c.imageSmoothingEnabled = false
     c.translate(px, py)
     c.rotate(angle)
-    c.drawImage(im, -im.width * ax, -im.height * ay)
+    c.drawImage(im, -w * ax, -h * ay, w, h)
     c.restore()
     return true
   }
