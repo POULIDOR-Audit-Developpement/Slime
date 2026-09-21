@@ -18,7 +18,7 @@ const Patterns = (() => {
     const out = l && typeof l === 'object' ? l : {}
     const w = out.walls && typeof out.walls === 'object' ? out.walls : {}
     const p = out.plat && typeof out.plat === 'object' ? out.plat : {}
-    w.ceil = clampN(+w.ceil || TIP_T, 20, 90)
+    w.ceil = clampN(+w.ceil || TIP_T, 8, 90)
     w.left = clampN(+w.left || TIP_L, 4, 60)
     w.right = clampN(+w.right || SPIKE_W, 4, 60)
     out.walls = w
