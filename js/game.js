@@ -7,7 +7,7 @@ litecanvas({
 const SCALE = 2
 const VW = 480, VH = 270
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
-const VERSION = '2.1'
+const VERSION = '2.2'
 const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
 const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
 
@@ -24,7 +24,10 @@ const COLORS = [
   '#9aa0ac', '#6b7280', '#3f4652',
   '#d8e8f4', '#a8bccb', '#7e93a3',
   '#cc6d1a', '#8f4a0f',
-  '#ffd700'
+  '#ffd700',
+  '#4a5ed7', '#5f74e3', '#4152c8', '#3946a8', '#6b83ec',
+  '#131735', '#20264f',
+  '#6b1d1d', '#c98d4b'
 ]
 const C_BG0 = 0, C_BG1 = 1, C_BG2 = 2, C_BG3 = 3
 const C_SLIME = 4, C_SLIME_D = 5, C_SLIME_L = 6
@@ -38,6 +41,9 @@ const C_CR_TOP = 24, C_CR_SIDE = 25, C_CR_DARK = 26
 const C_GH_TOP = 27, C_GH_SIDE = 28, C_GH_DARK = 29
 const C_BO_SIDE = 30, C_BO_DARK = 31
 const C_GOLD = 32
+const C_BLUE = 33, C_BLUE_L = 34, C_BLUE_D = 35, C_BLUE_XD = 36, C_BLUE_HI = 37
+const C_FRAME = 38, C_FRAME_L = 39, C_LIFE_EMPTY = 40
+const C_S_HI = 41
 
 const SFX_JUMP = [,,392,,.03,.12,1,3.6,,69,,,,,,,,.95,.1]
 const SFX_COIN = [,,1675,,.06,.24,1,1.82,,,837,.06]
@@ -445,35 +451,81 @@ function bgLayer(f, seed, cb) {
 }
 
 function drawBG() {
-  cls(C_BG0)
-  bgLayer(0.22, 11, (x, h, h2, h3) => {
-    rectfill(x, CEIL, 64, VH - CEIL, C_BG1)
-    if (h2 < 0.5) rectfill(x + 8 + h * 20, 30 + h3 * 60, 18 + h2 * 30, 26 + h * 40, C_BG2)
+  cls(C_BLUE)
+  bgLayer(0.12, 11, (x, h, h2, h3) => {
+    rectfill(x, CEIL, 64, VH - CEIL, h2 < 0.5 ? C_BLUE_D : C_BLUE)
+    if (h < 0.45) rectfill(x + 6 + h * 26, 36 + h3 * 130, 24 + h2 * 22, 70 + h * 90, C_BLUE_L)
   })
-  bgLayer(0.45, 77, (x, h, h2, h3) => {
-    if (h < 0.3) rectfill(x + h3 * 44, 26 + h2 * 170, 5, 5, C_BG3)
-    if (h > 0.82) rectfill(x + h2 * 44, 150 + h * 90, 10, 4, C_BG3)
+  bgLayer(0.28, 77, (x, h, h2, h3) => {
+    if (h < 0.22) rectfill(x + h2 * 40, 30 + h3 * 180, 14, 3, C_BLUE_XD)
+    if (h > 0.5 && h < 0.62) rectfill(x + h3 * 40, 40 + h2 * 160, 3, 26, C_BLUE_XD)
+    if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
+    if (h > 0.86) rectfill(x + h2 * 40, 100 + h3 * 110, 18, 3, C_BLUE_HI)
   })
+}
+
+function drawCheckerBand(x, y, w, h, size) {
+  rectfill(x, y, w, h, C_FRAME)
+  for (let yy = 0; yy < h; yy += size) {
+    for (let xx = 0; xx < w; xx += size) {
+      if (((xx / size) | 0) % 2 === ((yy / size) | 0) % 2) rectfill(x + xx, y + yy, size, size, C_FRAME_L)
+    }
+  }
+}
+
+function drawVignette() {
+  const c = 46
+  alpha(0.22)
+  rectfill(0, 0, c, 4, C_BLACK)
+  rectfill(0, 0, 4, c, C_BLACK)
+  rectfill(VW - c, 0, c, 4, C_BLACK)
+  rectfill(VW - 4, 0, 4, c, C_BLACK)
+  rectfill(0, VH - 4, c, 4, C_BLACK)
+  rectfill(0, VH - c, 4, c, C_BLACK)
+  rectfill(VW - c, VH - 4, c, 4, C_BLACK)
+  rectfill(VW - 4, VH - c, 4, c, C_BLACK)
+  alpha(0.12)
+  rectfill(0, 4, c, 5, C_BLACK)
+  rectfill(4, 0, 5, c, C_BLACK)
+  rectfill(VW - c - 5, 4, c, 5, C_BLACK)
+  rectfill(VW - 9, 0, 5, c, C_BLACK)
+  rectfill(0, VH - 9, c, 5, C_BLACK)
+  rectfill(4, VH - c - 5, 5, c, C_BLACK)
+  rectfill(VW - c - 5, VH - 9, c, 5, C_BLACK)
+  rectfill(VW - 9, VH - c - 5, 5, c, C_BLACK)
+  alpha(1)
 }
 
 function drawTitle() {
   const word = 'SLIME'
   const px = 9
   const totalW = word.length * 6 * px - px
+  rectfill(VW / 2 - totalW / 2 - 20, 34, totalW + 40, 5 * px + 30, C_FRAME, 8)
+  for (let dx = 0; dx < totalW + 40; dx += 12) {
+    rectfill(VW / 2 - totalW / 2 - 20 + dx, 32, 4, 4, C_WHITE)
+    rectfill(VW / 2 - totalW / 2 - 20 + dx, 34 + 5 * px + 26, 4, 4, C_WHITE)
+  }
+  for (let dy = 0; dy < 5 * px + 30; dy += 12) {
+    rectfill(VW / 2 - totalW / 2 - 22, 34 + dy, 4, 4, C_WHITE)
+    rectfill(VW / 2 + totalW / 2 + 18, 34 + dy, 4, 4, C_WHITE)
+  }
   let lx = (VW - totalW) / 2
   for (let li = 0; li < word.length; li++) {
     const rows = LETTERS[word[li]]
     for (let r = 0; r < 5; r++) {
       for (let c = 0; c < 5; c++) {
         if (rows[r][c] === '#') {
-          rectfill(lx + c * px + 3, 48 + r * px + 3, px, px, C_BLACK)
+          rectfill(lx + c * px - 2, 48 + r * px, px + 4, px, C_BLACK)
+          rectfill(lx + c * px + 2, 48 + r * px, px, px + 4, C_BLACK)
+          rectfill(lx + c * px, 48 + r * px - 2, px, px + 4, C_BLACK)
+          rectfill(lx + c * px, 48 + r * px + 2, px, px + 4, C_BLACK)
         }
       }
     }
     for (let r = 0; r < 5; r++) {
       for (let c = 0; c < 5; c++) {
         if (rows[r][c] === '#') {
-          rectfill(lx + c * px, 48 + r * px, px, px, C_GREEN)
+          rectfill(lx + c * px, 48 + r * px, px, px, r < 2 ? C_SLIME_L : C_GREEN)
         }
       }
     }
@@ -524,56 +576,57 @@ function drawBlob(x, y, r, sx, sy, blink) {
   pop()
 }
 
+function drawTile(x, y, top, side) {
+  rect(x, y, 32, 32, C_BLACK, 7)
+  rectfill(x + 2, y + 2, 28, 28, side, 6)
+  rectfill(x + 2, y + 2, 28, 15, top, 5)
+  rectfill(x + 6, y + 5, 9, 4, C_WHITE)
+}
+
 function drawPlat(p) {
   if (p.dead) return
+  const n = Math.round(p.w / CELL)
+  const jx = p.type === 'crumble' && p.crackT > 0 ? rand(-1.5, 1.5) : 0
+  if (p.type === 'ghost') alpha(0.5 + 0.25 * Math.sin(T * 6))
   if (p.type === 'sticky') {
-    rectfill(p.x, p.y, p.w, 7, C_S_TOP)
-    rectfill(p.x, p.y + 7, p.w, 7, C_S_SIDE)
-    rectfill(p.x, p.y + 14, p.w, 2, C_S_DARK)
-    for (let c = 4; c < p.w - 4; c += 11) {
-      const dl = 3 + Math.floor(h32(p.x + c) * 7)
-      rectfill(p.x + c, p.y + 16, 4, dl, C_S_SIDE)
-      rectfill(p.x + c, p.y + 16 + dl - 2, 4, 2, C_S_DARK)
+    rectfill(p.x - 1, p.y - 1, p.w + 2, 34, C_BLACK, 8)
+    rectfill(p.x + 1, p.y + 1, p.w - 2, 28, C_S_SIDE, 7)
+    rectfill(p.x + 1, p.y + 1, p.w - 2, 13, C_S_TOP, 6)
+    for (let c = 10; c < p.w - 10; c += 16) {
+      const dl = 7 + Math.floor(h32(p.x + c) * 9)
+      const dx = p.x + c + (h32(p.x * 3 + c) * 8 | 0)
+      rectfill(dx, p.y + 26, 7, dl, C_S_SIDE)
+      rectfill(dx, p.y + 24 + dl, 7, 2, C_S_DARK)
+      rect(dx - 1, p.y + 25, 9, dl + 2, C_BLACK, 3)
     }
-  } else if (p.type === 'dynamic') {
-    rectfill(p.x, p.y, p.w, 6, C_D_TOP)
-    rectfill(p.x, p.y + 6, p.w, 8, C_D_SIDE)
-    rectfill(p.x, p.y + 14, p.w, 2, C_D_DARK)
-    for (let c = 4; c < p.w - 4; c += 16) rectfill(p.x + c, p.y + 2, 8, 2, C_WHITE)
-  } else if (p.type === 'crumble') {
-    const jx = p.crackT > 0 ? rand(-1.5, 1.5) : 0
-    rectfill(p.x + jx, p.y, p.w, 6, C_CR_TOP)
-    rectfill(p.x + jx, p.y + 6, p.w, 8, C_CR_SIDE)
-    rectfill(p.x + jx, p.y + 14, p.w, 2, C_CR_DARK)
-    rectfill(p.x + p.w * 0.3, p.y + 1, 2, 5, C_CR_DARK)
-    rectfill(p.x + p.w * 0.6, p.y + 2, 2, 4, C_CR_DARK)
-    rectfill(p.x + p.w * 0.45, p.y + 3, 2, 4, C_CR_DARK)
-  } else if (p.type === 'ghost') {
-    alpha(0.5 + 0.25 * Math.sin(T * 6))
-    rectfill(p.x, p.y, p.w, 6, C_GH_TOP)
-    rectfill(p.x, p.y + 6, p.w, 8, C_GH_SIDE)
-    rectfill(p.x, p.y + 14, p.w, 2, C_GH_DARK)
-    alpha(1)
-  } else if (p.type === 'bouncy') {
-    rectfill(p.x, p.y, p.w, 6, C_ORANGE)
-    rectfill(p.x, p.y + 6, p.w, 8, C_BO_SIDE)
-    rectfill(p.x, p.y + 14, p.w, 2, C_BO_DARK)
-    for (let c = 6; c < p.w - 10; c += 14) {
-      shape([p.x + c, p.y + 5, p.x + c + 5, p.y + 1, p.x + c + 10, p.y + 5])
-      fill(C_WHITE)
-    }
+    for (let c = 8; c < p.w - 8; c += 24) rectfill(p.x + c, p.y + 4, 9, 4, C_S_HI)
   } else {
-    rectfill(p.x, p.y, p.w, 6, C_P_TOP)
-    rectfill(p.x, p.y + 6, p.w, 8, C_P_SIDE)
-    rectfill(p.x, p.y + 14, p.w, 2, C_P_DARK)
-    for (let c = 3; c < p.w - 3; c += 9) rectfill(p.x + c, p.y - 2, 3, 2, C_P_TOP)
+    for (let i = 0; i < n; i++) {
+      const tx = p.x + jx + i * CELL
+      const tops = { basic: C_P_TOP, dynamic: C_D_TOP, crumble: C_CR_TOP, ghost: C_GH_TOP, bouncy: C_ORANGE }
+      const sides = { basic: C_P_SIDE, dynamic: C_D_SIDE, crumble: C_CR_SIDE, ghost: C_GH_SIDE, bouncy: C_BO_SIDE }
+      drawTile(tx, p.y, tops[p.type] || C_P_TOP, sides[p.type] || C_P_SIDE)
+      if (p.type === 'crumble') {
+        rectfill(tx + 8, p.y + 4, 2, 9, C_CR_DARK)
+        rectfill(tx + 18, p.y + 7, 2, 7, C_CR_DARK)
+        rectfill(tx + 13, p.y + 13, 2, 5, C_CR_DARK)
+      }
+      if (p.type === 'bouncy') {
+        shape([tx + 6, p.y + 10, tx + 12, p.y + 4, tx + 18, p.y + 10])
+        fill(C_WHITE)
+        shape([tx + 14, p.y + 10, tx + 20, p.y + 4, tx + 26, p.y + 10])
+        fill(C_WHITE)
+      }
+    }
   }
+  if (p.type === 'ghost') alpha(1)
   if (p.spike) {
     for (let sx = p.spike.x1; sx + 8 <= p.spike.x2 + 0.1; sx += 8) {
-      shape([sx, p.y, sx + 4, p.y - 9, sx + 8, p.y])
+      shape([sx, p.y + 1, sx + 4, p.y - 10, sx + 8, p.y + 1])
+      fill(C_RED_D)
+      shape([sx + 1, p.y + 1, sx + 4, p.y - 7, sx + 7, p.y + 1])
       fill(C_RED)
     }
-    rectfill(p.spike.x1, p.y - 2, p.spike.x2 - p.spike.x1, 2, C_RED_D)
   }
 }
 
@@ -583,12 +636,15 @@ function drawBall(b) {
     alpha(0.4)
     circ(b.x, b.y, 10 * pu, C_GOLD)
     alpha(1)
+    circ(b.x, b.y, 8, C_BLACK)
     circfill(b.x, b.y, 6.5, C_GOLD)
     circfill(b.x - 2, b.y - 2, 2, C_WHITE)
     return
   }
-  circfill(b.x, b.y, 4, b.o ? C_ORANGE : C_YELLOW)
-  circfill(b.x - 1.5, b.y - 1.5, 1.3, C_WHITE)
+  const col = b.o ? C_ORANGE : C_YELLOW
+  circ(b.x, b.y, 5.5, C_BLACK)
+  circfill(b.x, b.y, 4, col)
+  circfill(b.x - 1.5, b.y - 1.5, 1.4, C_WHITE)
 }
 
 function drawTrajectory() {
@@ -622,6 +678,29 @@ function drawTrajectory() {
 }
 
 function drawSlime() {
+  const feet = slime.y + slime.r * 0.92
+  if (Sprites.ready) {
+    let key, w
+    const blinkFrame = slime.invuln > 0 && Math.floor(T * 14) % 2 === 0
+    if (slime.squashT > 0) { key = 'land'; w = 50 }
+    else if (blinkFrame) { key = 'hurt'; w = 44 }
+    else if (!slime.grounded) {
+      if (slime.vy < 60) { key = 'jump'; w = 40 } else { key = 'fall'; w = 44 }
+    } else if (slime.size === 3) {
+      key = Math.floor(T * 3) % 2 ? 'idle0' : 'idle1'
+      w = 44
+    } else if (slime.size === 2) { key = 'mid'; w = 37 } else { key = 'small'; w = 29 }
+    let sx = 1, sy = 1
+    if (charge.on) {
+      const c = Math.min(charge.t / CHARGE_T, 1)
+      sy = 1 - 0.26 * c
+      sx = 1 + 0.2 * c
+    }
+    alpha(slime.invuln > 0 && !blinkFrame ? 0.7 : 1)
+    Sprites.draw(key, slime.x, feet, w, sx, sy)
+    alpha(1)
+    return
+  }
   const blink = slime.invuln > 0 && Math.floor(T * 18) % 2 === 0
   let sx = 1, sy = 1
   if (charge.on) {
@@ -650,16 +729,23 @@ function drawParticles() {
 }
 
 function drawSpikeWall() {
-  rectfill(VW - 5, 0, 5, VH, C_RED_D)
+  rectfill(VW - 8, 0, 8, VH, C_FRAME)
   for (let y = 2; y < VH; y += 11) {
-    shape([VW - 4, y, VW - SPIKE_W - 2, y + 5.5, VW - 4, y + 11])
+    shape([VW - 3, y - 1, VW - SPIKE_W, y + 5.5, VW - 3, y + 12])
+    fill(C_RED_D)
+    shape([VW - 4, y + 1, VW - SPIKE_W - 2, y + 5.5, VW - 4, y + 10])
     fill(C_RED)
   }
 }
 
 function drawCeiling() {
-  rectfill(0, 0, VW, CEIL, C_BLACK)
-  rectfill(0, CEIL, VW, 2, C_BG1)
+  drawCheckerBand(0, 0, VW, CEIL, 8)
+}
+
+function drawFrameEdges() {
+  drawCheckerBand(0, CEIL, 9, VH - CEIL, 9)
+  drawCheckerBand(VW - 9, CEIL, 9, VH - CEIL, 9)
+  drawCheckerBand(0, VH - 14, VW, 14, 7)
 }
 
 function drawVoid() {
@@ -669,24 +755,34 @@ function drawVoid() {
 }
 
 function drawHUD() {
-  circfill(16, VH - 15, 8, C_SLIME)
-  rectfill(8, VH - 15, 16, 8, C_SLIME)
-  circfill(13, VH - 17, 1.6, C_WHITE)
-  circfill(19, VH - 17, 1.6, C_WHITE)
-  circfill(13.8, VH - 17, 0.8, C_BLACK)
-  circfill(19.8, VH - 17, 0.8, C_BLACK)
+  rectfill(8, VH - 27, 122, 23, C_FRAME, 9)
+  rect(8, VH - 27, 122, 23, C_BLACK, 9)
+  if (Sprites.ready) {
+    Sprites.draw('big', 24, VH - 8, 26)
+  } else {
+    circfill(20, VH - 14, 8, C_SLIME)
+    rectfill(12, VH - 14, 16, 8, C_SLIME)
+    circfill(17, VH - 16, 1.6, C_WHITE)
+    circfill(23, VH - 16, 1.6, C_WHITE)
+  }
   for (let i = 0; i < 3; i++) {
     const filled = i < slime.size
-    const col = !filled ? C_BLACK : (slime.size === 1 ? (Math.floor(T * 6) % 2 ? C_RED : C_SLIME) : C_SLIME)
-    rectfill(30 + i * 21, VH - 20, 18, 10, col)
-    rect(30 + i * 21, VH - 20, 18, 10, C_GRAY)
+    const col = !filled ? C_LIFE_EMPTY : (slime.size === 1 ? (Math.floor(T * 6) % 2 ? C_RED : C_SLIME) : C_SLIME)
+    rectfill(38 + i * 28, VH - 21, 26, 12, col, 4)
+    rect(38 + i * 28, VH - 21, 26, 12, C_BLACK, 4)
   }
   const ratio = (camSpd - 40) / 80
+  const gx = VW - 50, gy = 26, r = 17
+  for (let i = 0; i <= 10; i++) {
+    const a0 = Math.PI * (1 - i / 10)
+    const col = i < 5 ? C_SLIME : i < 8 ? C_ORANGE : C_RED
+    line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 2), gy - Math.sin(a0) * (r + 2), col)
+  }
+  const na = Math.PI * (1 - ratio)
+  line(gx, gy, gx + Math.cos(na) * (r - 5), gy - Math.sin(na) * (r - 5), C_WHITE)
+  circfill(gx, gy, 2, C_WHITE)
   textsize(8)
-  text(VW - 74, 4, 'VITESSE', C_GRAY)
-  rectfill(VW - 76, 13, 66, 8, C_BLACK)
-  rectfill(VW - 74, 15, Math.round(62 * ratio), 4, ratio < 0.5 ? C_SLIME : (ratio < 0.8 ? C_ORANGE : C_RED))
-  rect(VW - 76, 13, 66, 8, C_GRAY)
+  text(VW - 76, 2, 'VITESSE', C_WHITE)
   textsize(9)
   if (slime.x - slime.r < camX + 40) {
     alpha(0.4 + 0.3 * Math.sin(T * 12))
@@ -747,22 +843,24 @@ function drawSoundIcon() {
 function draw() {
   ctx().setTransform(SCALE, 0, 0, SCALE, 0, 0)
   drawBG()
-  if (state === 'title') { drawTitle(); drawSoundIcon(); return }
+  if (state === 'title') { drawTitle(); drawSoundIcon(); drawVignette(); return }
   const shx = shakeT > 0 ? rand(-3, 3) : 0
   const shy = shakeT > 0 ? rand(-3, 3) : 0
   push(Math.round(-camX) + shx, shy)
   for (const p of platforms) drawPlat(p)
   for (const b of balls) if (!b.taken) drawBall(b)
   drawParticles()
-  drawSlime()
+  if (state === 'over' && Sprites.ready) Sprites.draw('splat', slime.x, slime.y + slime.r * 0.9, 66)
+  else drawSlime()
   if (charge.on) drawTrajectory()
   pop()
   drawSpikeWall()
   drawCeiling()
-  drawVoid()
+  drawFrameEdges()
   drawHUD()
   if (state === 'over') drawOver()
   drawSoundIcon()
+  drawVignette()
 }
 
 function init() {
@@ -772,4 +870,5 @@ function init() {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
   } catch (e) {}
   Music.restore()
+  Sprites.load()
 }

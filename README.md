@@ -14,13 +14,17 @@ css/style.css     ← styles de la page
 js/game.js        ← moteur du jeu (rendu, physique, génération)
 js/music.js       ← musique chiptune procédurale (module Music)
 js/crypto.js      ← signature HMAC des scores (module Crypto)
+js/sprites.js     ← chargement et dessin des sprites du slime
+vendor/           ← litecanvas embarqué (fallback CDN inclus)
+ASSETS/           ← direction artistique + sprites
+tools/            ← scripts d'extraction des sprites (Python)
 decode.html       ← outil créateur : vérifier les codes (autonome)
 docs/             ← spécifications de design
 ```
 
-### Rendu rétro
+### Rendu et sprites
 
-Le jeu est rendu en 960×540 natif avec une logique interne en coordonnées virtuelles 480×270 (zoom ×2) : le style « gros pixels » est conservé dans les formes, mais le texte et tout élément HTML autour restent nets.
+Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites de la feuille fournie (`ASSETS/sprites/game/`) : idle animé, saut, chute, atterrissage, blessure, splat de mort et 3 tailles de vie ; fallback procédural si les images manquent. Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures en damier et la jauge de vitesse reprennent la direction artistique.
 
 ### Contrôles (PC & mobile)
 
