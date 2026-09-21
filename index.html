@@ -94,6 +94,7 @@ function makeCode(score) {
 litecanvas({ width: 480, height: 270, autoscale: true })
 
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
+const VERSION = '2.0'
 const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
 const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
 
@@ -184,7 +185,7 @@ function canReach(a, target, mul, dirX) {
   for (const p of [1, 0.85]) {
     for (let k = 0; k < 7; k++) {
       const base = 0.5 + k * 0.13
-      const ang = dirX > 0 ? base : Math.PI - base
+      const ang = dirX > 0 ? -base : -(Math.PI - base)
       const v = VMAX * p * mul
       if (simLandV(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target)) return true
     }
@@ -210,7 +211,7 @@ function spawnBalls(a, b, gapCells) {
 }
 
 function spawnBranch(anchor) {
-  if (elapsed < 30 || rand() > 0.35) return
+  if (elapsed < 20 || rand() > 0.45) return
   const dRow = rand() < 0.5 ? -2 : 2
   const row = clamp(anchor.row + dRow, 0, 4)
   if (row === anchor.row) return
@@ -236,10 +237,10 @@ function spawnNext() {
     let type
     if (roll < 0.38) type = 'basic'
     else if (roll < 0.51) type = 'dynamic'
-    else if (roll < 0.62) type = elapsed > 25 ? 'crumble' : 'basic'
+    else if (roll < 0.62) type = elapsed > 12 ? 'crumble' : 'basic'
     else if (roll < 0.72) type = 'sticky'
-    else if (roll < 0.82) type = elapsed > 25 ? 'ghost' : 'basic'
-    else if (roll < 0.92) type = elapsed > 45 ? 'bouncy' : 'basic'
+    else if (roll < 0.82) type = elapsed > 12 ? 'ghost' : 'basic'
+    else if (roll < 0.92) type = elapsed > 25 ? 'bouncy' : 'basic'
     else type = 'basic'
     let cells
     if (type === 'basic') cells = randi(2, 5)
@@ -595,15 +596,20 @@ function drawTitle() {
   drawBlob(W / 2, 128 + bob, 20, 1, 1, false)
   textalign('center', 'top')
   textsize(10)
-  text(W / 2, 172, 'Maintiens pour charger le saut, vise, relache', C_WHITE)
+  text(W / 2, 166, 'Maintiens pour charger, vise avec le curseur, relache', C_WHITE)
   alpha(0.55 + 0.45 * Math.sin(T * 3))
+  text(W / 2, 182, "Vise meme vers l'arriere pour les billes dorees !", C_GOLD)
+  alpha(1)
   textsize(12)
-  text(W / 2, 196, 'Clique ou touche pour commencer', C_GREEN)
+  alpha(0.55 + 0.45 * Math.sin(T * 3))
+  text(W / 2, 200, 'Clique ou touche pour commencer', C_GREEN)
   alpha(1)
   if (best > 0) {
     textsize(11)
-    text(W / 2, 224, 'RECORD : ' + best, C_GOLD)
+    text(W / 2, 222, 'RECORD : ' + best, C_GOLD)
   }
+  textsize(8)
+  text(W - 24, H - 12, 'v' + VERSION, C_GRAY)
   textalign('start', 'top')
 }
 

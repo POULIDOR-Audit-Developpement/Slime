@@ -94,13 +94,13 @@ Musique, leaderboard en ligne, personnalisation, PWA.
 - **Cassable** (grise fissurée) : se fissure à l'atterrissage, casse 0,5 s après (particules + son) ; le slime doit re-sauter vite.
 - **Éphémère** (blanche translucide clignotante) : disparaît dès qu'on saute depuis ou qu'on glisse de son bord — usage unique.
 - **Rebondissante** (orange à chevrons) : rebond automatique à l'atterrissage (vy = −400, vitesse horizontale conservée avec un minimum de +140 vers l'avant si faible) ; pas de charge possible dessus.
-- Génération : basique 38 %, dynamique 13 %, cassable 11 %, collante 10 %, éphémère 10 %, rebondissante 10 %, basique-à-pics 8 % ; cassable/éphémère après 25 s, rebondissante après 45 s.
+- Génération : basique 38 %, dynamique 13 %, cassable 11 %, collante 10 %, éphémère 10 %, rebondissante 10 %, basique-à-pics 8 % ; cassable/éphémère après 12 s, rebondissante après 25 s.
 - Atteignabilité étendue : depuis une rebondissante, le saut sortant simulé est le rebond fixe.
 
 ## 13. Visée 360° et branches bonus
 
 - Suppression du verrou « vers la droite » : la visée est libre à 360°, la caméra continue d'avancer → revenir en arrière est un vrai risque.
-- Branches bonus : après ~30 s, 35 % des plateformes principales ancrent une branche de 1 plateforme (2 cellules) placée **en arrière** (3-6 cellules) et ±2 rangées, avec une **bille dorée** (50 pts, ×5) et une bille normale en chemin.
+- Branches bonus : après ~20 s, 45 % des plateformes principales ancrent une branche de 1 plateforme (2 cellules) placée **en arrière** (3-6 cellules) et ±2 rangées, avec une **bille dorée** (50 pts, ×5) et une bille normale en chemin.
 - La garantie d'atteignabilité s'applique aux branches (saut vers l'arrière simulé depuis l'ancrage) ; anti-chevauchement avec le chemin principal.
 
 ## 14. Musique
