@@ -2,9 +2,9 @@ litecanvas({
   autoscale: true
 })
 
-const VW = 480, VH = 270
 let VSC = 1, VOX = 0, VOY = 0
 let framePattern = null
+let voidPattern = null
 
 function calcView() {
   VSC = Math.min(W / VW, H / VH)
@@ -21,18 +21,46 @@ function buildFramePattern() {
   framePattern = ctx().createPattern(img, 'repeat')
 }
 
+function ensureVoidPattern() {
+  if (voidPattern || !Sprites.ready) return
+  const im = Sprites.get('voidBand')
+  if (im && im.width) voidPattern = ctx().createPattern(im, 'repeat')
+}
+
 function drawOuterFrame() {
   const c = ctx()
   c.save()
-  c.setTransform(1, 0, 0, 1, 0, 0)
-  c.fillStyle = framePattern || '#131735'
-  c.fillRect(0, 0, W, H)
+  if (voidPattern) {
+    c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
+    c.fillStyle = voidPattern
+    c.fillRect(-VOX / VSC - 2, -VOY / VSC - 2, W / VSC + 4, H / VSC + 4)
+  } else {
+    c.setTransform(1, 0, 0, 1, 0, 0)
+    c.fillStyle = framePattern || '#131735'
+    c.fillRect(0, 0, W, H)
+  }
   c.restore()
 }
-const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
-const VERSION = '2.2'
-const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
-const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
+const VERSION = '3.0'
+// Murs de damage issus du layout éditable (onglet VUE de l'éditeur).
+let WALL = { ceil: TIP_T, left: TIP_L, right: SPIKE_W }
+// Réglages globaux des plateformes (onglet VUE), surchargés par plateforme.
+let PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
+
+function applyLayout() {
+  const l = Patterns.getLayout()
+  if (l && l.walls) {
+    WALL = { ceil: l.walls.ceil, left: l.walls.left, right: l.walls.right }
+  }
+  if (l && l.plat) {
+    PLAT = {
+      crumbleT: Math.max(0.2, Math.min(2, +l.plat.crumbleT || CRUMBLE_T)),
+      dynLife: Math.max(1, Math.min(10, +l.plat.dynLife || 4)),
+      spdMul: Math.max(0.5, Math.min(2, +l.plat.spdMul || 1))
+    }
+  }
+  Phys.setWalls(WALL)
+}
 
 const COLORS = [
   '#0d0d21', '#191936', '#232348', '#2e2e5e',
@@ -83,16 +111,21 @@ const LETTERS = {
 }
 
 let state = 'title'
+let runStarted = false
 let camX = 0, camSpd = 40, elapsed = 0
-let platforms = [], balls = [], particles = []
+let platforms = [], balls = [], particles = [], decors = [], wallsArr = []
 let slime = null
 let charge = { on: false, t: 0, id: -1, aim: { x: 0, y: 0 } }
-let ballsCollected = 0, goldsCollected = 0, scoreCode = null, deathT = 0, shakeT = 0
+let ballsCollected = 0, goldsCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
 let best = 0, newRecord = false
+let testMode = false, testSecT = 0
 
-function rowY(r) { return ROW0 + r * RS }
 function slimeR() { return 18 }
 function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS }
+function fmtTime(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60)
+  return m + ':' + String(s).padStart(2, '0')
+}
 
 function h32(n) {
   n = Math.imul(n ^ (n >>> 16), 2246822519)
@@ -100,118 +133,18 @@ function h32(n) {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296
 }
 
-function simLandV(sx, sy, vx, vy, target) {
-  let x = sx, y = sy
-  const dt = 1 / 60, r = 13
-  for (let i = 0; i < 240; i++) {
-    vy += GRAV * dt
-    x += vx * dt
-    y += vy * dt
-    if (y - r < CEIL) { y = CEIL + r; if (vy < 0) vy = 0 }
-    if (vy >= 0 && x > target.x - 3 && x < target.x + target.w + 3 && y + r >= target.y && y + r <= target.y + 16) return true
-    if (y > VH + 60) return false
-  }
-  return false
-}
-
-function canReach(a, target, mul, dirX) {
-  dirX = dirX || 1
-  const sx = dirX > 0 ? a.x + a.w - 10 : a.x + 10
-  const sy = a.y - 12
-  for (const p of [1, 0.85]) {
-    for (let k = 0; k < 7; k++) {
-      const base = 0.5 + k * 0.13
-      const ang = dirX > 0 ? -base : -(Math.PI - base)
-      const v = VMAX * p * mul
-      if (simLandV(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target)) return true
-    }
-  }
-  return false
-}
-
-function canReachBounce(a, target) {
-  return simLandV(a.x + a.w - 10, a.y - 12, BOUNCE_VX, -BOUNCE_VY, target)
-}
-
-function spawnBalls(a, b, gapCells) {
-  if (rand() < 0.62) {
-    const gx = a.x + a.w + gapCells * CELL / 2
-    const top = Math.min(a.y, b.y)
-    for (let i = -1; i <= 1; i++) {
-      const by = clamp(top - 30 - (i === 0 ? 12 : 0), CEIL + 14, 252)
-      balls.push({ x: gx + i * 13, y: by, o: rand() < 0.3, taken: false })
-    }
-  } else if (b.w >= 3 * CELL && rand() < 0.45) {
-    for (let i = 0; i < 3; i++) balls.push({ x: b.x + b.w / 2 + (i - 1) * 14, y: b.y - 12, o: rand() < 0.3, taken: false })
-  }
-}
-
-function spawnBranch(anchor) {
-  if (elapsed < 20 || rand() > 0.45) return
-  const dRow = rand() < 0.5 ? -2 : 2
-  const row = clamp(anchor.row + dRow, 0, 4)
-  if (row === anchor.row) return
-  const p = { x: anchor.x - randi(3, 6) * CELL, row, y: rowY(row), baseY: rowY(row), w: 2 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null, branch: true }
-  if (p.x < camX + 30) return
-  for (const q of platforms) {
-    if (q.dead) continue
-    if (p.x < q.x + q.w + 8 && p.x + p.w > q.x - 8 && Math.abs(p.y - q.y) < 24) return
-  }
-  if (!canReach(anchor, p, 1, -1)) return
-  platforms.push(p)
-  balls.push({ x: p.x + p.w / 2, y: p.y - 14, o: false, taken: false, gold: true })
-  balls.push({ x: p.x + p.w + CELL, y: (p.y + anchor.y) / 2 - 8, o: rand() < 0.4, taken: false })
-}
-
+// --- Génération 100% patterns : le pool (utilisateur ou par défaut) est
+// --- instancié, aligné sur la dernière plateforme, validé, puis ajouté.
 function spawnNext() {
   const last = platforms[platforms.length - 1]
-  const D = Math.min(elapsed / 75, 1)
-  for (let attempt = 0; attempt < 24; attempt++) {
-    let gap = 2 + randi(0, Math.round(2 * D))
-    let dRow = randi(-2, 2)
-    const roll = rand()
-    let type
-    if (roll < 0.38) type = 'basic'
-    else if (roll < 0.51) type = 'dynamic'
-    else if (roll < 0.62) type = elapsed > 12 ? 'crumble' : 'basic'
-    else if (roll < 0.72) type = 'sticky'
-    else if (roll < 0.82) type = elapsed > 12 ? 'ghost' : 'basic'
-    else if (roll < 0.92) type = elapsed > 25 ? 'bouncy' : 'basic'
-    else type = 'basic'
-    let cells
-    if (type === 'basic') cells = randi(2, 5)
-    else if (type === 'dynamic' || type === 'sticky' || type === 'ghost') cells = randi(2, 3)
-    else if (type === 'crumble') cells = randi(2, 4)
-    else cells = 2
-    if (elapsed < 10) { gap = Math.min(gap, 2); dRow = clamp(dRow, -1, 1); type = 'basic'; cells = randi(3, 4) }
-    if (dRow === -2 && gap > 2) dRow = -1
-    if (last.type === 'sticky') { gap = Math.min(gap, 3); if (dRow < -1) dRow = -1; if (dRow === -1 && gap > 2) gap = 2 }
-    if (last.type === 'bouncy' && dRow < -1) dRow = -1
-    const row = clamp(last.row + dRow, 0, 4)
-    const p = { x: last.x + last.w + gap * CELL, row, y: rowY(row), baseY: rowY(row), w: cells * CELL, type, amp: 0, spd: 0, ph: 0, spike: null }
-    if (type === 'dynamic') {
-      p.amp = rand(16, 34)
-      p.spd = rand(1.2, 2.1)
-      p.ph = rand(0, TAU)
-      p.baseY = clamp(p.baseY, CEIL + 24 + p.amp, 248 - p.amp)
-      p.y = p.baseY
-    }
-    if (type === 'basic' && cells >= 4 && elapsed > 20 && rand() < 0.3) {
-      p.spike = { x1: p.x + p.w * 0.28, x2: p.x + p.w * 0.78 }
-    }
-    const checkY = type === 'dynamic' ? p.baseY - p.amp * 0.7 : p.y
-    const target = { x: p.x, y: checkY, w: p.w }
-    const ok = last.type === 'bouncy' ? canReachBounce(last, target) : canReach(last, target, last.type === 'sticky' ? STICKY_MUL : 1, 1)
-    if (ok) {
-      platforms.push(p)
-      spawnBalls(last, p, gap)
-      spawnBranch(p)
-      return
-    }
+  const sec = Patterns.spawnSection(last, elapsed)
+  for (const p of sec.platforms) platforms.push(p)
+  for (const b of sec.balls) balls.push(b)
+  for (const d of sec.decor) decors.push(d)
+  for (const wl of sec.walls || []) wallsArr.push(wl)
+  if (sec.platforms.length && sec.platforms[0].safety && Patterns.usingDefaults()) {
+    console.warn('SLIME : pool vide, plateforme de sécurité utilisée')
   }
-  const p = { x: last.x + last.w + 2 * CELL, row: last.row, y: rowY(last.row), baseY: rowY(last.row), w: 3 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null }
-  platforms.push(p)
-  spawnBalls(last, p, 2)
 }
 
 function genUntil() {
@@ -222,6 +155,8 @@ function genUntil() {
 function cleanup() {
   platforms = platforms.filter(p => !p.dead && p.x + p.w > camX - 80)
   balls = balls.filter(b => !b.taken && b.x > camX - 40)
+  decors = decors.filter(d => d.x + d.w > camX - 80)
+  wallsArr = wallsArr.filter(wl => wl.x + wl.w > camX - 80)
 }
 
 function killPlat(p, color) {
@@ -247,19 +182,26 @@ function startGame() {
   platforms = []
   balls = []
   particles = []
+  decors = []
+  wallsArr = []
   ballsCollected = 0
   goldsCollected = 0
   newRecord = false
   scoreCode = null
   deathT = 0
+  copiedT = 0
   shakeT = 0
+  testSecT = 0
   charge = { on: false, t: 0, id: -1, aim: { x: 0, y: 0 } }
-  const first = { x: 16, row: 2, y: rowY(2), baseY: rowY(2), w: 5 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null }
+  // Départ : plateforme + slime centrés au milieu de l'écran.
+  const first = { x: VW / 2 - (5 * CELL) / 2, row: 2, y: rowY(2), baseY: rowY(2), w: 5 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null }
   platforms.push(first)
-  slime = { x: 80, y: rowY(2) - 18, vx: 0, vy: 0, size: 3, grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0 }
+  slime = { x: VW / 2, y: rowY(2) - 18, vx: 0, vy: 0, size: 3, grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0 }
   slime.r = slimeR()
-  for (let i = 0; i < 20; i++) genUntil()
+  let guard = 0
+  while (platforms[platforms.length - 1].x + platforms[platforms.length - 1].w < VW * 2 && guard++ < 60) spawnNext()
   state = 'playing'
+  runStarted = false
 }
 
 function damage() {
@@ -276,13 +218,14 @@ function die() {
   if (state === 'over') return
   state = 'over'
   deathT = 0
+  charge.on = false
   const s = currentScore()
   newRecord = s > best && s > 0
   if (newRecord) {
     best = s
     try { localStorage.setItem('slime_best', String(best)) } catch (e) {}
   }
-  scoreCode = Crypto.makeCode(s)
+  scoreCode = Crypto.makeCode(s, elapsed)
   shakeT = 0.4
   sfx(SFX_DIE)
   burst(slime.x, slime.y, C_SLIME, 24, 220)
@@ -303,6 +246,7 @@ function doJump() {
   slime.grounded = false
   slime.groundPlat = null
   slime.jumpMul = 1
+  runStarted = true
   sfx(SFX_JUMP)
 }
 
@@ -320,10 +264,10 @@ function land(p) {
   slime.y = p.y - slime.r
   slime.squashT = 0.1
   slime.jumpMul = p.type === 'sticky' ? STICKY_MUL : 1
-  if (p.type === 'crumble' && !p.crackT) p.crackT = CRUMBLE_T
+  if (p.type === 'crumble' && !p.crackT) p.crackT = p.crumbleT || PLAT.crumbleT
   if (p.type === 'dynamic' && !p.timerSet) {
     p.timerSet = true
-    p.timer = 4
+    p.timer = p.dynLife || PLAT.dynLife
   }
   sfx(SFX_LAND, 0, 0.2)
 }
@@ -352,7 +296,11 @@ function updSlime(dt) {
     slime.vx *= Math.pow(0.6, dt)
     slime.x += slime.vx * dt
     slime.y += slime.vy * dt
-    if (slime.y - slime.r < CEIL) { slime.y = CEIL + slime.r; if (slime.vy < 0) slime.vy = 0 }
+    if (slime.y - slime.r < WALL.ceil) {
+      slime.y = WALL.ceil + slime.r
+      if (slime.vy < 0) slime.vy = 0
+      damage()
+    }
     if (slime.vy >= 0) {
       for (const p of platforms) {
         if (p.dead) continue
@@ -361,6 +309,31 @@ function updSlime(dt) {
           break
         }
       }
+    }
+  }
+  // Murs verticaux : contact latéral = repoussé (dégât si flancs piqués).
+  // Le sommet atterrissable est géré par la plateforme wallTop (y+r == y1
+  // quand on est posé dessus, donc pas d'intersection ici).
+  for (const wl of wallsArr) {
+    if (slime.x + slime.r > wl.x && slime.x - slime.r < wl.x + wl.w && slime.y + slime.r > wl.y1 + 2 && slime.y - slime.r < wl.y2 - 2) {
+      const cx = wl.x + wl.w / 2
+      if (slime.x < cx) {
+        slime.x = wl.x - slime.r
+        if (slime.vx > 0) slime.vx = -100
+      } else {
+        slime.x = wl.x + wl.w + slime.r
+        if (slime.vx < 0) slime.vx = 100
+      }
+      if (wl.spiked) {
+        damage()
+        if (wl.kind === 'ceil') slime.vy = Math.max(slime.vy, 120)
+        else {
+          slime.vy = -240
+          slime.grounded = false
+          slime.groundPlat = null
+        }
+      }
+      break
     }
   }
   for (const p of platforms) {
@@ -372,8 +345,13 @@ function updSlime(dt) {
       break
     }
   }
-  if (slime.x + slime.r > camX + VW - SPIKE_W) {
-    slime.x = camX + VW - SPIKE_W - slime.r - 2
+  if (slime.x - slime.r < camX + WALL.left) {
+    slime.x = camX + WALL.left + slime.r
+    if (slime.vx < 0) slime.vx = 140
+    damage()
+  }
+  if (slime.x + slime.r > camX + VW - WALL.right) {
+    slime.x = camX + VW - WALL.right - slime.r
     if (slime.vx > 0) slime.vx = -120
     damage()
   }
@@ -414,15 +392,26 @@ function update(dt) {
   if (dt > 1) dt /= 1000
   if (iskeypressed('m')) Music.toggle()
   if (state === 'title') { camX += 14 * dt; return }
-  if (state === 'over') { deathT += dt; updParticles(dt); if (shakeT > 0) shakeT -= dt; return }
+  if (state === 'over') { deathT += dt; if (copiedT > 0) copiedT -= dt; updParticles(dt); if (shakeT > 0) shakeT -= dt; return }
+  // Avant le premier saut : tout est gelé (caméra, chrono, timers, musique),
+  // seule la visée du saut est active.
+  if (!runStarted) {
+    if (charge.on) {
+      charge.t += dt
+      if (!slime.grounded) charge.on = false
+    }
+    updParticles(dt)
+    return
+  }
   elapsed += dt
-  camSpd = Math.min(40 + Math.floor(elapsed / 10) * 5, 120)
+  camSpd = testMode ? 55 : Math.min(40 + Math.floor(elapsed / 10) * 5, 120)
   camX += camSpd * dt
+  if (testMode) testSecT += dt
   if (shakeT > 0) shakeT -= dt
   genUntil()
   cleanup()
   for (const p of platforms) {
-    if (p.type === 'dynamic') p.y = p.baseY + Math.sin(T * p.spd + p.ph) * p.amp
+    if (p.type === 'dynamic') p.y = p.baseY + Math.sin(T * p.spd * PLAT.spdMul + p.ph) * p.amp
     if (p.crackT > 0) {
       p.crackT -= dt
       if (p.crackT <= 0) {
@@ -456,9 +445,15 @@ function tap(px, py, touchId) {
   calcView()
   const x = (px - VOX) / VSC
   const y = (py - VOY) / VSC
-  if (x < 28 && y < 28) { Music.toggle(); return }
-  if (state === 'title') { startGame(); return }
-  if (state === 'over') { if (deathT > 0.7) startGame(); return }
+  if (x < 30 && y < 24) { Music.toggle(); return }
+  if (fsSupported() && x > VW - 34 && y < 26) { toggleFullscreen(); return }
+  if (state === 'title') startGame() // pas de return : ce même appui charge le 1er saut
+  if (state === 'over') {
+    if (deathT < 0.7) return
+    if (hitBtn(x, y, BTN_COPY)) { copyCode(); return }
+    if (hitBtn(x, y, BTN_REPLAY)) { startGame(); return }
+    return
+  }
   if (slime.grounded && !charge.on) {
     charge.on = true
     charge.t = 0
@@ -500,7 +495,7 @@ function drawBG() {
     const bw = 350
     const off1 = -(camX * 0.08 % (bw + 280))
     alpha(0.42)
-    for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, 210)
+    for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, VH - 96)
     alpha(0.85)
     const off2 = -(camX * 0.3 % 760)
     for (let k = 0; k < 3; k++) {
@@ -515,15 +510,6 @@ function drawBG() {
     if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
     if (h > 0.86) rectfill(x + h2 * 40, 100 + h * 90, 18, 3, C_BLUE_HI)
   })
-}
-
-function drawCheckerBand(x, y, w, h, size) {
-  rectfill(x, y, w, h, C_FRAME)
-  for (let yy = 0; yy < h; yy += size) {
-    for (let xx = 0; xx < w; xx += size) {
-      if (((xx / size) | 0) % 2 === ((yy / size) | 0) % 2) rectfill(x + xx, y + yy, size, size, C_FRAME_L)
-    }
-  }
 }
 
 function drawVignette() {
@@ -591,7 +577,16 @@ function drawTitle() {
     lx += 6 * px
   }
   const bob = Math.sin(T * 2.5) * 6
-  drawBlob(VW / 2, 128 + bob, 20, 1, 1, false)
+  if (Sprites.ready) {
+    alpha(0.25)
+    push(VW / 2, 153, 0, 1 + 0.05 * bob / 6, 0.28)
+    circfill(0, 0, 24, C_BLACK)
+    pop()
+    alpha(1)
+    Sprites.draw('big', VW / 2, 152 + bob, 48)
+  } else {
+    drawBlob(VW / 2, 128 + bob, 20, 1, 1, false)
+  }
   textalign('center', 'top')
   textsize(10)
   text(VW / 2, 166, 'Maintiens pour charger, vise avec le curseur, relache', C_WHITE)
@@ -602,12 +597,32 @@ function drawTitle() {
   alpha(0.55 + 0.45 * Math.sin(T * 3))
   text(VW / 2, 200, 'Clique ou touche pour commencer', C_GREEN)
   alpha(1)
+  if (window.innerHeight > window.innerWidth) {
+    textsize(9)
+    text(VW / 2, 244, 'Tourne ton ecran en paysage', C_ORANGE)
+  } else if (/iP(hone|od|ad)/.test(navigator.userAgent || '') && !fsSupported()) {
+    // iPhone/Safari sans API plein écran : l'ajout à l'écran d'accueil
+    // lance le jeu plein écran (métas apple-mobile-web-app-*).
+    textsize(8)
+    alpha(0.7)
+    text(VW / 2, 245, "Plein ecran : ajoute a l'ecran d'accueil", C_WHITE)
+    alpha(1)
+  }
   if (best > 0) {
     textsize(11)
     text(VW / 2, 222, 'RECORD : ' + best, C_GOLD)
   }
   textsize(8)
   text(VW - 24, VH - 12, 'v' + VERSION, C_GRAY)
+  textalign('start', 'top')
+}
+
+function drawReadyHint() {
+  textalign('center', 'top')
+  textsize(10)
+  alpha(0.55 + 0.45 * Math.sin(T * 3))
+  text(VW / 2, 108, 'Maintiens pour viser, relache pour sauter', charge.on ? C_GREEN : C_GOLD)
+  alpha(1)
   textalign('start', 'top')
 }
 
@@ -629,6 +644,34 @@ function drawBlob(x, y, r, sx, sy, blink) {
   pop()
 }
 
+function drawWalls() {
+  for (const wl of wallsArr) {
+    if (wl.kind === 'ceil' && wl.y2 - wl.y1 < 8) continue
+    // corps : tuiles grises empilées
+    if (Sprites.ready) {
+      for (let ty = wl.y1; ty < wl.y2 - 6; ty += 24) {
+        Sprites.drawImage('tileGray', wl.x, ty, wl.w, 24)
+      }
+    } else {
+      for (let ty = wl.y1; ty < wl.y2 - 6; ty += CELL) {
+        drawTile(wl.x, ty, C_CR_TOP, C_CR_SIDE)
+      }
+    }
+    // cap clair à la pointe (sommet atterrissable pour une colonne)
+    const capY = wl.kind === 'ground' ? wl.y1 + 2 : wl.y2 - 6
+    rectfill(wl.x + 3, capY, wl.w - 6, 3, C_WHITE)
+    // flancs piqués
+    if (wl.spiked) {
+      for (let sy = wl.y1 + 6; sy + 8 <= wl.y2 - 2; sy += 8) {
+        shape([wl.x, sy, wl.x - 9, sy + 4, wl.x, sy + 8]); fill(C_RED_D)
+        shape([wl.x, sy + 1, wl.x - 7, sy + 4, wl.x, sy + 7]); fill(C_RED)
+        shape([wl.x + wl.w, sy, wl.x + wl.w + 9, sy + 4, wl.x + wl.w, sy + 8]); fill(C_RED_D)
+        shape([wl.x + wl.w, sy + 1, wl.x + wl.w + 7, sy + 4, wl.x + wl.w, sy + 7]); fill(C_RED)
+      }
+    }
+  }
+}
+
 function drawTile(x, y, top, side) {
   rect(x, y, 32, 32, C_BLACK, 7)
   rectfill(x + 2, y + 2, 28, 28, side, 6)
@@ -638,6 +681,7 @@ function drawTile(x, y, top, side) {
 
 function drawPlat(p) {
   if (p.dead) return
+  if (p.wallTop) return // dessiné par drawWalls (cap de la colonne)
   const n = Math.round(p.w / CELL)
   const jx = p.type === 'crumble' && p.crackT > 0 ? rand(-1.5, 1.5) : 0
   if (Sprites.ready) {
@@ -752,7 +796,7 @@ function drawTrajectory() {
     vy += GRAV * dt
     x += vx * dt
     y += vy * dt
-    if (y - slime.r < CEIL) { y = CEIL + slime.r; if (vy < 0) vy = 0 }
+    if (y - slime.r < WALL.ceil) { y = WALL.ceil + slime.r; if (vy < 0) vy = 0 }
     let hit = false
     if (vy >= 0) {
       for (const p2 of platforms) {
@@ -826,73 +870,93 @@ function drawParticles() {
   alpha(1)
 }
 
-function drawSpikeWall() {
-  rectfill(VW - 8, 0, 8, VH, C_FRAME)
-  for (let y = 2; y < VH; y += 11) {
-    shape([VW - 3, y - 1, VW - SPIKE_W, y + 5.5, VW - 3, y + 12])
-    fill(C_RED_D)
-    shape([VW - 4, y + 1, VW - SPIKE_W - 2, y + 5.5, VW - 4, y + 10])
-    fill(C_RED)
+// ---------- Bandes de danger (rendu unifié : plafond / gauche / droite / bas) ----------
+// Texture bedrock (voidBand) teintée rouge = « ne pas toucher », avec liseré
+// vif sur la frontière létale (sauf pour le bas : chute sous l'écran).
+function drawDamageBand(x, y, w, h, edge) {
+  if (w <= 0 || h <= 0) return
+  const c = ctx()
+  c.save()
+  c.beginPath(); c.rect(x, y, w, h); c.clip()
+  if (voidPattern) {
+    c.fillStyle = voidPattern
+    c.fillRect(x, y, w, h)
+  } else if (Sprites.ready) {
+    Sprites.drawSrc('voidBand', 0, 0, 960, 230, x, y, w, h)
+  } else {
+    c.fillStyle = COLORS[C_RED_D]
+    c.fillRect(x, y, w, h)
+  }
+  c.fillStyle = 'rgba(226,59,59,0.5)'
+  c.fillRect(x, y, w, h)
+  c.restore()
+  if (edge) {
+    c.fillStyle = '#ff7b6e'
+    if (edge === 'bottom') c.fillRect(x, y + h - 2, w, 2)
+    else if (edge === 'right') c.fillRect(x + w - 2, y, 2, h)
+    else if (edge === 'left') c.fillRect(x, y, 2, h)
   }
 }
 
-function drawCeiling() {
-  drawCheckerBand(0, 0, VW, CEIL, 8)
+function drawDamageWalls() {
+  drawDamageBand(0, 0, VW, WALL.ceil, 'bottom')
+  drawDamageBand(0, WALL.ceil, WALL.left, VH - WALL.ceil, 'right')
+  drawDamageBand(VW - WALL.right, WALL.ceil, WALL.right, VH - WALL.ceil, 'left')
 }
 
 function drawFrameEdges() {
-  drawCheckerBand(0, CEIL, 9, VH - CEIL, 9)
-  drawCheckerBand(VW - 9, CEIL, 9, VH - CEIL, 9)
-  if (Sprites.ready) {
-    Sprites.drawSrc('voidBand', 0, 0, 960, 92, 0, VH - 24, VW, 24)
-  } else {
-    drawCheckerBand(0, VH - 14, VW, 14, 7)
-  }
-}
-
-function drawVoid() {
-  alpha(0.45)
-  rectfill(0, VH - 22, VW, 22, C_BLACK)
-  alpha(1)
+  drawDamageBand(0, VH - 8, VW, 8, null)
 }
 
 function drawHUD() {
-  rectfill(8, VH - 30, 150, 26, C_FRAME, 12)
-  rect(8, VH - 30, 150, 26, C_BLACK, 12)
-  if (Sprites.ready) {
-    Sprites.drawImage('hudHead', 11, VH - 27, 32)
-  } else {
-    circfill(24, VH - 17, 9, C_SLIME)
-    rectfill(16, VH - 17, 18, 9, C_SLIME)
-    circfill(21, VH - 19, 1.6, C_WHITE)
-    circfill(27, VH - 19, 1.6, C_WHITE)
-  }
-  const fillW = Math.round(100 * slime.size / 3)
-  const lifeCol = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
-  rectfill(48, VH - 24, 104, 16, C_LIFE_EMPTY, 8)
-  if (fillW > 0) rectfill(50, VH - 22, fillW, 12, lifeCol, 6)
-  if (fillW > 8) {
-    alpha(0.5)
-    rectfill(53, VH - 21, fillW - 8, 3, C_WHITE)
-    alpha(1)
+  const headW = 24
+  for (let i = 0; i < 3; i++) {
+    const hx = 12 + i * (headW + 4), hy = VH - 30
+    const alive = i < slime.size
+    if (Sprites.ready) {
+      alpha(alive ? 1 : 0.22)
+      Sprites.drawImage('hudHead', hx, hy, headW)
+      alpha(1)
+    } else {
+      const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
+      circfill(hx + headW / 2, hy + headW / 2, 9, alive ? col : C_BG1)
+      circ(hx + headW / 2, hy + headW / 2, 9, C_BLACK)
+      if (alive) {
+        circfill(hx + 8, hy + 10, 1.5, C_WHITE)
+        circfill(hx + 16, hy + 10, 1.5, C_WHITE)
+      }
+    }
   }
   const ratio = (camSpd - 40) / 80
-  const gx = VW - 50, gy = 30, r = 17
+  const gx = VW - 76, gy = 56, r = 14
+  rectfill(VW - 98, 32, 90, 30, C_FRAME, 10)
+  rect(VW - 98, 32, 90, 30, C_BLACK, 2)
   for (let i = 0; i <= 10; i++) {
     const a0 = Math.PI * (1 - i / 10)
     const col = i < 5 ? C_SLIME : i < 8 ? C_ORANGE : C_RED
-    line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 2), gy - Math.sin(a0) * (r + 2), col)
+    line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 3), gy - Math.sin(a0) * (r + 3), col)
   }
   const na = Math.PI * (1 - ratio)
-  line(gx, gy, gx + Math.cos(na) * (r - 5), gy - Math.sin(na) * (r - 5), C_WHITE)
-  Sprites.rotated('needleH', -na, gx - 3, gy, 0.08, 0.5, 0.5)
-  circfill(gx - 3, gy, 2.5, C_BLACK)
-  textsize(8)
-  text(VW - 78, 2, 'VITESSE', C_WHITE)
+  if (Sprites.ready) {
+    Sprites.rotated('needleH', -na, gx, gy, 0.08, 0.5, 0.45)
+  } else {
+    line(gx, gy, gx + Math.cos(na) * (r - 4), gy - Math.sin(na) * (r - 4), C_WHITE)
+  }
+  circfill(gx, gy, 2, C_BLACK)
+  textsize(7)
+  text(VW - 52, 43, 'VITESSE', C_WHITE)
   textsize(9)
+  if (testMode) {
+    const name = Patterns.getPinned() ? Patterns.getPinned().name : '?'
+    textalign('center', 'top')
+    textsize(10)
+    rectfill(VW / 2 - 90, 8, 180, 20, C_FRAME, 6)
+    text(VW / 2, 13, 'TEST : ' + name, C_GOLD, 'bold')
+    textalign('start', 'top')
+  }
   if (slime.x - slime.r < camX + 40) {
     alpha(0.4 + 0.3 * Math.sin(T * 12))
-    rectfill(0, CEIL, 5, VH - CEIL, C_RED)
+    rectfill(0, WALL.ceil - 12, 5, VH - WALL.ceil + 12, C_RED)
     textalign('center', 'top')
     textsize(10)
     text(30, 60, 'DANGER', C_RED)
@@ -901,31 +965,79 @@ function drawHUD() {
   }
 }
 
+const BTN_COPY = { x: 62, y: 188, w: 156, h: 30 }
+const BTN_REPLAY = { x: 262, y: 188, w: 156, h: 30 }
+
+function hitBtn(x, y, b) {
+  return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+}
+
+function copyCode() {
+  const ok = () => { copiedT = 1.8 }
+  const manual = () => {
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = scoreCode
+      ta.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      if (document.execCommand('copy')) ok()
+      else window.prompt('Copie le code :', scoreCode)
+      document.body.removeChild(ta)
+    } catch (e) {
+      try { window.prompt('Copie le code :', scoreCode) } catch (e2) {}
+    }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(scoreCode).then(ok, manual)
+    } else manual()
+  } catch (e) { manual() }
+}
+
+function drawBtn(b, label, col, hot) {
+  rectfill(b.x, b.y, b.w, b.h, hot ? C_BG2 : C_FRAME, 8)
+  rect(b.x, b.y, b.w, b.h, C_BLACK, 2)
+  rect(b.x + 3, b.y + 3, b.w - 6, b.h - 6, C_GRAY)
+  textsize(9)
+  text(b.x + b.w / 2, b.y + 11, label, col)
+}
+
 function drawOver() {
-  alpha(0.65)
-  rectfill(0, 0, VW, VH, C_BLACK)
+  const c = ctx()
+  c.save()
+  c.setTransform(1, 0, 0, 1, 0, 0)
+  alpha(0.66)
+  rectfill(0, 0, W, H, C_BLACK)
   alpha(1)
+  c.restore()
   textalign('center', 'top')
   textsize(26)
-  text(VW / 2, 44, 'PERDU !', C_RED, 'bold')
+  text(VW / 2, 40, 'PERDU !', C_RED, 'bold')
   if (newRecord) {
     alpha(0.55 + 0.45 * Math.sin(T * 6))
     textsize(13)
-    text(VW / 2, 78, 'NOUVEAU RECORD !', C_GOLD, 'bold')
+    text(VW / 2, 76, 'NOUVEAU RECORD !', C_GOLD, 'bold')
     alpha(1)
   }
   textsize(9)
-  text(VW / 2, 100, 'CODE DE SCORE', C_GRAY)
-  rectfill(58, 110, VW - 116, 32, C_BG1)
-  rect(58, 110, VW - 116, 32, C_GRAY)
+  text(VW / 2, 98, 'CODE DE SCORE', C_GRAY)
+  rectfill(72, 108, 336, 30, C_BG0)
+  rect(72, 108, 336, 30, C_BLACK, 2)
+  rect(76, 112, 328, 22, C_GRAY)
   textsize(9)
-  text(VW / 2, 121, scoreCode, C_WHITE)
+  text(VW / 2, 118, scoreCode, C_WHITE)
   textsize(8)
-  text(VW / 2, 156, 'Donne ce code au createur pour valider ton score', C_GRAY)
+  text(VW / 2, 152, 'Donne ce code au createur pour valider ton score', C_GRAY)
+  textsize(9)
+  text(VW / 2, 170, 'TEMPS DE JEU : ' + fmtTime(elapsed), C_WHITE)
   if (deathT > 0.7) {
-    alpha(0.55 + 0.45 * Math.sin(T * 4))
-    textsize(12)
-    text(VW / 2, 196, 'TAPE POUR REJOUER', C_GREEN)
+    alpha(clamp((deathT - 0.7) * 3, 0, 1))
+    const copied = copiedT > 0
+    drawBtn(BTN_COPY, copied ? 'CODE COPIE !' : 'COPIER LE CODE', copied ? C_SLIME_L : C_WHITE, copied)
+    alpha(clamp((deathT - 0.7) * 3, 0, 1) * (0.6 + 0.4 * Math.sin(T * 4)))
+    drawBtn(BTN_REPLAY, 'REJOUER', C_GREEN)
     alpha(1)
   }
   textalign('start', 'top')
@@ -933,28 +1045,86 @@ function drawOver() {
 
 function drawSoundIcon() {
   alpha(0.85)
-  rectfill(9, 11, 5, 8, C_WHITE)
-  shape([14, 11, 22, 5, 22, 25, 14, 19])
+  rectfill(9, 10, 4, 6, C_WHITE)
+  shape([13, 10, 19, 4, 19, 22, 13, 16])
   fill(C_WHITE)
   if (Music.muted) {
-    line(24, 9, 31, 21, C_RED)
-    line(31, 9, 24, 21, C_RED)
+    line(21, 8, 27, 18, C_RED)
+    line(27, 8, 21, 18, C_RED)
   } else {
-    circ(25, 15, 4, C_WHITE)
-    circ(25, 15, 7, C_WHITE)
+    circ(20, 13, 3, C_WHITE)
+    circ(20, 13, 5.5, C_WHITE)
   }
+  alpha(1)
+}
+
+// ---------- Plein écran (mobile) ----------
+function fsSupported() {
+  const el = document.documentElement
+  return !!(el.requestFullscreen || el.webkitRequestFullscreen)
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen
+    if (exit) exit.call(document)
+    return
+  }
+  const el = document.documentElement
+  const req = el.requestFullscreen || el.webkitRequestFullscreen
+  if (!req) return
+  try {
+    const p = req.call(el)
+    if (p && p.then) {
+      p.then(() => {
+        // Verrouillage paysage (Android/Chrome en plein écran ; sinon ignoré).
+        try {
+          const lock = screen.orientation && screen.orientation.lock
+          if (lock) lock.call(screen.orientation, 'landscape').catch(() => {})
+        } catch (e) {}
+      }).catch(() => {})
+    }
+  } catch (e) {}
+}
+
+function drawFsIcon() {
+  if (!fsSupported()) return
+  alpha(0.85)
+  const l = 5
+  const x0 = VW - 26, x1 = VW - 8, y0 = 5, y1 = 23
+  // 4 coins "agrandir"
+  line(x0, y0 + l, x0, y0, C_WHITE); line(x0, y0, x0 + l, y0, C_WHITE)
+  line(x1 - l, y0, x1, y0, C_WHITE); line(x1, y0, x1, y0 + l, C_WHITE)
+  line(x0, y1 - l, x0, y1, C_WHITE); line(x0, y1, x0 + l, y1, C_WHITE)
+  line(x1 - l, y1, x1, y1, C_WHITE); line(x1, y1, x1, y1 - l, C_WHITE)
   alpha(1)
 }
 
 function draw() {
   calcView()
+  ensureVoidPattern()
   drawOuterFrame()
-  ctx().setTransform(VSC, 0, 0, VSC, VOX, VOY)
+  const c = ctx()
+  c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
+  c.save()
+  c.beginPath()
+  c.rect(0, 0, VW, VH)
+  c.clip()
   drawBG()
-  if (state === 'title') { drawTitle(); drawSoundIcon(); drawVignette(); rect(-1, -1, VW + 2, VH + 2, C_BLACK); return }
+  if (state === 'title') {
+    drawTitle()
+    drawSoundIcon()
+    drawFsIcon()
+    drawVignette()
+    c.restore()
+    rect(-1, -1, VW + 2, VH + 2, C_BLACK)
+    return
+  }
   const shx = shakeT > 0 ? rand(-3, 3) : 0
   const shy = shakeT > 0 ? rand(-3, 3) : 0
   push(Math.round(-camX) + shx, shy)
+  for (const d of decors) Sprites.drawImage(d.sprite, d.x, d.y, d.w)
+  drawWalls()
   for (const p of platforms) drawPlat(p)
   for (const b of balls) if (!b.taken) drawBall(b)
   drawParticles()
@@ -962,31 +1132,31 @@ function draw() {
   else drawSlime()
   if (charge.on) drawTrajectory()
   pop()
-  drawSpikeWall()
-  drawEdgeSpikes()
-  drawCeiling()
+  drawDamageWalls()
   drawFrameEdges()
+  if (state === 'playing' && !runStarted) drawReadyHint()
   drawHUD()
   if (state === 'over') drawOver()
   drawSoundIcon()
+  drawFsIcon()
   drawVignette()
-  ctx().setTransform(VSC, 0, 0, VSC, VOX, VOY)
+  c.restore()
   rect(-1, -1, VW + 2, VH + 2, C_BLACK)
 }
 
-function drawEdgeSpikes() {
-  for (let y = CEIL + 6; y < VH - 16; y += 11) {
-    shape([2, y, 11, y + 5.5, 2, y + 11])
-    fill(C_RED_D)
-    shape([3, y + 1, 10, y + 5.5, 3, y + 10])
-    fill(C_RED)
-  }
-  for (let x = 14; x < VW - 14; x += 11) {
-    shape([x, CEIL + 3, x + 5.5, CEIL + 12, x + 11, CEIL + 3])
-    fill(C_RED_D)
-    shape([x + 1, CEIL + 4, x + 5.5, CEIL + 11, x + 10, CEIL + 4])
-    fill(C_RED)
-  }
+function setupTestMode() {
+  try {
+    const qs = new URLSearchParams(window.location.search)
+    const code = qs.get('pattern')
+    if (!code) return
+    const res = Patterns.importData(code)
+    if (!res.ok || !res.data.patterns.length) {
+      console.warn('SLIME test : pattern invalide —', res.error || res.errors)
+      return
+    }
+    Patterns.pin(res.data.patterns[0])
+    testMode = true
+  } catch (e) {}
 }
 
 function init() {
@@ -995,6 +1165,9 @@ function init() {
   try {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
   } catch (e) {}
+  Patterns.load()
+  applyLayout()
+  setupTestMode()
   Music.restore()
   Sprites.load()
   buildFramePattern()

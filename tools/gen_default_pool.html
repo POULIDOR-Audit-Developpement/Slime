@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SLIME — Générateur de pool par défaut</title>
+<link rel="icon" href="data:,"/>
+<style>
+  body { background:#0d1126; color:#d8e8f4; font:13px/1.4 'Segoe UI',system-ui,sans-serif; margin:0; padding:16px; }
+  h1 { color:#3ecb3e; font-size:18px; margin:0 0 4px; }
+  .sub { color:#8a8ab0; margin-bottom:12px; }
+  .bar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  button, select { padding:6px 10px; background:#1c2148; border:1px solid #2e2e5e; color:#d8e8f4; cursor:pointer; font-size:12px; font-weight:600; }
+  button:hover { border-color:#3ecb3e; color:#fff; }
+  input { width:90px; background:#0d1126; border:1px solid #2e2e5e; color:#ffd83d; padding:5px 7px; font:inherit; }
+  canvas { background:#10142e; border:1px solid #2e2e5e; width:100%; image-rendering:pixelated; }
+  textarea { width:100%; height:110px; margin-top:12px; background:#0a0d1e; color:#8a8ab0; border:1px solid #2e2e5e; font:11px monospace; }
+  .ok { color:#3ecb3e; } .ko { color:#e23b3b; }
+</style>
+</head>
+<body>
+<h1>Générateur de pool par défaut</h1>
+<div class="sub">Régénère les sections embarquées du jeu (5 difficultés, validées par la physique de saut). Le résultat est affiché : chaque trait ✓/✗ est un saut validé/rejeté entre deux plateformes.</div>
+<div class="bar">
+  <label>Sections par difficulté <input id="perTier" type="number" min="1" max="10" value="4"/></label>
+  <label>Graine <input id="seed" type="number" value="20260921"/></label>
+  <button id="btnGen">Régénérer</button>
+  <span class="spacer" style="flex:1"></span>
+  <button id="btnCopy">Copier le code</button>
+  <button id="btnDl">Télécharger .json</button>
+  <button id="btnInstall" style="border-color:#3ecb3e">Installer dans mes patterns →</button>
+  <span id="msg"></span>
+</div>
+<canvas id="cv"></canvas>
+<textarea id="out" readonly></textarea>
+<script src="../js/physics.js"></script>
+<script src="gen-core.js"></script>
+<script src="../js/sprites.js"></script>
+<script src="../js/patterns-defaults.js"></script>
+<script src="../js/patterns.js"></script>
+<script>
+(() => {
+  const cv = document.getElementById('cv')
+  const ctx = cv.getContext('2d')
+  const out = document.getElementById('out')
+  const msg = document.getElementById('msg')
+  let patterns = []
+
+  const COL = {
+    bg: '#4a5ed7', bgD: '#4152c8', black: '#0a0a12', white: '#f4f4f4',
+    basic: '#3ecb3e', basicD: '#1f7a1f', sticky: '#a06c33', stickyD: '#7d5222',
+    dynamic: '#38b6e8', dynamicD: '#1c7fb0', crumble: '#9aa0ac', crumbleD: '#6b7280',
+    ghost: '#d8e8f4', ghostD: '#a8bccb', bouncy: '#cc6d1a', bouncyD: '#8f4a0f',
+    spike: '#e23b3b', spikeD: '#8f1f1f', ball: '#ffd83d', gold: '#ffd700',
+    ok: '#3ecb3e', ko: '#e23b3b'
+  }
+  const TIER_COLORS = ['#3ecb3e', '#a5f0a5', '#ffd83d', '#ff9d2e', '#e23b3b']
+  const SC = 0.75
+
+  function generate() {
+    const perTier = Math.max(1, parseInt(document.getElementById('perTier').value, 10) || 4)
+    const seed = parseInt(document.getElementById('seed').value, 10) || 20260921
+    const t0 = performance.now()
+    const res = generateDefaultPool({ perTier, seed })
+    patterns = res.patterns
+    msg.innerHTML = `<span class="${patterns.length ? 'ok' : 'ko'}">${patterns.length} sections · ${res.rejected} rejet(s) · ${Math.round(performance.now() - t0)} ms</span>`
+    render()
+    const payload = JSON.stringify({ format: Patterns.FORMAT, patterns, layout: null })
+    out.value = 'SLIME1.' + btoa(unescape(encodeURIComponent(payload)))
+  }
+
+  function anchorOf(p) {
+    const r = Patterns.entryRow(p)
+    return { x: -4 * 32, row: r, y: rowY(r), w: 4 * 32, type: 'basic' }
+  }
+
+  function drawPlat(c, px, py, q, selected) {
+    const w = q.cells * 32
+    const tops = { basic: COL.basic, crumble: COL.crumble, ghost: COL.ghost, bouncy: COL.bouncy }
+    const sides = { basic: COL.basicD, crumble: COL.crumbleD, ghost: COL.ghostD, bouncy: COL.bouncyD }
+    if (q.type === 'sticky') {
+      c.fillStyle = COL.stickyD; c.fillRect(px, py, w, 24)
+      c.fillStyle = COL.sticky; c.fillRect(px, py, w, 11)
+    } else if (q.type === 'dynamic') {
+      c.fillStyle = COL.dynamicD; c.fillRect(px, py, w, 14)
+      c.fillStyle = COL.dynamic; c.fillRect(px, py, w, 7)
+    } else {
+      for (let i = 0; i < q.cells; i++) {
+        c.fillStyle = COL.black; c.fillRect(px + i * 32, py, 32, 26)
+        c.fillStyle = sides[q.type] || COL.basicD; c.fillRect(px + i * 32 + 2, py + 2, 28, 22)
+        c.fillStyle = tops[q.type] || COL.basic; c.fillRect(px + i * 32 + 2, py + 2, 28, 11)
+        c.fillStyle = COL.white; c.fillRect(px + i * 32 + 6, py + 5, 8, 3)
+      }
+    }
+    if (q.spike) {
+      const x1 = px + q.spike.a * w, x2 = px + q.spike.b * w
+      c.fillStyle = COL.spike
+      for (let sx = x1; sx + 8 <= x2 + 0.1; sx += 8) {
+        c.beginPath(); c.moveTo(sx, py + 1); c.lineTo(sx + 4, py - 9); c.lineTo(sx + 8, py + 1); c.fill()
+      }
+    }
+  }
+
+  function render() {
+    const dpr = window.devicePixelRatio || 1
+    const W = Math.max(900, window.innerWidth - 34)
+    // wrap dynamique : une section passe à la ligne quand elle déborde
+    const secWs = patterns.map(p => Patterns.patternWidth(p) * SC + 90)
+    const rows = []
+    let cur = { x: 10, items: [] }
+    for (let i = 0; i < patterns.length; i++) {
+      if (cur.x + secWs[i] > W - 10 && cur.items.length) { rows.push(cur); cur = { x: 10, items: [] } }
+      cur.items.push(i)
+      cur.x += secWs[i] + 14
+    }
+    if (cur.items.length) rows.push(cur)
+    const rowH = 270 * SC + 26
+    cv.width = W * dpr; cv.height = rows.length * rowH * dpr
+    cv.style.height = rows.length * rowH + 'px'
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.fillStyle = '#10142e'; ctx.fillRect(0, 0, W, rows.length * rowH)
+    rows.forEach((row, ri) => {
+      let ox = 10
+      for (const i of row.items) {
+        const p = patterns[i]
+        const oy = ri * rowH + 22
+      const T = (wx, wy) => [ox + 56 + wx * SC, oy + wy * SC]
+      // étiquette
+      ctx.font = 'bold 12px monospace'
+      ctx.fillStyle = TIER_COLORS[p.difficulty - 1]
+      ctx.fillText(`T${p.difficulty} · ${p.name}  (${p.platforms.length} plat, entrée r${Patterns.entryRow(p)})`, ox, oy - 8)
+      // ancre
+      const a = anchorOf(p)
+      const [ax, ay] = T(a.x, a.y)
+      ctx.strokeStyle = COL.ok; ctx.setLineDash([5, 4]); ctx.lineWidth = 2
+      ctx.strokeRect(ax, ay, a.w * SC, 24); ctx.setLineDash([])
+      // plateformes
+      for (const q of p.platforms) {
+        const [px, py] = T(q.x, rowY(q.row))
+        drawPlat(ctx, px, py, q)
+      }
+      // billes
+      for (const b of p.balls) {
+        const [bx, by] = T(b.x, rowY(b.row) + b.yOff)
+        ctx.strokeStyle = COL.black; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(bx, by, b.gold ? 8 : 5.5, 0, 7); ctx.stroke()
+        ctx.fillStyle = b.gold ? COL.gold : COL.ball
+        ctx.beginPath(); ctx.arc(bx, by, b.gold ? 6.5 : 4, 0, 7); ctx.fill()
+      }
+      // badges de validation
+      const v = Patterns.validatePatternJumps(p)
+      const inst = Patterns.instantiate(p, anchorOf(p))
+      let prev = anchorOf(p)
+      for (let j = 0; j < inst.platforms.length; j++) {
+        const cc = inst.platforms[j]
+        if (j > 0) {
+          const okJ = v.jumps[j - 1]
+          const [mx, my] = T((prev.x + prev.w + cc.x) / 2, (prev.y + cc.y) / 2 - 14)
+          ctx.beginPath(); ctx.arc(mx, my, 8, 0, 7)
+          ctx.fillStyle = okJ ? '#123c12' : '#3c1212'; ctx.fill()
+          ctx.strokeStyle = okJ ? COL.ok : COL.ko; ctx.lineWidth = 2; ctx.stroke()
+          ctx.beginPath()
+          if (okJ) { ctx.moveTo(mx - 4, my); ctx.lineTo(mx - 1, my + 3); ctx.lineTo(mx + 4, my - 3) }
+          else { ctx.moveTo(mx - 3, my - 3); ctx.lineTo(mx + 3, my + 3); ctx.moveTo(mx + 3, my - 3); ctx.lineTo(mx - 3, my + 3) }
+          ctx.stroke()
+        }
+        prev = cc
+      }
+      ox += secWs[i] + 14
+      }
+    })
+  }
+
+  document.getElementById('btnGen').addEventListener('click', generate)
+  document.getElementById('btnCopy').addEventListener('click', () => {
+    navigator.clipboard.writeText(out.value).then(
+      () => { msg.innerHTML = '<span class="ok">Code copié !</span>' },
+      () => { out.select(); document.execCommand('copy'); msg.innerHTML = '<span class="ok">Code copié !</span>' }
+    )
+  })
+  document.getElementById('btnDl').addEventListener('click', () => {
+    const data = JSON.stringify({ format: Patterns.FORMAT, patterns, layout: null }, null, 2)
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }))
+    a.download = 'slime-patterns-default.json'
+    a.click()
+  })
+  document.getElementById('btnInstall').addEventListener('click', () => {
+    Patterns.load()
+    const res = Patterns.importData(JSON.stringify({ format: Patterns.FORMAT, patterns, layout: null }))
+    if (!res.ok) { msg.innerHTML = '<span class="ko">Payload invalide</span>'; return }
+    Patterns.applyImport(res, 'replace')
+    window.location.href = '../editor.html'
+  })
+  window.addEventListener('resize', render)
+  generate()
+})()
+</script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SLIME — Éditeur</title>
+<link rel="icon" href="data:,"/>
+<style>
+  :root {
+    --bg: #0d1126; --panel: #131735; --panel2: #1c2148; --line: #2e2e5e;
+    --txt: #d8e8f4; --dim: #8a8ab0; --acc: #3ecb3e; --gold: #ffd83d; --red: #e23b3b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--txt);
+    font: 13px/1.4 'Segoe UI', system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden; user-select: none;
+  }
+  header {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--panel); border-bottom: 2px solid var(--line); flex-wrap: wrap;
+  }
+  .logo { font-weight: 800; letter-spacing: 1px; color: var(--acc); font-size: 16px; margin-right: 6px; }
+  .logo small { color: var(--dim); font-weight: 400; letter-spacing: 0; }
+  .tabs { display: flex; gap: 2px; margin-right: 10px; }
+  .tab {
+    padding: 6px 14px; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--dim); cursor: pointer; font-weight: 700; font-size: 12px;
+  }
+  .tab.on { background: var(--acc); color: #062806; border-color: var(--acc); }
+  button, label.filebtn {
+    padding: 6px 10px; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--txt); cursor: pointer; font-size: 12px; font-weight: 600;
+  }
+  button:hover, label.filebtn:hover { border-color: var(--acc); color: #fff; }
+  button.danger:hover { border-color: var(--red); }
+  button:disabled { opacity: .4; cursor: default; }
+  .spacer { flex: 1; }
+  main { flex: 1; display: flex; min-height: 0; }
+  aside { background: var(--panel); overflow-y: auto; }
+  #list { width: 232px; border-right: 2px solid var(--line); padding: 8px; }
+  #props { width: 272px; border-left: 2px solid var(--line); padding: 10px; }
+  #center { flex: 1; position: relative; background: #0a0d1e; min-width: 0; display: flex; flex-direction: column; }
+  #toolbar {
+    display: flex; gap: 4px; padding: 6px 8px; background: var(--panel);
+    border-bottom: 1px solid var(--line); align-items: center; flex-wrap: wrap;
+  }
+  #toolbar .grp { display: flex; gap: 2px; align-items: center; padding-right: 8px; margin-right: 4px; border-right: 1px solid var(--line); }
+  .tool.on { background: var(--acc); color: #062806; border-color: var(--acc); }
+  canvas#cv { flex: 1; display: block; width: 100%; height: 100%; image-rendering: pixelated; cursor: crosshair; }
+  footer {
+    padding: 5px 12px; background: var(--panel); border-top: 2px solid var(--line);
+    color: var(--dim); font-size: 12px; display: flex; gap: 16px; align-items: center;
+  }
+  #status.ok { color: var(--acc); } #status.ko { color: var(--red); }
+  /* liste des patterns */
+  .item {
+    padding: 7px 8px; margin-bottom: 4px; background: var(--panel2);
+    border: 1px solid var(--line); cursor: pointer; display: flex; gap: 8px; align-items: center;
+  }
+  .item:hover { border-color: var(--dim); }
+  .item.sel { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
+  .tier {
+    width: 20px; height: 20px; flex: 0 0 20px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 11px; color: #0a0a12; border-radius: 3px;
+  }
+  .item .nm { flex: 1; min-width: 0; }
+  .item .nm b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .item .nm span { color: var(--dim); font-size: 11px; }
+  .item .mini { display: flex; flex-direction: column; gap: 2px; }
+  .item .mini button { padding: 1px 5px; font-size: 10px; }
+  .hint { color: var(--dim); font-size: 12px; padding: 10px; line-height: 1.5; }
+  /* panneau propriétés */
+  h3 { font-size: 11px; letter-spacing: 1px; color: var(--dim); margin: 10px 0 6px; text-transform: uppercase; }
+  h3:first-child { margin-top: 0; }
+  .row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .row label { width: 74px; flex: 0 0 74px; color: var(--dim); font-size: 12px; }
+  .row input[type=text], .row input[type=number], .row select {
+    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line);
+    color: var(--txt); padding: 4px 6px; font: inherit;
+  }
+  .row input[type=range] { flex: 1; }
+  .row .val { width: 40px; text-align: right; color: var(--gold); font-size: 12px; }
+  .chk { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 3px; }
+  .badge.ok { background: #123c12; color: var(--acc); }
+  .badge.ko { background: #3c1212; color: var(--red); }
+  .note { color: var(--dim); font-size: 11px; line-height: 1.5; margin-top: 8px; }
+  .empty { color: var(--dim); text-align: center; padding: 30px 10px; line-height: 1.6; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">SLIME <small>éditeur</small></div>
+  <div class="tabs">
+    <div class="tab on" id="tabPatterns" title="Créer et éditer les sections de plateformes">PATTERNS</div>
+    <div class="tab" id="tabLayout" title="Hitboxes des murs et placement des assets">VUE</div>
+  </div>
+  <span class="spacer"></span>
+  <button id="btnNew">+ Nouveau</button>
+  <button id="btnDefaults" title="Copier le pool par défaut dans mes patterns pour l'éditer">Pool par défaut</button>
+  <button id="btnExport" title="Télécharger toutes tes créations en .json">Exporter .json</button>
+  <label class="filebtn" for="fileImport">Importer .json</label>
+  <input type="file" id="fileImport" accept=".json,application/json"/>
+  <button id="btnCopy" title="Code compact à coller sur une autre machine">Copier code</button>
+  <button id="btnPaste" title="Coller un code venu d'une autre machine">Coller code</button>
+  <button id="btnPlay" title="Jouer le pattern sélectionné en boucle">▶ Playtest</button>
+</header>
+<main>
+  <aside id="list"></aside>
+  <section id="center">
+    <div id="toolbar"></div>
+    <canvas id="cv"></canvas>
+  </section>
+  <aside id="props"></aside>
+</main>
+<footer>
+  <span id="coords">—</span>
+  <span id="status"></span>
+  <span class="spacer"></span>
+  <span id="storeInfo"></span>
+</footer>
+<script src="js/physics.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/patterns-defaults.js"></script>
+<script src="js/patterns.js"></script>
+<script src="js/editor.js"></script>
+</body>
+</html>

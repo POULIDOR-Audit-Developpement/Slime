@@ -71,8 +71,9 @@ const Crypto = (() => {
     return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   }
 
-  function makeCode(score) {
-    const body = b64url(score + '.' + Date.now())
+  function makeCode(score, elapsed) {
+    const t = Math.max(0, Math.floor(elapsed || 0))
+    const body = b64url(score + '.' + t + '.' + Date.now())
     return body + '.' + hmacHex(SECRET, body).slice(0, 32)
   }
 
@@ -84,8 +85,11 @@ const Crypto = (() => {
     if (hmacHex(secret || SECRET, body).slice(0, 32) !== sig.trim()) return null
     try {
       const payload = atob(body.replace(/-/g, '+').replace(/_/g, '/'))
-      const sep = payload.indexOf('.')
-      return { score: parseInt(payload.slice(0, sep), 10), date: new Date(parseInt(payload.slice(sep + 1), 10)) }
+      const parts = payload.split('.')
+      if (parts.length < 2) return null
+      const out = { score: parseInt(parts[0], 10), date: new Date(parseInt(parts[parts.length - 1], 10)) }
+      if (parts.length >= 3) out.elapsed = parseInt(parts[1], 10)
+      return out
     } catch (e) {
       return null
     }

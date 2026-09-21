@@ -103,8 +103,11 @@ function verifyCode(code, secret) {
   if (hmacHex(secret, body).slice(0, 32) !== sig.trim()) return null
   try {
     const payload = atob(body.replace(/-/g, '+').replace(/_/g, '/'))
-    const sep = payload.indexOf('.')
-    return { score: parseInt(payload.slice(0, sep), 10), date: new Date(parseInt(payload.slice(sep + 1), 10)) }
+    const parts = payload.split('.')
+    if (parts.length < 2) return null
+    const out = { score: parseInt(parts[0], 10), date: new Date(parseInt(parts[parts.length - 1], 10)) }
+    if (parts.length >= 3) out.elapsed = parseInt(parts[1], 10)
+    return out
   } catch (e) {
     return null
   }
@@ -116,8 +119,14 @@ function verify() {
   if (!code) { res.className = 'ko'; res.textContent = 'Aucun code fourni.'; return }
   const out = verifyCode(code, SECRET)
   if (out && !isNaN(out.score)) {
+    let html = '<b>Code authentique</b><br>Score réel : <b>' + out.score + '</b>'
+    if (out.elapsed != null && !isNaN(out.elapsed)) {
+      const m = Math.floor(out.elapsed / 60), s = out.elapsed % 60
+      html += '<br>Temps de jeu : <b>' + m + ':' + String(s).padStart(2, '0') + '</b>'
+    }
+    html += '<br>Date de la partie : ' + out.date.toLocaleString('fr-FR')
     res.className = 'ok'
-    res.innerHTML = '<b>Code authentique</b><br>Score réel : <b>' + out.score + '</b><br>Date de la partie : ' + out.date.toLocaleString('fr-FR')
+    res.innerHTML = html
   } else {
     res.className = 'ko'
     res.textContent = 'Code invalide ou falsifié (signature HMAC non vérifiée).'

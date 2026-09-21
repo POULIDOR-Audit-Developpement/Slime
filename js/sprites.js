@@ -107,6 +107,10 @@ const Sprites = (() => {
     return im && im.height ? im.height : 0
   }
 
+  function get(key) {
+    return imgs[key]
+  }
+
   return {
     load,
     draw,
@@ -115,6 +119,7 @@ const Sprites = (() => {
     rotated,
     natW,
     natH,
+    get,
     get ready() { return ready }
   }
 })()
