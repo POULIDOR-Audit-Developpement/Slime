@@ -24,7 +24,7 @@ function makeEl(id) {
   }
   return el
 }
-const ids = ['cv','list','props','propsResize','toolbar','coords','status','storeInfo','fileImport','tbHint','tType','tCellsV','tZoomV','tWallV','tabPatterns','tabLayout','tabPhys']
+const ids = ['cv','list','props','propsResize','toolbar','coords','status','storeInfo','fileImport','tbHint','tType','tCellsV','tZoomV','tWallV','tabPatterns','tabLayout','tabPhys','tabPower']
 for (const i of ids) els[i] = makeEl(i)
 const mainEl = makeEl('main')
 const documentStub = {
@@ -60,12 +60,19 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('6 cartes de groupe', (html.match(/physCard/g) || []).length === 6)
   check('17 sliders rendus', (html.match(/type="range"/g) || []).length === 17)
   check('bouton réinitialiser présent', html.includes('btnResetPhys'))
-  // bouge le slider gravité -> layout + Phys mis à jour
+  // bouge le slider gravité -> brouillon uniquement (rien d'appliqué)
   els['ph_grav'].value = '800'
   els['ph_grav'].handlers.input()
-  check('slider grav -> layout.phys', Patterns.getLayout().phys.grav === 800)
-  check('slider grav -> Phys.setPhys', Phys.phys().grav === 800)
-  check('label mis à jour', String(els['ph_gravV'].textContent) === '800')
+  check('slider grav -> brouillon, layout inchangé', Patterns.getLayout().phys.grav === 620 && Phys.phys().grav === 620)
+  check('label du brouillard mis à jour', String(els['ph_gravV'].textContent) === '800')
+  check('bouton Appliquer en état dirty', els.btnApplyPhys.classList.contains('dirty'))
+  check('note « non appliquées » visible', els.physDirtyNote.style.display === '')
+  // clic Appliquer -> layout + Phys mis à jour
+  els.btnApplyPhys.handlers.click()
+  check('appliquer -> layout.phys', Patterns.getLayout().phys.grav === 800)
+  check('appliquer -> Phys.setPhys', Phys.phys().grav === 800)
+  check('appliquer -> bouton plus dirty', !els.btnApplyPhys.classList.contains('dirty'))
+  check('appliquer -> localStorage persisté', (localStorage.getItem('slime_patterns_v1') || '').includes('"grav":800'))
   // reset
   els.btnResetPhys.handlers.click()
   check('reset -> grav défaut 620', Patterns.getLayout().phys.grav === 620 && Phys.phys().grav === 620)
@@ -73,6 +80,44 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   // retour PATTERNS : classe retirée
   Ed.setMode('patterns')
   check('retour patterns : classe phys retirée', !main.classList.contains('phys'))
+
+  // --- onglet POWER : brouillon + bouton Appliquer (double saut + slow-mo) ---
+  Ed.setMode('power')
+  check('classe power sur <main>', main.classList.contains('power'))
+  const ph2 = els.props.innerHTML
+  check('vue pleine page POWER : physGrid + boutons', ph2.includes('physGrid') && ph2.includes('btnApplyPow') && ph2.includes('btnResetPow'))
+  check('cartes double saut + slow-mo', ph2.includes('Double saut') && ph2.includes('Slow-mo'))
+  check('cases activation présentes', ph2.includes('pw_doubleJump_enabled') && ph2.includes('pw_slowmo_enabled'))
+  // slider cooldown -> brouillon uniquement
+  els['pw_doubleJump_cooldown'].value = '7.5'
+  els['pw_doubleJump_cooldown'].handlers.input()
+  check('slider cooldown -> brouillon, layout inchangé', Patterns.getLayout().powers.doubleJump.cooldown === 4)
+  check('bouton Appliquer POWER dirty', els.btnApplyPow.classList.contains('dirty'))
+  // slider échelle slow-mo (cumulé au brouillon)
+  els['pw_slowmo_scale'].value = '0.25'
+  els['pw_slowmo_scale'].handlers.input()
+  check('slider échelle slow-mo -> brouillon', Patterns.getLayout().powers.slowmo.scale === 0.35)
+  // désactivation dans le brouillon
+  els['pw_doubleJump_enabled'].checked = false
+  els['pw_doubleJump_enabled'].handlers.change()
+  check('case activation -> brouillon', Patterns.getLayout().powers.doubleJump.enabled === true)
+  // Appliquer -> tout le brouillon est validé
+  els.btnApplyPow.handlers.click()
+  check('appliquer -> cooldown 7.5', Patterns.getLayout().powers.doubleJump.cooldown === 7.5)
+  check('appliquer -> échelle slow-mo 0.25', Patterns.getLayout().powers.slowmo.scale === 0.25)
+  check('appliquer -> pouvoir désactivé', Patterns.getLayout().powers.doubleJump.enabled === false)
+  check('appliquer POWER -> bouton plus dirty', !els.btnApplyPow.classList.contains('dirty'))
+  // cooldown 0 est une valeur valide (pas de fallback défaut)
+  els['pw_doubleJump_cooldown'].value = '0'
+  els['pw_doubleJump_cooldown'].handlers.input()
+  els.btnApplyPow.handlers.click()
+  check('cooldown 0 appliqué tel quel', Patterns.getLayout().powers.doubleJump.cooldown === 0)
+  els.btnResetPow.handlers.click()
+  check('reset pouvoirs : cooldown défaut 4', Patterns.getLayout().powers.doubleJump.cooldown === 4)
+  check('reset pouvoirs : réactivé', Patterns.getLayout().powers.doubleJump.enabled === true)
+  check('reset pouvoirs : slow-mo échelle défaut', Patterns.getLayout().powers.slowmo.scale === 0.35)
+  Ed.setMode('patterns')
+  check('retour patterns : classe power retirée', !main.classList.contains('power'))
 
   // --- redimensionnement du panneau propriétés (poignée) ---
   check('panneau : largeur par défaut 272px, pas de style inline', els.props.getBoundingClientRect().width === 272 && !els.props.style.width)
@@ -117,12 +162,19 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('pas de classe phys en mode VUE', !main.classList.contains('phys'))
   const lh = els.props.innerHTML
   check('contrôles décor dans le panneau (asset + 3 outils)', lh.includes('lDSprite') && lh.includes('lToolSelect') && lh.includes('lToolDecor') && lh.includes('lToolErase'))
+  check('contrôles vue du jeu (zoom + toggles)', lh.includes('vZoom') && lh.includes('vTraj') && lh.includes('vShake'))
+  // slider zoom -> layout.view mis à jour
+  els.vZoom.value = '25'
+  els.vZoom.handlers.input()
+  check('slider zoom -> layout.view.zoom', Patterns.getLayout().view.zoom === 2.5)
+  els.btnResetL.handlers.click()
+  check('reset vue : zoom défaut ×1', Patterns.getLayout().view.zoom === 1)
   // reset murs : préserve physique et plateformes, remets les murs par défaut
   const L0 = Patterns.getLayout()
-  L0.walls.ceil = 50; L0.phys.grav = 777
+  L0.walls.left = 40; L0.phys.grav = 777
   Patterns.setLayout(L0)
   els.btnResetL.handlers.click()
-  check('reset murs : ceil défaut 28', Patterns.getLayout().walls.ceil === 28)
+  check('reset murs : gauche défaut 11, pas de plafond', Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.ceil === undefined)
   check('reset murs : phys préservée (grav 777)', Patterns.getLayout().phys.grav === 777)
   check('reset murs : plat préservée', Patterns.getLayout().plat.crumbleT === 0.5)
   Phys.setPhys(Patterns.getLayout().phys)

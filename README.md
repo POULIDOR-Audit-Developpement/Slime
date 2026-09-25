@@ -6,19 +6,24 @@ Endless runner rétro pixel-art : guide un slime le plus loin possible alors que
 
 Ouvrir `index.html` dans un navigateur — c'est tout.
 
-### Jouer / éditer depuis le réseau local (LAN)
+### Jouer / éditer depuis le réseau local (LAN), pool synchronisé
 
 ```
-python3 -m http.server 8471    # à lancer depuis ce dossier
+node server.mjs    # à lancer depuis ce dossier (port 8471, --port N pour changer)
 ```
 
 Puis depuis n'importe quel appareil du LAN : `http://<IP-de-la-machine>:8471/` (jeu) ou `http://<IP-de-la-machine>:8471/editor.html` (éditeur). IP locale : `hostname -I`.
+
+Avec ce serveur, le **pool de patterns + le layout (VUE/PHYS/POWER) sont partagés** entre tous les appareils : édite depuis la tablette, le jeu sur le PC et le téléphone se mettent à jour en ~2 s (polling, dernier écrit gagne). Sans serveur (ou avec `python3 -m http.server`), tout reste local au navigateur comme avant — l'éditeur affiche l'état de la sync dans son pied de page. Le pool partagé vit dans `data/pool.json` (ignoré par git) ; premier appareil connecté avec un pool local non vide → il le partage automatiquement.
 
 ### Structure du projet
 
 ```
 index.html              ← page hôte (charge les scripts)
-editor.html             ← ÉDITEUR : patterns + vue principale + physique (autonome)
+presentation.html       ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu
+server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev)
+data/pool.json          ← pool partagé du LAN (créé par server.mjs, ignoré par git)
+editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs (autonome)
 css/style.css           ← styles de la page
 js/game.js              ← moteur du jeu (rendu, physique, enchaînement des patterns)
 js/physics.js           ← constantes + config physique réglable + simulation de saut partagée (jeu, éditeur, outils)
@@ -29,26 +34,31 @@ js/crypto.js            ← signature HMAC des scores (module Crypto)
 js/sprites.js           ← chargement et dessin des sprites du slime
 vendor/                 ← litecanvas embarqué (fallback CDN inclus)
 ASSETS/                 ← direction artistique + sprites
-tools/                  ← générateur de pool (gen_defaults.mjs, gen-core.js, gen_default_pool.html) + extraction des sprites (Python)
+tools/                  ← générateur de pool (gen_defaults.mjs, gen-core.js, gen_default_pool.html) + extraction des sprites (Python : extract_v2.py / extract_v3.py, make_v2_sprites.py / make_v3_sprites.py)
 decode.html             ← outil créateur : vérifier les codes (autonome)
 docs/                   ← spécifications de design + aperçus (docs/previews/)
 ```
 
 ### Rendu et sprites
 
-Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites de la feuille fournie (`ASSETS/sprites/game/`) : idle animé, saut, chute, atterrissage, blessure, splat de mort et 3 tailles de vie ; fallback procédural si les images manquent. Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures de bedrock (texture `void`) et la jauge de vitesse à aiguille reprennent la direction artistique. La vie se lit sur 3 têtes de slime en bas à gauche.
+Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites des feuilles fournies (`ASSETS/sprites/game/`) : idle animé, saut et chute **en version miroir selon la direction**, atterrissage, blessure, **séquence de mort en 4 frames** (splat → gouttes → bulles → particules), **ledge catch** (accroche yeux écarquillés puis boucle fatigué, variantes orange/rouge), **double saut** (boule + lignes de vitesse, anneau d'impulsion) et **bullet time** (slime teal à tourbillons) ; fallback procédural si les images manquent. Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures de bedrock (texture `void`) et la **jauge de vitesse compacte « VITESSE »** (icône flèche + barre en escalier de 15 cellules qui se remplissent vert → orange → rouge avec la vitesse) reprennent la direction artistique. La vie se lit sur 3 têtes de slime en bas à gauche.
 
 ### Contrôles (PC & mobile)
 
-- **Maintenir** clic / appui tactile : charge la puissance du saut
-- **Bouger le curseur** pendant l'appui : vise la trajectoire **dans n'importe quelle direction** — même en arrière pour aller chercher les billes dorées (au risque de te faire rattraper !)
+- **Appuyer** clic / appui tactile : la **visée** démarre au point cliqué (souris) ou sur le slime (tactile)
+- **Bouger le curseur** pendant l'appui : vise la trajectoire **dans n'importe quelle direction** — même en arrière pour aller chercher les billes dorées (au risque de te faire rattraper !). La **distance du réticule au slime règle la puissance** : tout près = petit saut, au-delà de la portée max = saut maximal
+- **Sur mobile (visée relative)** : pose le doigt **n'importe où** (coin de l'écran, sans couvrir la cible) puis **glisse** — le réticule se déplace avec le doigt (delta × sensibilité) pendant qu'un halo repère le pouce ; le réticule et la trajectoire restent lisibles à l'écran. La souris garde la visée absolue au point cliqué
 - **Relâcher** : sauter
+- **Double saut** : en l'air, appui = visée en **temps ralenti** (bullet time), relâcher = second saut dans la direction et la puissance visées. Recharge réglable (onglet POWER), charges restaurées à chaque atterrissage. Pendant la visée le slime se transforme en boule (lignes de vitesse), anneau d'impulsion au départ ; tourbillons « time warp » pendant le ralenti
+- **Ledge catch** : un bord de plateforme manqué de justesse (fenêtre réglable) est agrippé in-extremis — le slime y reste accroché (durée réglable) ; appui = viser un saut depuis le bord, sinon il décroche tout seul (onglet POWER)
 - **Coyote time** : un appui juste après avoir glissé d'une plateforme saute quand même (fenêtre réglable, 0.08 s par défaut)
-- **Jump buffer** : un appui en l'air est mémorisé et déclenché dès l'atterrissage (0.1 s par défaut ; doigt encore posé = la charge démarre seule)
 - **M** ou l'icône son (coin haut-gauche) : couper/réactiver le son
+- **Plein écran** : icône coins (haut-droite) — API native sur Android/desktop ; sur iPhone (Safari), le canvas est diffusé dans une vidéo plein écran (contournement de l'API restreinte d'iOS, entrées relais avec conversion letterbox). Si le jeu est ajouté à l'écran d'accueil (standalone), l'icône disparaît : le jeu est déjà plein écran
 - La **couleur du slime = ta vie** : vert → orange → rouge à chaque coup des pics, à rouge fatigué un dernier coup et c'est fini
-- Les piques du haut, de gauche et de droite font mal — ne tombe pas dans le vide
+- **Plus de plafond** : le haut du monde est ouvert — les grands sauts passent au-dessus de l'écran (une flèche te repère quand tu es hors-champ)
+- Les piques de gauche et de droite font mal — ne tombe pas dans le vide
 - Les billes rapportent des points (score caché !), la **bille dorée vaut 50** — elle est toujours au bout d'un détour risqué
+- Le **bonus slime** (tête verte « as in HUD ») rend une vie ; si elle est déjà pleine, il vaut 30 points
 
 ### Types de plateformes
 
@@ -82,24 +92,41 @@ Ouvrir **`editor.html`** — tout est sauvegardé en `localStorage` (clé `slime
 - **▶ Playtest** : ouvre le jeu en boucle sur ce pattern seul (`index.html?pattern=<code>`, bannière « TEST » en haut)
 
 ### Onglet VUE
-- Cadre affiché **fidèlement** comme en jeu (bandes de bedrock, piques alignées sur les hitboxes, zone de chute hachurée sous l'écran)
-- Hitboxes des murs de damage (plafond / gauche / droite) : glisse les poignées dorées ou les curseurs — appliqué au jeu en direct, les piques suivent automatiquement
+- Cadre affiché **fidèlement** comme en jeu (bandes de bedrock, piques alignés sur les hitboxes, zone de chute hachurée sous l'écran)
+- **Zoom global de la vue en jeu** (×1 à ×4, centré sur le slime, fixe pendant la partie) — pratique pour bien voir un slime réduit ; l'aperçu montre la fenêtre visible
+- Options d'affichage : trajectoire de saut, secousse d'écran
+- Hitboxes des murs de damage (gauche / droite) : glisse les poignées dorées ou les curseurs — appliqué au jeu en direct, les piques suivent automatiquement. Pas de plafond : le haut est ouvert
 - Placement des assets décoratifs (sprites de `ASSETS/sprites/game/`), posés derrière les plateformes en jeu
 
+### Onglet POWER
+Pouvoirs du slime — réglés sur un **brouillon** puis validés par le bouton **« ✓ Appliquer au jeu »** (l'onglet jeu ouvert se met à jour immédiatement, sans recharger) :
+
+| Pouvoir | Réglages (défaut) |
+|---|---|
+| Double saut | activé (oui), recharge (4 s), charges par atterrissage (1), puissance (×1) |
+| Slow-mo | activé (oui), échelle du temps (×0.35), durée max (0.6 s) |
+| Ledge catch | activé (oui), durée d'accroche (1.0 s), fenêtre (8 px) |
+
+- En l'air, un appui déclenche la **visée du double saut** (et le ralenti si le slow-mo est activé) ; le ralenti ne concerne **que la visée** — au relâcher, le saut part à pleine vitesse
+- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il y reste accroché (le sommet d'un bord accroché se comporte comme un sol : crumble démarre, timer dynamique lancé, plateformes éphémères disparaissent) ; un appui permet de viser, sinon décroche automatique avec petite glissade
+- Le **cooldown** démarre à chaque utilisation ; les charges se rechargent à l'atterrissage
+- Tant que le brouillon diffère, le bouton passe en doré avec la note « modifications non appliquées »
+- « Réinitialiser les pouvoirs » remet les défauts et les applique immédiatement
+
 ### Onglet PHYS
-Physique du jeu réglable en direct pour de **micro-ajustements** du game feel (stockée dans le layout, appliquée au jeu instantanément, incluse dans l'export .json / code compact) :
+Physique du jeu réglable pour de **micro-ajustements** du game feel — même modèle que POWER : les curseurs modifient un **brouillon**, le bouton **« ✓ Appliquer au jeu »** sauvegarde et met à jour l'onglet jeu ouvert instantanément (inclus dans l'export .json / code compact) :
 
 | Groupe | Réglages (défaut) |
 |---|---|
 | Slime | taille du rayon : hitbox + sprite + validation des sauts (14 px) |
-| Saut | gravité (620), vitesse min/max (210/360), temps de charge max (0.55 s), chute max (520), traînée aérienne (0.6) |
+| Saut & visée | gravité (620), vitesse min/max (210/360), portée de visée min/max (24/140 px), chute max (520), traînée aérienne (0.6) |
 | Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×0.8) |
 | Dégâts | invincibilité après un coup (1.3 s), échelle des reculs infligés (×1) |
 | Caméra | vitesse de base (40), vitesse max (120), secondes entre chaque palier de +5 (10 s) |
-| Game feel | coyote time (0.08 s), jump buffer (0.1 s) — 0 = désactivé |
+| Game feel | coyote time (0.08 s) — 0 = désactivé |
 
-- La validation ✓/✗ des patterns et le playtest utilisent **ces mêmes valeurs** (aucun décalage éditeur/jeu)
-- « Réinitialiser la physique » remet tous les réglages par défaut
+- La validation ✓/✗ des patterns et le playtest utilisent les valeurs **appliquées** (aucun décalage éditeur/jeu)
+- « Réinitialiser la physique » remet les défauts et les applique immédiatement
 - Si tu augmentes la taille du slime au-delà du défaut, revalide tes patterns : quelques sauts du pool par défaut pourraient devenir serrés
 
 ### Difficulté & pool
@@ -129,7 +156,10 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 
 - Moteur : [Litecanvas](https://litecanvas.js.org) v0.302.0 via CDN jsDelivr (fallback unpkg)
 - Canvas plein écran adaptatif : le terrain reste en coordonnées 480×270 (zoom auto), les bords se prolongent en cadre de bedrock — aucune bande vide
-- Piques muraux gauche/haut/droite paramétrables (onglet VUE de l'éditeur), physique du jeu paramétrable (onglet PHYS), sprites du slime fournis avec variantes de dégâts (vert/orange/rouge)
+- Zoom de vue global réglable (onglet VUE), physique du jeu paramétrable (onglet PHYS), pouvoirs réglables (onglet POWER), sprites du slime fournis avec variantes de dégâts (vert/orange/rouge)
+- Saut « visée » : la puissance suit la distance du clic/touch au slime, la direction suit l'angle — plus de temps de charge ; double saut avec bullet time (onglet POWER) et animations dédiées (boule de visée, impulsion anneau, time warp)
+- Séquence de mort en 4 frames composée par `tools/make_v3_sprites.py` (sources : feuille annotée extraite dans `ASSETS/sprites/sprite_*.png`)
+- Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
 - Tests de régression : `node tools/smoke_test.mjs` (génération/validation), `node tools/game_sim.mjs` (partie simulée : saut, coyote, jump buffer, physique live) et `node tools/editor_dom_test.mjs` (onglet PHYS de l'éditeur)

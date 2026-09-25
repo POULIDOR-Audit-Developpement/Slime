@@ -65,18 +65,24 @@ const bad = JSON.parse(JSON.stringify(defs[0])); bad.platforms[0].row = 9
 check('pattern invalide détecté', Patterns.validatePattern(bad).length > 0)
 
 // 6. Layout par défaut + applyLayout via Phys
-check('layout par défaut', Patterns.getLayout().walls.ceil === 28)
+check('layout par défaut (murs latéraux, pas de plafond)', Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.right === 14 && Patterns.getLayout().walls.ceil === undefined)
 
 // 6b. Physique réglable : défauts, setPhys, bornes, garde vmax >= vmin + 50
 const phDef = Phys.phys()
 check('phys défauts (slime 14, grav 620)', phDef.slimeR === 14 && phDef.grav === 620 && phDef.vmax === 360)
-check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 14 && Patterns.getLayout().phys.chargeT === 0.55)
+check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 14 && Patterns.getLayout().phys.aimMin === 24 && Patterns.getLayout().phys.aimMax === 140)
 Phys.setPhys({ grav: 800, slimeR: 10 })
 check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 210)
 Phys.setPhys({ vmin: 400, vmax: 200, grav: 99999 })
 check('bornes + garde vmax', Phys.phys().grav === 1000 && Phys.phys().vmin === 400 && Phys.phys().vmax >= 450)
 Phys.setPhys(null)
 check('setPhys(null) -> défauts', Phys.phys().grav === 620 && Phys.phys().slimeR === 14)
+
+// 6b'. Pouvoirs : cooldown 0 est une valeur valide (pas de fallback défaut)
+Patterns.setLayout({ powers: { doubleJump: { cooldown: 0 } } })
+check('cooldown 0 normalisé tel quel', Patterns.getLayout().powers.doubleJump.cooldown === 0)
+check('défauts pouvoirs sinon', Patterns.getLayout().powers.slowmo.scale === 0.35 && Patterns.getLayout().view.zoom === 1)
+Patterns.setLayout(null)
 
 // 6c. Résilience du stockage : backup (_bak) + récupération au chargement
 const storeKey = 'slime_patterns_v1', bakKey = 'slime_patterns_v1_bak'

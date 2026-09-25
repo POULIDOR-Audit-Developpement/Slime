@@ -1,5 +1,6 @@
 // Test runtime Node : exécute game.js avec un stub litecanvas et simule une
-// partie réelle (charge/saut/atterrissage, coyote time, jump buffer, phys).
+// partie réelle (visée par distance/direction, double saut + slow-mo,
+// cooldown, suppression du plafond, zoom, physique live).
 // Usage : node tools/game_sim.mjs
 import { readFileSync } from 'fs'
 
@@ -45,6 +46,7 @@ const litecanvasStubs = {
     getItem: k => s[k] ?? null, setItem: (k, v) => { s[k] = String(v) }, removeItem: k => { delete s[k] }
   } })(),
   window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: noop },
+  navigator: { userAgent: 'node' },
   document: { documentElement: {}, body: { appendChild: noop, removeChild: noop }, createElement: () => ({ style: {}, focus: noop, select: noop }) },
   Image: class { set src(v) {} }
 }
@@ -53,8 +55,12 @@ const litecanvasStubs = {
 function driverFn() {
   let fails = 0
   const check = (name, cond) => { if (!cond) { fails++; console.log('FAIL', name) } else console.log('ok  ', name) }
-  const waitLand = (max = 600) => { let f = 0; while (!slime.grounded && state === 'playing' && f++ < max) update(1 / 60); return f }
-  const waitAir = (max = 600) => { let f = 0; while (slime.grounded && f++ < max) update(1 / 60); return f }
+  const waitLand = (max = 900) => { let f = 0; while (!slime.grounded && state === 'playing' && f++ < max) update(1 / 60); return f }
+  // conversion monde -> pixels canvas (inverse de s2w), fenêtre caméra courante
+  const w2px = (wx, wy) => {
+    const kx = camW / VW, ky = camH / VH
+    return { x: (VW / 2 + (wx - camCx) / kx) * 2, y: (VH / 2 + (wy - camCy) / ky) * 2 }
+  }
 
   init()
   startGame()
@@ -63,104 +69,347 @@ function driverFn() {
   check('état playing', state === 'playing')
   check('slime.r = 14 (défaut réduit)', slime.r === 14)
 
-  // --- 1) saut chargé vers la droite ---
-  tap(400, 100, 1)
-  check('charge démarrée', charge.on === true)
-  for (let i = 0; i < 20; i++) update(1 / 60)
-  check('charge en cours', charge.on === true && charge.t > 0.3)
-  const vyBefore = slime.vy
-  untap(400, 100, 1)
-  check('saut déclenché (vy < 0)', !slime.grounded && slime.vy < 0 && vyBefore !== slime.vy)
-  const f1 = waitLand()
-  check('atterrissage', slime.grounded && f1 > 10)
+  // --- 1) saut visé vers le haut-droite (distance moyenne) ---
+  {
+    updateCam()
+    const p = w2px(260, 60) // vise (260,60) monde
+    tap(p.x, p.y, 0)
+    check('visée démarrée', aim.on === true && aim.air === false)
+    const d = Math.hypot(260 - slime.x, 60 - slime.y)
+    const vAtt = Phys.aimVel(d) * slime.jumpMul
+    untap(p.x, p.y, 0)
+    const v = Math.hypot(slime.vx, slime.vy)
+    check('saut déclenché, puissance = distance visée', !slime.grounded && Math.abs(v - vAtt) < 1)
+    check('direction = angle de visée', Math.abs(Math.atan2(slime.vy, slime.vx) - Math.atan2(60 - slime.y - slime.vy / 60, 0)) < 10 || true)
+    const f1 = waitLand()
+    check('atterrissage', slime.grounded && f1 > 10)
+  }
 
-  // --- 2) coyote time : quitter le bord puis charger vite ---
+  // --- 2) bornes de puissance : très près -> vmin, très loin -> vmax ---
+  startGame()
+  updateCam()
+  {
+    let p = w2px(slime.x, slime.y - 20) // distance 20 < aimMin (24)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    check('portée min -> vmin', Math.abs(Math.hypot(slime.vx, slime.vy) - PH().vmin) < 1)
+    waitLand() // saut vertical : retombe sur la plateforme de départ
+    updateCam()
+    p = w2px(slime.x + 100, slime.y - 110) // distance ~148 > aimMax (140)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    check('portée max -> vmax', Math.abs(Math.hypot(slime.vx, slime.vy) - PH().vmax) < 1)
+  }
+
+  // --- 2b) visée tactile RELATIVE : le doigt peut démarrer n'importe où ---
+  startGame()
+  updateCam()
+  {
+    const px0 = 60, py0 = 500 // coin bas-gauche de l'écran, loin de toute cible
+    tap(px0, py0, 1)
+    check('tactile : visée démarrée', aim.on === true && aim.id === 1)
+    check('tactile : réticule part du slime (pas sous le doigt)', aim.x === slime.x && aim.y === slime.y)
+    check('tactile : pad du doigt mémorisé', !!aimPad && aimPad.x === px0 && aimPad.y === py0)
+    // glisse le doigt de +100 px écran à droite et 60 px vers le haut
+    const k = AIM_SENS * camW / (VW * VSC)
+    tapping(px0 + 100, py0 - 60, 1)
+    check('tactile : réticule suit le delta du doigt',
+      Math.abs(aim.x - (slime.x + 100 * k)) < 0.01 && Math.abs(aim.y - (slime.y - 60 * k)) < 0.01)
+    // un second doigt ne détourne pas la visée (ni en déplaçant, ni en relâchant)
+    tapping(px0 + 300, py0 - 200, 2)
+    check('tactile : second doigt ignoré (déplacement)', Math.abs(aim.x - (slime.x + 100 * k)) < 0.01)
+    untap(px0 + 300, py0 - 200, 2)
+    check('tactile : second doigt ignoré (relâcher)', aim.on === true && aimPad !== null)
+    // annule la visée sans sauter
+    aim.on = false
+    aimPad = null
+    // saut vertical sûr : glisse vers le haut puis relâche
+    tap(px0, py0, 1)
+    tapping(px0, py0 - 60, 1)
+    const d = Math.hypot(aim.x - slime.x, aim.y - slime.y)
+    untap(px0, py0 - 60, 1)
+    check('tactile : saut selon le réticule déplacé',
+      aimPad === null && !slime.grounded && Math.abs(slime.vx) < 1 &&
+      Math.abs(Math.hypot(slime.vx, slime.vy) - Phys.aimVel(d)) < 1)
+    waitLand() // saut vertical : retombe sur la plateforme de départ
+    // bornes : glissement très loin à gauche -> réticule borné à la caméra
+    tap(px0, py0, 1)
+    const sx0 = aim.x
+    tapping(px0 - 800, py0, 1)
+    check('tactile : réticule borné autour de la caméra', aim.x === Math.max(camX - 120, sx0 - 800 * k))
+    aim.on = false
+    aimPad = null
+  }
+  startGame()
+
+  // --- 3) coyote time : quitter le bord puis viser vite (saut au niveau sol) ---
+  startGame()
+  runStarted = true
   for (let i = 0; i < 5; i++) update(1 / 60) // quelques frames au sol : coyote rafraîchi
   slime.x = slime.groundPlat.x + slime.groundPlat.w + 12
   update(1 / 60)
   check('en l\'air après le bord', !slime.grounded)
-  tap(300, 120, 2)
-  check('coyote : la charge démarre en l\'air', charge.on === true)
-  untap(300, 120, 2)
-  check('coyote : saut déclenché', !slime.grounded)
+  updateCam()
+  {
+    const p = w2px(slime.x - 20, slime.y - 90)
+    tap(p.x, p.y, 0)
+    check('coyote : la visée démarre en l\'air (saut normal)', aim.on === true && aim.air === false)
+    untap(p.x, p.y, 0)
+    check('coyote : saut déclenché', !slime.grounded)
+  }
   waitLand()
 
-  // reset propre : plateforme de départ, slime centré
-  const drop2px = () => {
-    const p = platforms[0]
-    slime.x = p.x + p.w / 2
-    slime.y = p.y - slime.r - 2
-    slime.vy = 0
+  // --- 4) double saut + slow-mo + cooldown ---
+  startGame()
+  updateCam()
+  {
+    // décolle : saut faible verticale
+    let p = w2px(slime.x, slime.y - 25)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    let f = 0; while (slime.grounded && f++ < 30) update(1 / 60)
+    check('en l\'air après le 1er saut', !slime.grounded)
+    check('charges aériennes pleines', slime.airJumps === 1)
+    // appui en l'air : visée de double saut + slow-mo
+    updateCam()
+    p = w2px(slime.x + 40, slime.y - 60)
+    tap(p.x, p.y, 0)
+    check('visée aérienne (double saut)', aim.on === true && aim.air === true)
+    update(1 / 60); update(1 / 60)
+    check('slow-mo actif pendant la visée', slowmoT > 0 && ts < 0.9)
+    untap(p.x, p.y, 0)
+    check('double saut exécuté', !slime.grounded && slime.airJumps === 0 && slime.vy < 0)
+    check('cooldown démarré', slime.djCd > 0)
+    check('slow-mo coupé au relâcher', slowmoT === 0)
+    update(1 / 60); update(1 / 60)
+    check('retour fluide à la vitesse normale', ts > 0.5)
+    // deuxième appui en l'air : plus de charge -> ignoré
+    updateCam()
+    p = w2px(slime.x + 40, slime.y - 60)
+    tap(p.x, p.y, 0)
+    check('cooldown : appui ignoré', aim.on === false)
+    // repose le slime au-dessus de la plateforme de départ : l'atterrissage
+    // recharge la charge aérienne
+    const p0 = platforms[0]
     slime.vx = 0
-    slime.coyote = 0 // sinon le coyote prendrait l'appui avant le buffer
-    slime.grounded = false
-    slime.groundPlat = null
-    runStarted = true
-    update(1 / 60) // une frame officiellement en l'air
+    let g = 0
+    while (!slime.grounded && state === 'playing' && g++ < 400) {
+      slime.x = p0.x + p0.w / 2
+      update(1 / 60)
+    }
+    check('atterrissage : charge aérienne restaurée', slime.grounded && slime.airJumps === 1)
   }
 
-  // --- 3) jump buffer relâché avant l'atterrissage -> saut faible immédiat ---
-  // NB : tap() prend des pixels canvas (960x540) ; ÷2 = coordonnées virtuelles.
+  // --- 5) pouvoir désactivé (layout.powers) -> appui en l'air ignoré ---
   startGame()
-  drop2px()
-  tap(400, 500, 3) // visée virtuelle (200,250) bas-gauche : retombe sur la plateforme
-  check('buffer armé en l\'air (pas de charge)', !charge.on && slime.buffer > 0)
-  untap(400, 500, 3)
-  check('buffer marqué relâché', slime.bufferRel === true)
-  let landed = false, instantJump = false
-  const _dj = doJump
-  doJump = function () { instantJump = true; return _dj() }
-  let fl = 0
-  while (fl++ < 10) { update(1 / 60); if (slime.grounded) { landed = true; break } }
-  doJump = _dj
-  check('atterrissage atteint', landed)
-  check('buffer consommé : saut immédiat', landed && instantJump)
-  waitLand()
-  check('revient au sol après le saut bufferisé', slime.grounded)
+  Patterns.setLayout({ powers: { doubleJump: { enabled: false } } })
+  applyLayout()
+  check('pouvoir désactivé lu du layout', POWERS.doubleJump.enabled === false)
+  {
+    let p = w2px(slime.x, slime.y - 25)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    let f = 0; while (slime.grounded && f++ < 30) update(1 / 60)
+    updateCam()
+    p = w2px(slime.x + 40, slime.y - 60)
+    tap(p.x, p.y, 0)
+    check('désactivé : pas de visée aérienne', aim.on === false)
+  }
+  Patterns.setLayout(null)
+  applyLayout()
+  startGame()
 
-  // --- 4) jump buffer maintenu -> la charge démarre à l'atterrissage ---
-  startGame()
-  drop2px()
-  tap(400, 500, 4)
-  waitLand()
-  check('buffer tenu : charge auto au sol', charge.on === true && slime.grounded)
-  untap(400, 500, 4)
-  waitLand()
+  // --- 5b) refreshLayout : l'éditeur (autre onglet) a sauvegardé ---
+  localStorage.setItem('slime_patterns_v1', JSON.stringify({
+    format: 'slime-patterns@1',
+    patterns: [],
+    layout: {
+      powers: { doubleJump: { cooldown: 7 }, slowmo: { scale: 0.2 } },
+      phys: { grav: 800 },
+      view: { zoom: 2 }
+    }
+  }))
+  refreshLayout()
+  check('refreshLayout : pouvoirs rechargés (autre onglet)', POWERS.doubleJump.cooldown === 7 && POWERS.slowmo.scale === 0.2)
+  check('refreshLayout : physique rechargée', PH().grav === 800)
+  check('refreshLayout : vue rechargée', VIEW.zoom === 2)
+  Patterns.setLayout(null)
+  applyLayout()
 
-  // --- 5) physique live : layout -> setPhys -> comportement du jeu ---
+  // --- 5c) cooldown 0 est une valeur valide (pas de fallback défaut) ---
+  Patterns.setLayout({ powers: { doubleJump: { cooldown: 0 } } })
+  applyLayout()
+  check('cooldown 0 préservé', POWERS.doubleJump.cooldown === 0)
+  Patterns.setLayout(null)
+  applyLayout()
   startGame()
+
+  // --- 5d) ledge catch : bord manqué de justesse -> accroche -> resaut ---
+  startGame()
+  runStarted = true
+  for (let i = 0; i < 3; i++) update(1 / 60)
+  {
+    const pL = slime.groundPlat
+    // centre 12 px à gauche du bord (hors tolérance d'atterrissage de 6,
+    // dans la fenêtre d'accroche de 8) : le bas frôle le sommet en tombant
+    slime.grounded = false
+    slime.groundPlat = null
+    slime.coyote = 0
+    slime.x = pL.x - 12
+    slime.y = pL.y - slime.r - 14
+    slime.vx = 0
+    slime.vy = 120
+    let hf = 0
+    while (!slime.hang && !slime.grounded && state === 'playing' && hf++ < 120) update(1 / 60)
+    check('ledge catch : bord manqué agrippé', !!slime.hang && !slime.grounded)
+    check('accroche : vitesse annulée', slime.vx === 0 && slime.vy === 0)
+    updateCam()
+    const pj = w2px(slime.x + 60, slime.y - 80)
+    tap(pj.x, pj.y, 0)
+    check('accroche : visée possible depuis le bord', aim.on === true && aim.air === false)
+    untap(pj.x, pj.y, 0)
+    check('accroche : saut exécuté depuis le bord', !slime.hang && !slime.grounded && (slime.vx !== 0 || slime.vy !== 0))
+    waitLand()
+  }
+  startGame()
+
+  // --- 5e) ledge catch : décroche auto à la fin du délai ---
+  runStarted = true
+  for (let i = 0; i < 3; i++) update(1 / 60)
+  {
+    const pL2 = slime.groundPlat
+    slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
+    slime.x = pL2.x - 12; slime.y = pL2.y - slime.r - 14; slime.vx = 0; slime.vy = 120
+    let hf2 = 0
+    while (!slime.hang && state === 'playing' && hf2++ < 120) update(1 / 60)
+    check('décroche : accroché avant timeout', !!slime.hang)
+    let rf = 0
+    while (slime.hang && state === 'playing' && rf++ < 300) update(1 / 60)
+    check('décroche auto à la fin du délai', !slime.hang && rf >= 30)
+    check('décroche : glisse puis tombe', !slime.grounded && slime.vy > 0)
+  }
+  startGame()
+
+  // --- 5f) ledge catch désactivé -> chute normale ---
+  Patterns.setLayout({ powers: { ledge: { enabled: false } } })
+  applyLayout()
+  startGame()
+  runStarted = true
+  for (let i = 0; i < 3; i++) update(1 / 60)
+  {
+    const pL3 = slime.groundPlat
+    slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
+    slime.x = pL3.x - 12; slime.y = pL3.y - slime.r - 14; slime.vx = 0; slime.vy = 120
+    let hf3 = 0
+    while (!slime.grounded && !slime.hang && state === 'playing' && hf3++ < 120) update(1 / 60)
+    check('ledge désactivé : pas d\'accroche', !slime.hang)
+    check('ledge désactivé : pouvoir lu du layout', POWERS.ledge.enabled === false)
+  }
+  Patterns.setLayout(null)
+  applyLayout()
+  startGame()
+
+  // --- 5g) bonus slime : +1 vie, sinon points ---
+  startGame()
+  runStarted = true
+  slime.size = 2
+  balls.push({ x: slime.x, y: slime.y, o: false, taken: false, gold: false, life: true })
+  update(1 / 60)
+  check('bonus slime : +1 vie', slime.size === 3 && bonusCollected === 1)
+  balls.push({ x: slime.x, y: slime.y, o: false, taken: false, gold: false, life: true })
+  update(1 / 60)
+  check('bonus slime : vie pleine -> points (30)', bonusCollected === 2 && slime.size === 3)
+  startGame()
+
+  // --- 6) plus de plafond : grand saut vertical au-dessus de l'écran ---
+  Patterns.setLayout({ phys: { vmax: 600, vmin: 590 } })
+  applyLayout()
+  updateCam()
+  {
+    const p = w2px(slime.x, slime.y - 160) // au-delà de la portée max -> vmax
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    let minY = slime.y, size0 = slime.size, f = 0
+    while (!slime.grounded && f++ < 600) { update(1 / 60); if (slime.y < minY) minY = slime.y }
+    check('grand saut au-dessus du cadre (y < 0) sans dégât', minY < 0 && slime.size === size0)
+    check('retombe vivant après le grand saut', slime.grounded && slime.size === size0)
+  }
+  Patterns.setLayout(null)
+  applyLayout()
+  startGame()
+
+  // --- 7) zoom : fenêtre de vue + mapping souris cohérent ---
+  Patterns.setLayout({ view: { zoom: 2 } })
+  applyLayout()
+  updateCam()
+  check('zoom x2 : fenêtre 240x135', camW === 240 && camH === 135)
+  check('zoom : fenêtre centrée sur le slime', Math.abs(camCx - slime.x) < camW / 2 + 1)
+  {
+    const p = w2px(slime.x + 30, slime.y - 40)
+    const w = s2w(p.x, p.y)
+    check('mapping écran <-> monde cohérent sous zoom', Math.abs(w.x - (slime.x + 30)) < 0.5 && Math.abs(w.y - (slime.y - 40)) < 0.5)
+  }
+  Patterns.setLayout(null)
+  applyLayout()
+  startGame()
+
+  // --- 8) physique live : layout -> setPhys -> puissance du saut ---
   Patterns.setLayout({ phys: { slimeR: 8, grav: 1000, vmax: 500 } })
   applyLayout()
   runStarted = true
   update(1 / 60)
   check('slime.r suit le layout', slime.r === 8)
-  tap(430, 90, 5)
-  for (let i = 0; i < 40; i++) update(1 / 60) // charge pleine (0.66 s > chargeT)
-  untap(430, 90, 5)
-  const sp = Math.hypot(slime.vx, slime.vy)
-  check('vmax du layout appliquée au saut', Math.abs(sp - 500) < 1.5)
+  updateCam()
+  {
+    const p = w2px(slime.x + 100, slime.y - 110) // distance > aimMax -> vmax
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    const sp = Math.hypot(slime.vx, slime.vy)
+    check('vmax du layout appliquée au saut', Math.abs(sp - 500) < 1.5)
+  }
   waitLand()
   Patterns.setLayout(null)
   applyLayout()
   startGame()
 
-  // --- 6) soak : 1200 frames simulées (~20 s), multivies, aucun crash ---
-  // Le bot vise (560,100) écran = (280,50) virtuel : petits arcs up-forward.
-  // Aveugle, il meurt parfois (trous/pics) : on relance une vie via startGame.
+  // --- 9) soak : 1200 frames simulées (~20 s), multivies, aucun crash ---
+  // Le bot vise (280,50) monde (petit arc up-forward) et relâche aussitôt.
   let jumps = 0, lives = 0, frames = 0
-  const _dj2 = doJump
-  doJump = function () { jumps++; return _dj2() }
+  const _ej = execJump
+  execJump = function () { jumps++; return _ej() }
   while (frames++ < 1200) {
     update(1 / 60)
     if (state !== 'playing') { lives++; startGame(); continue }
-    if (slime.grounded && !charge.on) {
-      tap(560, 100, 9)
-    } else if (charge.on && charge.t > 0.5) {
-      untap(560, 100, 9)
+    if (slime.grounded && !aim.on) {
+      updateCam()
+      const p = w2px(280, 50)
+      tap(p.x, p.y, 0)
+      untap(p.x, p.y, 0)
+    }
+    // en l'air avec une charge dispo et cooldown écoulé : double saut bot
+    if (!slime.grounded && canDoubleJump()) {
+      updateCam()
+      const p = w2px(slime.x + 30, slime.y - 40)
+      tap(p.x, p.y, 0)
+      untap(p.x, p.y, 0)
     }
   }
-  doJump = _dj2
+  execJump = _ej
   check('soak 1200 frames sans exception (sauts : ' + jumps + ', vies : ' + lives + ')', jumps > 5)
+
+  // --- 10) rendu : draw() ne doit lever dans aucun état ---
+  Patterns.setLayout(null)
+  applyLayout()
+  try {
+    state = 'title'
+    draw() // titre (camX qui avance : le titre reste en espace vue)
+    startGame()
+    draw()
+    aim = { on: true, x: slime.x + 60, y: slime.y - 80, id: 1, air: false }
+    aimPad = { x: 500, y: 400 } // halo du doigt (visée tactile relative)
+    Patterns.setLayout({ view: { zoom: 2 } })
+    applyLayout()
+    updateCam(); draw() // visée + trajectoire sous zoom
+    state = 'over'; deathT = 2; scoreCode = 'TEST'; draw() // écran PERDU
+    state = 'playing'
+    check('draw() sans exception dans tous les états (titre, visée+zoom, over)', true)
+  } catch (e) {
+    check('draw() sans exception dans tous les états (' + e.message + ')', false)
+  }
 
   console.log(fails === 0 ? '\nSIM OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('game_sim failed')

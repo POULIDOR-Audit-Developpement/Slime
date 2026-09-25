@@ -11,15 +11,32 @@ const Patterns = (() => {
   // Pool embarqué par défaut (généré + validé par tools/gen_defaults.mjs).
   const DEFAULT_POOL_JSON = (typeof SLIME_DEFAULT_POOL === 'string' && SLIME_DEFAULT_POOL) || '[]'
   const DEFAULT_PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
+  // Pouvoirs (onglet POWER) et vue du jeu (onglet VUE) : valeurs par défaut.
+  const POWERS_DEF = {
+    doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
+    slowmo: { enabled: true, scale: 0.35, duration: 0.6 },
+    ledge: { enabled: true, hangT: 1, window: 8 }
+  }
+  const VIEW_DEF = { zoom: 1, showTrajectory: true, shake: true }
+
+  // Nombre borné : non numérique -> défaut ; 0 est une valeur valide
+  // (contrairement à un `|| def` qui écraserait un 0 légitime).
+  const numBound = (v, def, lo, hi) => {
+    v = +v
+    if (!isFinite(v)) v = def
+    return clampN(v, lo, hi)
+  }
 
   // Complète et borne un layout en place (compat anciens saves/exports sans
-  // `plat` ni `phys`). Conserve l'identité des objets walls/plat/phys :
-  // l'éditeur mute ces références à travers ses sliders.
+  // `plat`, `phys`, `powers` ni `view`). Conserve l'identité des objets
+  // walls/plat/phys/powers/view : l'éditeur mute ces références à travers
+  // ses sliders. Le plafond (murs de damage du haut) n'existe plus : toute
+  // valeur `ceil` présente dans d'anciens saves est ignorée/supprimée.
   function normalizeLayout(l) {
     const out = l && typeof l === 'object' ? l : {}
     const w = out.walls && typeof out.walls === 'object' ? out.walls : {}
     const p = out.plat && typeof out.plat === 'object' ? out.plat : {}
-    w.ceil = clampN(+w.ceil || TIP_T, 8, 90)
+    delete w.ceil
     w.left = clampN(+w.left || TIP_L, 4, 60)
     w.right = clampN(+w.right || SPIKE_W, 4, 60)
     out.walls = w
@@ -28,6 +45,29 @@ const Patterns = (() => {
     p.spdMul = clampN(+p.spdMul || DEFAULT_PLAT.spdMul, 0.5, 2)
     out.plat = p
     out.phys = Phys.normalize(out.phys)
+    // Pouvoirs : double saut + slow-mo + ledge catch (bornés, identité conservée).
+    const pw = out.powers && typeof out.powers === 'object' ? out.powers : {}
+    const dj = pw.doubleJump && typeof pw.doubleJump === 'object' ? pw.doubleJump : {}
+    const sm = pw.slowmo && typeof pw.slowmo === 'object' ? pw.slowmo : {}
+    const lg = pw.ledge && typeof pw.ledge === 'object' ? pw.ledge : {}
+    const djd = POWERS_DEF.doubleJump, smd = POWERS_DEF.slowmo, lgd = POWERS_DEF.ledge
+    dj.enabled = dj.enabled !== false
+    dj.cooldown = numBound(dj.cooldown, djd.cooldown, 0, 15)
+    dj.charges = Math.round(numBound(dj.charges, djd.charges, 1, 3))
+    dj.powerMul = numBound(dj.powerMul, djd.powerMul, 0.5, 1.5)
+    sm.enabled = sm.enabled !== false
+    sm.scale = numBound(sm.scale, smd.scale, 0.15, 0.8)
+    sm.duration = numBound(sm.duration, smd.duration, 0.2, 2)
+    lg.enabled = lg.enabled !== false
+    lg.hangT = numBound(lg.hangT, lgd.hangT, 0.3, 3)
+    lg.window = Math.round(numBound(lg.window, lgd.window, 4, 16))
+    out.powers = { doubleJump: dj, slowmo: sm, ledge: lg }
+    // Vue : zoom global du jeu (1 = cadrage 480x270), options d'affichage.
+    const v = out.view && typeof out.view === 'object' ? out.view : {}
+    v.zoom = numBound(v.zoom, VIEW_DEF.zoom, 1, 4)
+    v.showTrajectory = v.showTrajectory !== false
+    v.shake = v.shake !== false
+    out.view = v
     if (!Array.isArray(out.decor)) out.decor = []
     return out
   }
@@ -126,10 +166,9 @@ const Patterns = (() => {
     // validée comme un saut optionnel par validateInstance.
     for (const wl of pat.walls || []) {
       const row = clampN((wl.row | 0) + delta, 0, 4)
-      const w = Phys.walls().ceil
       const inst = {
         x: dx + wl.x, w: wl.cells * CELL, kind: wl.kind, spiked: !!wl.spiked, row,
-        y1: wl.kind === 'ground' ? rowY(row) : w,
+        y1: wl.kind === 'ground' ? rowY(row) : 0,
         y2: wl.kind === 'ground' ? VH : rowY(row)
       }
       walls.push(inst)
@@ -145,7 +184,7 @@ const Patterns = (() => {
       const row = clampN((b.row | 0) + delta, 0, 4)
       balls.push({
         x: dx + b.x, y: clampN(rowY(row) + (b.yOff || 0), CEIL + 12, VH - 8),
-        o: Math.random() < 0.3, taken: false, gold: !!b.gold
+        o: Math.random() < 0.3, taken: false, gold: !!b.gold, life: !!b.life
       })
     }
     for (const d of pat.decor || []) {
@@ -311,8 +350,106 @@ const Patterns = (() => {
       if (prev) localStorage.setItem(BAK_KEY, prev)
     } catch (e) {}
     writeMain()
+    if (lan.on) lanPush() // partage au serveur LAN (fire & forget)
   }
   function loadStatus() { return loadStatusVar }
+
+  // ---------- sync LAN (serveur optionnel server.mjs) ----------
+  // Même origine http(s) + server.mjs lancé : le pool est partagé entre tous
+  // les appareils du LAN. Adoption de l'état distant au démarrage (ou poussée
+  // du pool local si le serveur est vide), poussée à chaque save(), polling
+  // léger de /api/rev pour les changements venus d'ailleurs. Sans serveur :
+  // localStorage seul, exactement comme avant.
+  const LAN_POLL_MS = 2000
+  const lan = { on: false, rev: 0, lastPushed: 0, err: null, timer: null }
+  const lanListeners = []
+
+  function lanLocation() {
+    try {
+      const loc = (typeof window !== 'undefined' && window.location) ||
+        (typeof location !== 'undefined' ? location : null)
+      return loc && (loc.protocol === 'http:' || loc.protocol === 'https:') ? loc : null
+    } catch (e) { return null }
+  }
+  function lanUsable() {
+    return typeof fetch === 'function' && !!lanLocation()
+  }
+  function lanOnChange(cb) { if (typeof cb === 'function') lanListeners.push(cb) }
+  function lanNotify(reason) { for (const cb of lanListeners) { try { cb(reason || 'remote') } catch (e) {} } }
+  function lanStatus() { return { on: lan.on, rev: lan.rev, err: lan.err } }
+
+  function validRemoteState(s) {
+    return !!(s && s.format === FORMAT && Array.isArray(s.patterns))
+  }
+
+  // Remplace le store local par l'état partagé (miroir localStorage conservé
+  // pour continuer à fonctionner si le serveur disparaît). Un pattern en
+  // cours d'édition n'est jamais filtré : aucune perte possible en sync.
+  function adoptRemote(state) {
+    store = { format: FORMAT, patterns: state.patterns, layout: state.layout || null }
+    layout = normalizeLayout(store.layout)
+    loadStatusVar = 'lan'
+    writeMain()
+  }
+
+  async function lanApi(pathname, opts) {
+    const res = await fetch(pathname, opts)
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    return res.json()
+  }
+
+  // Récupère l'état complet ; true si un état valide a été adopté.
+  async function lanPull() {
+    const d = await lanApi('/api/state')
+    lan.rev = d.rev
+    if (validRemoteState(d.state)) { adoptRemote(d.state); return true }
+    return false
+  }
+
+  async function lanPush() {
+    try {
+      const d = await lanApi('/api/state', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: { format: FORMAT, patterns: store.patterns, layout } })
+      })
+      lan.rev = d.rev
+      lan.lastPushed = d.rev
+      lan.err = null
+    } catch (e) { lan.err = String((e && e.message) || e) }
+  }
+
+  async function lanPollTick() {
+    if (!lan.on) return
+    try {
+      const d = await lanApi('/api/rev')
+      lan.err = null
+      if (d.rev !== lan.rev && d.rev !== lan.lastPushed) {
+        await lanPull()
+        lanNotify()
+      } else {
+        lan.rev = d.rev // notre propre poussée : simple rattrapage du compteur
+      }
+    } catch (e) { lan.err = String((e && e.message) || e) }
+  }
+
+  async function lanStart() {
+    if (!lanUsable()) return
+    let had = false
+    try {
+      const d = await lanApi('/api/rev')
+      lan.on = true
+      lan.rev = d.rev
+      had = await lanPull()
+    } catch (e) { return } // pas de serveur : localStorage seul
+    // Serveur encore vide et pool local non vide : on partage ce qui existe.
+    if (!had && store.patterns.length) await lanPush()
+    lan.timer = setInterval(lanPollTick, LAN_POLL_MS)
+    if (lan.timer && typeof lan.timer.unref === 'function') lan.timer.unref()
+    lanNotify('start') // met à jour les UI (éditeur) avec l'état LAN initial
+  }
+
+  // ---------- fin sync LAN ----------
 
   function getPatterns() { return store.patterns }
   function getLayout() { return layout }
@@ -398,6 +535,9 @@ const Patterns = (() => {
     return store.patterns.length
   }
 
+  // Connexion au serveur LAN si présent (no-op sinon, jamais bloquante).
+  try { lanStart().catch(() => {}) } catch (e) {}
+
   return {
     FORMAT, TYPES,
     load, save, loadStatus,
@@ -407,6 +547,7 @@ const Patterns = (() => {
     patternWidth, entryRow, emptyPattern, uid,
     instantiate, jumpOk, targetOf,
     spawnSection, pin, getPinned,
-    exportAll, exportCode, patternToCode, importData, applyImport
+    exportAll, exportCode, patternToCode, importData, applyImport,
+    lanStatus, lanOnChange
   }
 })()

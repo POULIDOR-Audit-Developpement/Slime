@@ -4,30 +4,31 @@
 
 const VW = 480, VH = 270
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
-const TIP_T = CEIL + 12, TIP_L = 11
-const VMIN = 210, VMAX = 360, CHARGE_T = 0.55, STICKY_MUL = 0.8, SPIKE_W = 14
+const TIP_L = 11
+const VMIN = 210, VMAX = 360, AIM_MIN = 24, AIM_MAX = 140, STICKY_MUL = 0.8, SPIKE_W = 14
 const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
 
 // Réglages physique mutables (onglet PHYS de l'éditeur, section `phys` du
 // layout). Les constantes ci-dessus restent les valeurs par défaut.
 // - slimeR : rayon de collision ET de validation du slime (sprite dessiné à
 //   l'échelle 44 px pour un rayon de 18).
-// - grav / vmin / vmax / chargeT / fallMax / dragAir : le cœur du « snappy ».
+// - grav / vmin / vmax / fallMax / dragAir : le cœur du « snappy ».
+// - aimMin / aimMax : portée de visée du saut — la puissance (vmin→vmax) suit
+//   la distance du clic/touch au slime entre ces deux rayons.
 // - bounceVy/bounceVx : relance automatique des plateformes orange.
 // - stickyMul : puissance du saut après une plateforme collante.
 // - invuln : durée d'invincibilité après un coup ; hurtRecoil : échelle des
 //   reculs infligés par les piques et murs.
-// - coyote : fenêtre pour sauter après avoir quitté une plateforme ;
-//   jumpBuffer : un appui en l'air est mémorisé et déclenché à l'atterrissage.
+// - coyote : fenêtre pour sauter après avoir quitté une plateforme.
 // - camBase / camMax / camRampT : courbe de vitesse de la caméra
 //   (base, plafond, secondes entre chaque palier de +5).
 const PHYS_DEF = {
   slimeR: 14,
-  grav: GRAV, vmin: VMIN, vmax: VMAX, chargeT: CHARGE_T,
+  grav: GRAV, vmin: VMIN, vmax: VMAX, aimMin: AIM_MIN, aimMax: AIM_MAX,
   fallMax: 520, dragAir: 0.6,
   bounceVy: BOUNCE_VY, bounceVx: BOUNCE_VX, stickyMul: STICKY_MUL,
   invuln: 1.3, hurtRecoil: 1,
-  coyote: 0.08, jumpBuffer: 0.1,
+  coyote: 0.08,
   camBase: 40, camMax: 120, camRampT: 10
 }
 
@@ -45,7 +46,8 @@ function normPhys(n) {
     grav: physBound(n.grav, d.grav, 300, 1000),
     vmin: physBound(n.vmin, d.vmin, 100, 400),
     vmax: physBound(n.vmax, d.vmax, 200, 600),
-    chargeT: physBound(n.chargeT, d.chargeT, 0.15, 1.2),
+    aimMin: physBound(n.aimMin, d.aimMin, 8, 60),
+    aimMax: physBound(n.aimMax, d.aimMax, 60, 240),
     fallMax: physBound(n.fallMax, d.fallMax, 300, 900),
     dragAir: physBound(n.dragAir, d.dragAir, 0.2, 1),
     bounceVy: physBound(n.bounceVy, d.bounceVy, 250, 650),
@@ -54,13 +56,14 @@ function normPhys(n) {
     invuln: physBound(n.invuln, d.invuln, 0.3, 3),
     hurtRecoil: physBound(n.hurtRecoil, d.hurtRecoil, 0.5, 2),
     coyote: physBound(n.coyote, d.coyote, 0, 0.25),
-    jumpBuffer: physBound(n.jumpBuffer, d.jumpBuffer, 0, 0.25),
     camBase: physBound(n.camBase, d.camBase, 20, 100),
     camMax: physBound(n.camMax, d.camMax, 60, 200),
     camRampT: physBound(n.camRampT, d.camRampT, 4, 30)
   }
   // Garde-fou : la puissance max doit rester discriminante face au min.
   if (out.vmax < out.vmin + 50) out.vmax = Math.min(600, out.vmin + 50)
+  // Garde-fou : la portée max de visée doit dépasser la portée min.
+  if (out.aimMax < out.aimMin + 20) out.aimMax = Math.min(240, out.aimMin + 20)
   return out
 }
 
@@ -69,12 +72,12 @@ function rowY(r) { return ROW0 + r * RS }
 const Phys = (() => {
   // Murs de damage paramétrables (édités dans l'onglet VUE, appliqués au jeu).
   // (renommé wallsCfg pour libérer le nom `walls` = murs verticaux des patterns)
-  let wallsCfg = { ceil: TIP_T, left: TIP_L, right: SPIKE_W }
+  // Pas de plafond : le haut du monde est ouvert (grands sauts autorisés).
+  let wallsCfg = { left: TIP_L, right: SPIKE_W }
 
   function setWalls(next) {
     if (!next) return
     wallsCfg = {
-      ceil: Math.max(8, Math.min(90, +next.ceil || TIP_T)),
       left: Math.max(4, Math.min(60, +next.left || TIP_L)),
       right: Math.max(4, Math.min(60, +next.right || SPIKE_W))
     }
@@ -105,7 +108,7 @@ const Phys = (() => {
       vy += P.grav * dt
       x += vx * dt
       y += vy * dt
-      if (y - r < wallsCfg.ceil) { y = wallsCfg.ceil + r; if (vy < 0) vy = 0 }
+      if (y < -4000) return false // garde-fou (le haut du monde est ouvert)
       if (vy >= 0 && x > target.x - 3 && x < target.x + target.w + 3 && py + r <= target.y + 8 && y + r >= target.y) return true
       if (walls) {
         for (let j = 0; j < walls.length; j++) {
@@ -141,5 +144,19 @@ const Phys = (() => {
     return simLandV(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls)
   }
 
-  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachBounce }
+  // Puissance du saut « visée » : la distance du clic/touch au slime, bornée
+  // entre aimMin (-> vmin) et aimMax (-> vmax), donne la vitesse de départ.
+  function aimVel(d) {
+    const P = physCfg
+    const t = Math.max(0, Math.min(1, (d - P.aimMin) / Math.max(1, P.aimMax - P.aimMin)))
+    return P.vmin + (P.vmax - P.vmin) * t
+  }
+
+  // Ratio 0..1 de la puissance visée (pour l'affichage : jauge, écrasement).
+  function aimRatio(d) {
+    const P = physCfg
+    return Math.max(0, Math.min(1, (d - P.aimMin) / Math.max(1, P.aimMax - P.aimMin)))
+  }
+
+  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachBounce, aimVel, aimRatio }
 })()

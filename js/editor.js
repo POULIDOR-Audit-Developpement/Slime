@@ -17,7 +17,8 @@ const Ed = (() => {
     ghost: '#d8e8f4', ghostD: '#a8bccb',
     bouncy: '#cc6d1a', bouncyD: '#8f4a0f',
     spike: '#e23b3b', spikeD: '#8f1f1f',
-    ball: '#ffd83d', gold: '#ffd700', ok: '#3ecb3e', ko: '#e23b3b', sel: '#ffd83d'
+    ball: '#ffd83d', gold: '#ffd700', ok: '#3ecb3e', ko: '#e23b3b', sel: '#ffd83d',
+    slime: '#3ecb3e'
   }
   const TIER_COLORS = ['#3ecb3e', '#a5f0a5', '#ffd83d', '#ff9d2e', '#e23b3b']
   const TYPE_LABEL = {
@@ -239,7 +240,17 @@ const Ed = (() => {
   function drawBallEditor(c, b, selected) {
     const y = rowY(b.row) + b.yOff
     c.save()
-    if (b.gold) {
+    if (b.life) {
+      // bonus slime « as in HUD » : tête verte cerclée d'un halo
+      c.globalAlpha = 0.3
+      c.fillStyle = COL.slime
+      c.beginPath(); c.arc(b.x, y, 11, 0, 7); c.fill()
+      c.globalAlpha = 1
+      c.strokeStyle = COL.black; c.lineWidth = 2
+      c.beginPath(); c.arc(b.x, y, 7.5, 0, 7); c.stroke()
+      c.fillStyle = COL.slime
+      c.beginPath(); c.arc(b.x, y, 6, 0, 7); c.fill()
+    } else if (b.gold) {
       c.globalAlpha = 0.35
       c.fillStyle = COL.gold
       c.beginPath(); c.arc(b.x, y, 11, 0, 7); c.fill()
@@ -264,10 +275,10 @@ const Ed = (() => {
   }
 
   function wallGeom(wl) {
-    const wc = Phys.walls().ceil
+    // Plus de plafond global : les stalactites pendent du haut de l'écran (y=0).
     return wl.kind === 'ground'
       ? { x: wl.x, w: wl.cells * CELL, y1: rowY(wl.row), y2: VH }
-      : { x: wl.x, w: wl.cells * CELL, y1: wc, y2: rowY(wl.row) }
+      : { x: wl.x, w: wl.cells * CELL, y1: 0, y2: rowY(wl.row) }
   }
 
   function drawWallEditor(c, wl, selected) {
@@ -353,10 +364,6 @@ const Ed = (() => {
         c.fillText(String(x), sx + 3, ch - 6)
       }
     }
-    // plafond + zone interdite
-    const ch2 = w2sY(Math.max(8, WALL_DEFAULT() - 12))
-    c.fillStyle = '#1b2044'; c.fillRect(0, 0, cw, ch2)
-    c.fillStyle = '#565a8a'; c.fillRect(0, ch2 - 2, cw, 2)
     // sol
     const fy = w2sY(254)
     c.fillStyle = '#1b2044'; c.fillRect(0, fy, cw, ch - fy)
@@ -377,8 +384,6 @@ const Ed = (() => {
     c.lineTo(ax + aw - 6, ay); c.lineTo(ax + aw - 30, ay); c.fill()
     c.restore()
   }
-
-  function WALL_DEFAULT() { return Patterns.getLayout().walls.ceil }
 
   function drawValidation(c, pat) {
     const v = Patterns.validatePatternJumps(pat)
@@ -504,26 +509,37 @@ const Ed = (() => {
       drawDecorEditor(ctx, d, selKind === 'decor' && selIdx === i, x => x, y => y, 1)
     }
 
-    // 1) bandes de damage unifiées : plafond / gauche / droite (drawDamageWalls)
-    drawDamageBand(ctx, 0, 0, VW, walls.ceil, 'bottom')
-    drawDamageBand(ctx, 0, walls.ceil, walls.left, VH - walls.ceil, 'right')
-    drawDamageBand(ctx, VW - walls.right, walls.ceil, walls.right, VH - walls.ceil, 'left')
+    // 1) bandes de damage unifiées : gauche / droite (drawDamageWalls) —
+    //    pleine hauteur, le haut du monde est ouvert (plus de plafond)
+    drawDamageBand(ctx, 0, 0, walls.left, VH, 'right')
+    drawDamageBand(ctx, VW - walls.right, 0, walls.right, VH, 'left')
 
     // 2) bas du cadre (zone de chute) — même bande bedrock rouge (drawFrameEdges)
     drawDamageBand(ctx, 0, VH - 8, VW, 8, null)
 
-    // 5) lignes de danger (aide à l'édition) + poignées
+    // 3) fenêtre visible en jeu au zoom courant (aperçu informatif)
+    const zv = Math.max(1, Math.min(4, +L.view.zoom || 1))
+    if (zv > 1.001) {
+      const ww = VW / zv, wh = VH / zv
+      ctx.save()
+      ctx.strokeStyle = 'rgba(216,232,244,.8)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5
+      ctx.strokeRect(VW / 2 - ww / 2, VH / 2 - wh / 2, ww, wh)
+      ctx.setLineDash([])
+      ctx.fillStyle = 'rgba(216,232,244,.85)'
+      ctx.font = '9px monospace'
+      ctx.fillText('vue en jeu : zoom ×' + zv.toFixed(1), VW / 2 - ww / 2 + 4, VH / 2 - wh / 2 - 4)
+      ctx.restore()
+    }
+
+    // 4) lignes de danger (aide à l'édition) + poignées
     ctx.globalAlpha = 0.55
     ctx.fillStyle = COL.ko
-    ctx.fillRect(0, walls.ceil - 1, VW, 2)
-    ctx.fillRect(walls.left, walls.ceil, 2, VH - walls.ceil)
-    ctx.fillRect(VW - walls.right - 2, walls.ceil, 2, VH - walls.ceil)
+    ctx.fillRect(walls.left, 0, 2, VH)
+    ctx.fillRect(VW - walls.right - 2, 0, 2, VH)
     ctx.globalAlpha = 1
-    drawGrip(ctx, VW / 2, walls.ceil)
     drawGrip(ctx, walls.left, VH / 2)
     drawGrip(ctx, VW - walls.right, VH / 2)
     ctx.font = '10px monospace'; ctx.fillStyle = COL.white
-    ctx.fillText('plafond ' + Math.round(walls.ceil), VW / 2 + 10, walls.ceil + 4)
     ctx.fillText('gauche ' + Math.round(walls.left), walls.left + 6, VH / 2 + 4)
     ctx.fillText('droite ' + Math.round(walls.right), VW - walls.right - 60, VH / 2 + 4)
     ctx.restore()
@@ -595,7 +611,7 @@ const Ed = (() => {
   function draw() {
     const dpr = window.devicePixelRatio || 1
     const cw = cv.clientWidth, chh = cv.clientHeight
-    if (mode === 'phys') {
+    if (mode === 'phys' || mode === 'power') {
       // Vue réglages pleine page : pas de canvas, on garde juste la décroissance du flash.
     } else {
       if (cv.width !== cw * dpr || cv.height !== chh * dpr) {
@@ -618,6 +634,7 @@ const Ed = (() => {
   function renderProps() {
     if (mode === 'layout') return renderPropsLayout()
     if (mode === 'phys') return renderPropsPhys()
+    if (mode === 'power') return renderPropsPower()
     const pat = selPattern()
     if (!pat) {
       propsEl.innerHTML = `<div class="empty">Crée un pattern avec « + Nouveau »,<br>ou copie le pool par défaut pour l'éditer.<br><br>• molette : défiler<br>• clic : placer / sélectionner<br>• Ctrl+clic / Ctrl+glisser : multi-sélection<br>• Ctrl+C / Ctrl+V : copier / coller<br>• Suppr : effacer la sélection</div>`
@@ -678,7 +695,8 @@ const Ed = (() => {
       }
     } else if (selKind === 'ball' && pat.balls[selIdx]) {
       const b = pat.balls[selIdx]
-      html += `<div class="chk"><input type="checkbox" id="oGold" ${b.gold ? 'checked' : ''}/> bille dorée (50 pts)</div>
+      html += `<div class="chk"><input type="checkbox" id="oLife" ${b.life ? 'checked' : ''}/> bonus slime (+1 vie, sinon 30 pts)</div>
+      <div class="chk"><input type="checkbox" id="oGold" ${b.gold ? 'checked' : ''}/> bille dorée (50 pts)</div>
       <div class="row"><label>X</label><input type="number" id="oBX" step="8" value="${b.x}"/></div>
       <div class="row"><label>Ligne</label><select id="oBRow">${[0, 1, 2, 3, 4].map(r => `<option value="${r}" ${b.row === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
       <div class="row"><label>Y offset</label><input type="number" id="oBYOff" value="${b.yOff}"/></div>`
@@ -762,6 +780,7 @@ const Ed = (() => {
       persistSilent()
     }
     on('oSa', 'input', spikeUpd); on('oSb', 'input', spikeUpd)
+    on('oLife', 'change', e => { pat.balls[selIdx].life = e.target.checked; persist() })
     on('oGold', 'change', e => { pat.balls[selIdx].gold = e.target.checked; persist() })
     on('oBX', 'change', e => { pat.balls[selIdx].x = parseInt(e.target.value, 10) || 0; persist() })
     on('oBRow', 'change', e => { pat.balls[selIdx].row = parseInt(e.target.value, 10); persist() })
@@ -783,11 +802,16 @@ const Ed = (() => {
   function renderPropsLayout() {
     const L = Patterns.getLayout()
     const w = L.walls
+    const v = L.view
     let html = `<h3>Murs de damage</h3>
-    <div class="row"><label>Plafond</label><input type="range" id="wCeil" min="8" max="90" value="${w.ceil}"/><span class="val" id="wCeilV">${w.ceil}</span></div>
     <div class="row"><label>Gauche</label><input type="range" id="wLeft" min="4" max="60" value="${w.left}"/><span class="val" id="wLeftV">${w.left}</span></div>
     <div class="row"><label>Droite</label><input type="range" id="wRight" min="4" max="60" value="${w.right}"/><span class="val" id="wRightV">${w.right}</span></div>
-    <div class="note">Glisse les poignées dorées directement sur la vue. Ces hitboxes s'appliquent au jeu immédiatement.</div>
+    <div class="note">Glisse les poignées dorées directement sur la vue. Ces hitboxes s'appliquent au jeu immédiatement. Pas de plafond : le haut est ouvert, les grands sauts passent.</div>
+    <h3>Vue du jeu</h3>
+    <div class="row"><label>Zoom</label><input type="range" id="vZoom" min="10" max="40" value="${Math.round(v.zoom * 10)}"/><span class="val" id="vZoomV">×${v.zoom.toFixed(1)}</span></div>
+    <div class="chk"><input type="checkbox" id="vTraj" ${v.showTrajectory ? 'checked' : ''}/> afficher la trajectoire de saut</div>
+    <div class="chk"><input type="checkbox" id="vShake" ${v.shake ? 'checked' : ''}/> secousse d'écran (dégâts, mort)</div>
+    <div class="note">Zoom global de la vue en jeu, centré sur le slime (fixe pendant la partie). ×1 = cadrage complet 480×270. Utile pour bien voir un slime réduit (onglet PHYS, taille 8). L'aperçu au centre de la vue montre la fenêtre visible.</div>
     <h3>Plateformes (global)</h3>
     <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="20" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
     <div class="row"><label>Dyn. vie</label><input type="range" id="pDynLife" min="10" max="100" step="5" value="${Math.round(L.plat.dynLife * 10)}"/><span class="val" id="pDynLifeV">${L.plat.dynLife.toFixed(1)} s</span></div>
@@ -814,17 +838,26 @@ const Ed = (() => {
     propsEl.innerHTML = html
     const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn) }
     const wallUpd = () => {
-      w.ceil = parseInt(document.getElementById('wCeil').value, 10)
       w.left = parseInt(document.getElementById('wLeft').value, 10)
       w.right = parseInt(document.getElementById('wRight').value, 10)
       Patterns.setLayout(L)
       Phys.setWalls(w)
-      for (const [id, key] of [['wCeilV', 'ceil'], ['wLeftV', 'left'], ['wRightV', 'right']]) {
+      for (const [id, key] of [['wLeftV', 'left'], ['wRightV', 'right']]) {
         const v = document.getElementById(id); if (v) v.textContent = w[key]
       }
       persistSilent()
     }
-    on('wCeil', 'input', wallUpd); on('wLeft', 'input', wallUpd); on('wRight', 'input', wallUpd)
+    on('wLeft', 'input', wallUpd); on('wRight', 'input', wallUpd)
+    const viewUpd = () => {
+      L.view.zoom = parseInt(document.getElementById('vZoom').value, 10) / 10
+      L.view.showTrajectory = document.getElementById('vTraj').checked
+      L.view.shake = document.getElementById('vShake').checked
+      Patterns.setLayout(L)
+      const vz = document.getElementById('vZoomV')
+      if (vz) vz.textContent = '×' + L.view.zoom.toFixed(1)
+      persistSilent()
+    }
+    on('vZoom', 'input', viewUpd); on('vTraj', 'change', viewUpd); on('vShake', 'change', viewUpd)
     const platUpd = () => {
       L.plat.crumbleT = parseInt(document.getElementById('pCrumb').value, 10) / 10
       L.plat.dynLife = parseInt(document.getElementById('pDynLife').value, 10) / 10
@@ -847,9 +880,10 @@ const Ed = (() => {
     on('oDW', 'change', e => { L.decor[selIdx].w = Math.max(10, parseInt(e.target.value, 10) || 60); Patterns.setLayout(L); persistSilent() })
     on('oDel', 'click', () => { L.decor.splice(selIdx, 1); selKind = null; selIdx = -1; Patterns.setLayout(L); persistSilent(); renderProps() })
     on('btnResetL', 'click', () => {
-      Patterns.setLayout({ walls: { ceil: TIP_T, left: TIP_L, right: SPIKE_W }, plat: L.plat, phys: L.phys, decor: L.decor })
-      Phys.setWalls(Patterns.getLayout().walls)
-      renderProps(); flash('Murs réinitialisés')
+      Patterns.setLayout({ walls: { left: TIP_L, right: SPIKE_W }, plat: L.plat, phys: L.phys, powers: L.powers, view: null, decor: L.decor })
+      const L2 = Patterns.getLayout()
+      Phys.setWalls(L2.walls)
+      renderProps(); flash('Murs et vue réinitialisés')
     })
     setLTool(layoutTool)
   }
@@ -860,11 +894,12 @@ const Ed = (() => {
     ['Slime', [
       ['slimeR', 'Taille', 8, 18, 1, v => Math.round(v) + ' px']
     ]],
-    ['Saut', [
+    ['Saut & visée', [
       ['grav', 'Gravité', 300, 1000, 10, v => Math.round(v)],
       ['vmin', 'Saut min', 100, 400, 5, v => Math.round(v)],
       ['vmax', 'Saut max', 200, 600, 5, v => Math.round(v)],
-      ['chargeT', 'Charge max', 0.15, 1.2, 0.05, v => (+v).toFixed(2) + ' s'],
+      ['aimMin', 'Portée min', 8, 60, 1, v => Math.round(v) + ' px'],
+      ['aimMax', 'Portée max', 60, 240, 5, v => Math.round(v) + ' px'],
       ['fallMax', 'Chute max', 300, 900, 10, v => Math.round(v)],
       ['dragAir', 'Traînée air', 0.2, 1, 0.05, v => (+v).toFixed(2)]
     ]],
@@ -883,27 +918,42 @@ const Ed = (() => {
       ['camRampT', 'Palier', 4, 30, 1, v => Math.round(v) + ' s']
     ]],
     ['Game feel', [
-      ['coyote', 'Coyote', 0, 0.25, 0.01, v => (+v).toFixed(2) + ' s'],
-      ['jumpBuffer', 'Buffer saut', 0, 0.25, 0.01, v => (+v).toFixed(2) + ' s']
+      ['coyote', 'Coyote', 0, 0.25, 0.01, v => (+v).toFixed(2) + ' s']
     ]]
   ]
   const physDef = key => { for (const [, rows] of PHYS_SLIDERS) { const r = rows.find(r => r[0] === key); if (r) return r } return null }
 
+  // État « dirty » du bouton Appliquer : brouillon différent du layout courant.
+  function markApplyDirty(btnId, noteId, dirty) {
+    const btn = document.getElementById(btnId)
+    if (btn) btn.classList.toggle('dirty', dirty)
+    const note = document.getElementById(noteId)
+    if (note) note.style.display = dirty ? '' : 'none'
+  }
+
   function renderPropsPhys() {
     const L = Patterns.getLayout()
-    const ph = L.phys
+    // Brouillon : les sliders ne touchent le layout qu'au clic sur « Appliquer ».
+    const draft = Object.assign({}, L.phys)
+    const isDirty = () => Object.keys(draft).some(k => draft[k] !== L.phys[k])
     let html = `<div class="physHead">
       <div>
         <h3>Physique du jeu</h3>
-        <div class="note">Appliqué au jeu en direct ; la validation ✓/✗ des sauts et le playtest utilisent ces valeurs. Inclus dans l'export .json et le code compact. Coyote : sauter juste après avoir quitté une plateforme. Buffer : un appui en l'air est mémorisé et déclenché à l'atterrissage.</div>
+        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Inclus dans l'export .json et le code compact.</div>
       </div>
-      <button id="btnResetPhys">Réinitialiser la physique</button>
+      <div class="applyCol">
+        <span class="dirtyNote" id="physDirtyNote" style="display:none">● modifications non appliquées</span>
+        <div class="btnRow">
+          <button id="btnApplyPhys" class="applyBtn">✓ Appliquer au jeu</button>
+          <button id="btnResetPhys">Réinitialiser la physique</button>
+        </div>
+      </div>
     </div>
     <div class="physGrid">`
     for (const [grp, rows] of PHYS_SLIDERS) {
       html += `<div class="physCard"><h3>${grp}</h3>`
       for (const [key, label, min, max, step, fmt] of rows) {
-        html += `<div class="row"><label>${label}</label><input type="range" id="ph_${key}" min="${min}" max="${max}" step="${step}" value="${ph[key]}"/><span class="val" id="ph_${key}V">${fmt(ph[key])}</span></div>`
+        html += `<div class="row"><label>${label}</label><input type="range" id="ph_${key}" min="${min}" max="${max}" step="${step}" value="${draft[key]}"/><span class="val" id="ph_${key}V">${fmt(draft[key])}</span></div>`
       }
       html += `</div>`
     }
@@ -914,30 +964,136 @@ const Ed = (() => {
       const el = document.getElementById('ph_' + key)
       if (!el) return
       const def = physDef(key)
-      ph[key] = parseFloat(el.value)
-      Patterns.setLayout(L)
-      Phys.setPhys(L.phys)
+      draft[key] = parseFloat(el.value)
       const v = document.getElementById('ph_' + key + 'V')
-      if (v) v.textContent = def[5](ph[key])
-      persistSilent()
+      if (v) v.textContent = def[5](draft[key])
+      markApplyDirty('btnApplyPhys', 'physDirtyNote', isDirty())
     }
     for (const [, rows] of PHYS_SLIDERS) for (const [key] of rows) on('ph_' + key, 'input', () => upd(key))
+    on('btnApplyPhys', 'click', () => {
+      Patterns.setLayout({ walls: L.walls, plat: L.plat, decor: L.decor, phys: draft, powers: L.powers, view: L.view })
+      Phys.setPhys(Patterns.getLayout().phys)
+      renderProps()
+      flash('Physique appliquée au jeu')
+    })
     on('btnResetPhys', 'click', () => {
-      Patterns.setLayout({ walls: L.walls, plat: L.plat, decor: L.decor, phys: null })
+      Patterns.setLayout({ walls: L.walls, plat: L.plat, decor: L.decor, phys: null, powers: L.powers, view: L.view })
       const L2 = Patterns.getLayout()
       Phys.setWalls(L2.walls)
       Phys.setPhys(L2.phys)
       renderProps(); flash('Physique réinitialisée')
     })
+    // Rendu frais : jamais dirty (les toggles classList persistent côté tests).
+    markApplyDirty('btnApplyPhys', 'physDirtyNote', false)
+  }
+
+  // ---------- onglet POWER ----------
+  // [[groupe, [[clé, libellé, min, max, pas, format] | ['enabled', 'Activé'], ...]]]
+  const POWER_CARDS = [
+    ['doubleJump', 'Double saut', [
+      ['enabled', 'Activé'],
+      ['cooldown', 'Recharge', 0, 15, 0.5, v => (+v).toFixed(1) + ' s'],
+      ['charges', 'Charges', 1, 3, 1, v => Math.round(v)],
+      ['powerMul', 'Puissance', 0.5, 1.5, 0.05, v => '×' + (+v).toFixed(2)]
+    ]],
+    ['slowmo', 'Slow-mo (bullet time)', [
+      ['enabled', 'Activé'],
+      ['scale', 'Échelle temps', 0.15, 0.8, 0.05, v => '×' + (+v).toFixed(2)],
+      ['duration', 'Durée', 0.2, 2, 0.1, v => (+v).toFixed(1) + ' s']
+    ]],
+    ['ledge', 'Ledge catch (accroche)', [
+      ['enabled', 'Activé'],
+      ['hangT', "Durée d'accroche", 0.3, 3, 0.1, v => (+v).toFixed(1) + ' s'],
+      ['window', 'Fenêtre', 4, 16, 1, v => Math.round(v) + ' px']
+    ]]
+  ]
+  const powerDef = (grp, key) => {
+    const card = POWER_CARDS.find(c => c[0] === grp)
+    const r = card ? card[2].find(r => r[0] === key) : null
+    return r || null
+  }
+
+  function renderPropsPower() {
+    const L = Patterns.getLayout()
+    // Brouillon : les réglages ne touchent le layout qu'au clic sur « Appliquer ».
+    const draft = JSON.parse(JSON.stringify(L.powers))
+    const isDirty = () => JSON.stringify(draft) !== JSON.stringify(L.powers)
+    let html = `<div class="physHead">
+      <div>
+        <h3>Pouvoirs du slime</h3>
+        <div class="note"><b>Double saut</b> : en l'air, appui = visée en temps ralenti (si slow-mo activé), relâcher = double saut à pleine vitesse dans la direction et la puissance visées. Recharge : délai avant de pouvoir réutiliser. Charges : sauts aériens par atterrissage. <b>Slow-mo</b> : échelle du temps (×0.35 = 3× plus lent) et durée maximale du ralenti pendant la visée. <b>Ledge catch</b> : un bord manqué de justesse (dans la fenêtre réglable) est agrippé in-extremis — le slime y reste accroché (durée réglable), un appui permet de viser un saut depuis le bord, sinon il décroche tout seul. Inclus dans l'export (.json / code compact).</div>
+      </div>
+      <div class="applyCol">
+        <span class="dirtyNote" id="powDirtyNote" style="display:none">● modifications non appliquées</span>
+        <div class="btnRow">
+          <button id="btnApplyPow" class="applyBtn">✓ Appliquer au jeu</button>
+          <button id="btnResetPow">Réinitialiser les pouvoirs</button>
+        </div>
+      </div>
+    </div>
+    <div class="physGrid">`
+    for (const [grp, label, rows] of POWER_CARDS) {
+      html += `<div class="physCard"><h3>${label}</h3>`
+      for (const r of rows) {
+        const key = r[0]
+        if (key === 'enabled') {
+          html += `<div class="chk"><input type="checkbox" id="pw_${grp}_enabled" ${draft[grp].enabled ? 'checked' : ''}/> pouvoir activé</div>`
+        } else {
+          const [, lbl, min, max, step, fmt] = r
+          html += `<div class="row"><label>${lbl}</label><input type="range" id="pw_${grp}_${key}" min="${min}" max="${max}" step="${step}" value="${draft[grp][key]}"/><span class="val" id="pw_${grp}_${key}V">${fmt(draft[grp][key])}</span></div>`
+        }
+      }
+      html += `</div>`
+    }
+    html += `<div class="physCard"><h3>Rappel mécanique</h3>
+      <div class="note">Saut au sol : appui = la visée démarre, bouger le curseur ajuste direction (tous les angles, même vers l'arrière) et puissance (distance au slime), relâcher = saut. En l'air, un appui déclenche le double saut (si disponible) ; sinon il est ignoré — le jump buffer a été retiré pour éviter les conflits.</div>
+    </div>`
+    html += `</div>`
+    propsEl.innerHTML = html
+    const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn) }
+    const upd = (grp, key) => {
+      const def = powerDef(grp, key)
+      if (key === 'enabled') {
+        draft[grp].enabled = document.getElementById(`pw_${grp}_enabled`).checked
+      } else {
+        const el = document.getElementById(`pw_${grp}_${key}`)
+        if (!el) return
+        draft[grp][key] = parseFloat(el.value)
+        const v = document.getElementById(`pw_${grp}_${key}V`)
+        if (v) v.textContent = def[5](draft[grp][key])
+      }
+      markApplyDirty('btnApplyPow', 'powDirtyNote', isDirty())
+    }
+    for (const [grp, , rows] of POWER_CARDS) {
+      for (const [key] of rows) {
+        const ev = key === 'enabled' ? 'change' : 'input'
+        on(`pw_${grp}_${key}`, ev, () => upd(grp, key))
+      }
+    }
+    on('btnApplyPow', 'click', () => {
+      Patterns.setLayout({ walls: L.walls, plat: L.plat, decor: L.decor, phys: L.phys, view: L.view, powers: draft })
+      renderProps()
+      flash('Pouvoirs appliqués au jeu')
+    })
+    on('btnResetPow', 'click', () => {
+      Patterns.setLayout({ walls: L.walls, plat: L.plat, decor: L.decor, phys: L.phys, view: L.view, powers: null })
+      renderProps(); flash('Pouvoirs réinitialisés')
+    })
+    // Rendu frais : jamais dirty (les toggles classList persistent côté tests).
+    markApplyDirty('btnApplyPow', 'powDirtyNote', false)
   }
 
   // ---------- liste ----------
   function refreshList(rerenderProps) {
     if (rerenderProps !== false) renderProps()
     const defActive = Patterns.usingDefaults()
+    const lan = Patterns.lanStatus ? Patterns.lanStatus() : null
+    const lanNote = lan && lan.on
+      ? ' · LAN rev ' + lan.rev + (lan.err ? ' (⚠ ' + lan.err + ')' : '')
+      : (lan ? ' · LAN : serveur absent (local seulement)' : '')
     storeInfoEl.textContent = (defActive
       ? 'Jeu : pool PAR DÉFAUT (' + Patterns.defaults().length + ' sections) — tes patterns remplaceront le pool dès qu\'il en contient.'
-      : 'Jeu : TON pool (' + patterns.length + ' sections)') + storeNote
+      : 'Jeu : TON pool (' + patterns.length + ' sections)') + storeNote + lanNote
     if (!patterns.length) {
       listEl.innerHTML = `<div class="hint">Aucun pattern personnel.<br><br>Le jeu tourne avec le <b>pool par défaut</b> (20 sections validées).<br><br>« + Nouveau » pour créer, ou « Pool par défaut » pour copier les 20 sections et les éditer.</div>`
       return
@@ -1261,7 +1417,8 @@ const Ed = (() => {
       erase: 'Clic sur un élément : le supprimer'
     }
     document.getElementById('tbHint').textContent = mode === 'layout' ? 'Glisse les poignées dorées pour ajuster les murs'
-      : mode === 'phys' ? 'Aperçu lecture : la validation ✓/✗ suit la physique' : hints[t]
+      : mode === 'phys' ? 'Brouillon : valide tes réglages avec « ✓ Appliquer au jeu »'
+      : mode === 'power' ? 'Brouillon : valide tes pouvoirs avec « ✓ Appliquer au jeu »' : hints[t]
     cv.style.cursor = t === 'select' ? 'default' : 'crosshair'
   }
 
@@ -1303,12 +1460,14 @@ const Ed = (() => {
     document.getElementById('tabPatterns').classList.toggle('on', m === 'patterns')
     document.getElementById('tabLayout').classList.toggle('on', m === 'layout')
     document.getElementById('tabPhys').classList.toggle('on', m === 'phys')
-    // VUE : plein cadre (liste + toolbar masquées) ; PHYS : réglages pleine page.
+    document.getElementById('tabPower').classList.toggle('on', m === 'power')
+    // VUE : plein cadre (liste + toolbar masquées) ; PHYS/POWER : réglages pleine page.
     const mainEl = document.querySelector('main')
     mainEl.classList.toggle('layout', m === 'layout')
     mainEl.classList.toggle('phys', m === 'phys')
+    mainEl.classList.toggle('power', m === 'power')
     if (m === 'layout') setLTool('select')
-    applyPropsW(m === 'phys')
+    applyPropsW(m === 'phys' || m === 'power')
     clearSel()
     setTool(mode === 'patterns' ? tool : 'select')
     renderProps()
@@ -1367,7 +1526,7 @@ const Ed = (() => {
   function onDown(e) {
     const { sx, sy } = canvasPos(e)
     if (mode === 'layout') return onDownLayout(sx, sy)
-    if (mode === 'phys') return // aperçu lecture
+    if (mode === 'phys' || mode === 'power') return // aperçu lecture / pleine page
     const pat = selPattern()
     const wx = s2wX(sx), wy = s2wY(sy)
     if (!pat) return
@@ -1466,7 +1625,6 @@ const Ed = (() => {
     const L = Patterns.getLayout()
     // poignées ?
     const grips = [
-      { k: 'ceil', x: VW / 2, y: L.walls.ceil },
       { k: 'left', x: L.walls.left, y: VH / 2 },
       { k: 'right', x: VW - L.walls.right, y: VH / 2 }
     ]
@@ -1549,8 +1707,7 @@ const Ed = (() => {
     } else if (mode === 'layout') {
       const L = Patterns.getLayout()
       const wx = s2lX(sx), wy = s2lY(sy)
-      if (drag.grip === 'ceil') { L.walls.ceil = clampN(Math.round(wy), 8, 90); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
-      else if (drag.grip === 'left') { L.walls.left = clampN(Math.round(wx), 4, 60); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
+      if (drag.grip === 'left') { L.walls.left = clampN(Math.round(wx), 4, 60); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
       else if (drag.grip === 'right') { L.walls.right = clampN(Math.round(VW - wx), 4, 60); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
       else if (drag.decor != null) {
         const d = L.decor[drag.decor]
@@ -1687,6 +1844,7 @@ const Ed = (() => {
     document.getElementById('tabPatterns').addEventListener('click', () => setMode('patterns'))
     document.getElementById('tabLayout').addEventListener('click', () => setMode('layout'))
     document.getElementById('tabPhys').addEventListener('click', () => setMode('phys'))
+    document.getElementById('tabPower').addEventListener('click', () => setMode('power'))
     document.getElementById('btnNew').addEventListener('click', newPattern)
     document.getElementById('btnDefaults').addEventListener('click', installDefaults)
     document.getElementById('btnExport').addEventListener('click', exportJson)
@@ -1745,7 +1903,27 @@ const Ed = (() => {
     buildToolbar()
     if (patterns.length) selId = patterns[0].id
     refreshList()
+    // Sync LAN : un autre appareil a poussé le pool -> rafraîchi en direct.
+    if (Patterns.lanOnChange) Patterns.lanOnChange(lanRemote)
     requestAnimationFrame(draw)
+  }
+
+  // Un autre appareil du LAN a modifié le pool partagé : on récupère la
+  // référence à jour. En pleine édition PHYS/POWER on ne touche pas aux
+  // panneaux (les formulaires en cours priment) — la liste est rafraîchie
+  // au retour sur les autres onglets. (« start » = simple connexion : pas
+  // de message, juste la note d'état dans le pied de page.)
+  function lanRemote(reason) {
+    patterns = Patterns.getPatterns()
+    if (selId && !patterns.find(p => p.id === selId)) selId = patterns.length ? patterns[0].id : null
+    if (mode === 'phys' || mode === 'power') {
+      if (reason !== 'start') flash('Sync LAN : pool mis à jour depuis un autre appareil')
+      return
+    }
+    refreshList()
+    if (reason !== 'start') {
+      flash('Sync LAN : pool synchronisé (rev ' + (Patterns.lanStatus ? Patterns.lanStatus().rev : '?') + ')')
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init)

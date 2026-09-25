@@ -94,11 +94,12 @@
   .note { color: var(--dim); font-size: 11px; line-height: 1.5; margin-top: 8px; }
   .empty { color: var(--dim); text-align: center; padding: 30px 10px; line-height: 1.6; }
   input[type=file] { display: none; }
-  /* onglet VUE : plein cadre, sans liste ni barre d'outils */
+  /* onglets VUE : plein cadre, sans liste ni barre d'outils */
   main.layout #list, main.layout #toolbar { display: none; }
-  /* onglet PHYS : la vue physique prend toute la zone de l'éditeur */
+  /* onglets PHYS et POWER : la vue des réglages prend toute la zone de l'éditeur */
   main.phys #list, main.phys #center, main.phys #propsResize { display: none; }
-  main.phys #props {
+  main.power #list, main.power #center, main.power #propsResize { display: none; }
+  main.phys #props, main.power #props {
     flex: 1; width: auto; max-width: 1160px; margin: 0 auto;
     border-left: none; padding: 16px 20px;
   }
@@ -111,6 +112,11 @@
   .physGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
   .physCard { background: var(--panel2); border: 1px solid var(--line); padding: 12px; align-self: start; }
   .physCard .row label { width: 92px; flex: 0 0 92px; }
+  /* bouton « Appliquer au jeu » (PHYS / POWER) + état modifications non appliquées */
+  .applyCol { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
+  .btnRow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .applyBtn.dirty { background: var(--gold); color: #0a0a12; border-color: var(--gold); }
+  .dirtyNote { color: var(--gold); font-size: 11px; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -118,8 +124,9 @@
   <div class="logo">SLIME <small>éditeur</small></div>
   <div class="tabs">
     <div class="tab on" id="tabPatterns" title="Créer et éditer les sections de plateformes">PATTERNS</div>
-    <div class="tab" id="tabLayout" title="Hitboxes des murs et placement des assets">VUE</div>
+    <div class="tab" id="tabLayout" title="Zoom de la vue, hitboxes des murs et placement des assets">VUE</div>
     <div class="tab" id="tabPhys" title="Physique du jeu : slime, saut, caméra, game feel">PHYS</div>
+    <div class="tab" id="tabPower" title="Pouvoirs : double saut, slow-mo, cooldowns, activation">POWER</div>
   </div>
   <span class="spacer"></span>
   <button id="btnNew">+ Nouveau</button>
@@ -146,10 +153,10 @@
   <span class="spacer"></span>
   <span id="storeInfo"></span>
 </footer>
-<script src="js/physics.js"></script>
-<script src="js/sprites.js"></script>
-<script src="js/patterns-defaults.js"></script>
-<script src="js/patterns.js"></script>
-<script src="js/editor.js"></script>
+<script src="js/physics.js?v=20260925b"></script>
+<script src="js/sprites.js?v=20260925b"></script>
+<script src="js/patterns-defaults.js?v=20260925b"></script>
+<script src="js/patterns.js?v=20260925b"></script>
+<script src="js/editor.js?v=20260925b"></script>
 </body>
 </html>

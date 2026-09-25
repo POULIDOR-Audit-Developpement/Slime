@@ -20,6 +20,18 @@ const Sprites = (() => {
     voidBand: 'void',
     hudHead: 'hud_head',
     needle: 'needle',
+    death1: 'death1',
+    death2: 'death2',
+    death3: 'death3',
+    bonusLife: 'bonus_life',
+    ledge: 'ledge',
+    ledge0: 'ledge0',
+    ledge1: 'ledge1',
+    djPump0: 'dj_pump0',
+    djPump1: 'dj_pump1',
+    timeWarp: 'time_warp',
+    gaugeBar: 'gauge_bar',
+    speedArrow: 'speed_arrow',
     bgBig: 'bg_big',
     bgPanel1: 'bg_panel1',
     bgPanel2: 'bg_panel2',
@@ -42,7 +54,7 @@ const Sprites = (() => {
       const im = new Image()
       im.onload = () => { if (++loaded >= keys.length) ready = true }
       im.onerror = () => { loaded++ }
-      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png'
+      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20260924e'
       imgs[k] = im
     }
   }
@@ -82,6 +94,26 @@ const Sprites = (() => {
     return true
   }
 
+  // Ancre haut-gauche (utile pour les frames calées comme le ledge catch),
+  // miroir horizontal optionnel.
+  function drawTL(key, x, y, w, flip) {
+    const im = imgs[key]
+    if (!im || !im.width || !im.complete) return false
+    const c = ctx()
+    const h = im.height * (w / im.width)
+    c.save()
+    c.imageSmoothingEnabled = false
+    if (flip) {
+      c.translate(x + w, y)
+      c.scale(-1, 1)
+      c.drawImage(im, 0, 0, w, h)
+    } else {
+      c.drawImage(im, x, y, w, h)
+    }
+    c.restore()
+    return true
+  }
+
   function rotated(key, angle, px, py, ax, ay, scale) {
     const im = imgs[key]
     if (!im || !im.width || !im.complete) return false
@@ -116,6 +148,7 @@ const Sprites = (() => {
     draw,
     drawImage,
     drawSrc,
+    drawTL,
     rotated,
     natW,
     natH,

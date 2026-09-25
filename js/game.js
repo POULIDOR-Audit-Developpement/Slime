@@ -41,30 +41,86 @@ function drawOuterFrame() {
   }
   c.restore()
 }
-const VERSION = '3.1'
-// Murs de damage issus du layout éditable (onglet VUE de l'éditeur).
-let WALL = { ceil: TIP_T, left: TIP_L, right: SPIKE_W }
+const VERSION = '4.0'
+// Murs de damage latéraux issus du layout éditable (onglet VUE de l'éditeur).
+// Plus de plafond : le haut du monde est ouvert (grands sauts autorisés).
+let WALL = { left: TIP_L, right: SPIKE_W }
 // Réglages globaux des plateformes (onglet VUE), surchargés par plateforme.
 let PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
+// Pouvoirs (onglet POWER) et vue (zoom global, onglet VUE) issus du layout.
+let POWERS = {
+  doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
+  slowmo: { enabled: true, scale: 0.35, duration: 0.6 },
+  ledge: { enabled: true, hangT: 1, window: 8 }
+}
+let VIEW = { zoom: 1, showTrajectory: true, shake: true }
 // Raccourci : physique courante (onglet PHYS de l'éditeur -> layout.phys).
 const PH = () => Phys.phys()
 // Largeur de dessin du sprite de référence (pour un rayon de 18).
 const SLIME_DRAW_W = 44
+// Canevas des frames ledge (tools/make_v3_sprites.py) : ligne des bras à
+// LEDGE_GRIP, face gauche du bloc (là où pend le corps) à LEDGE_BLOCK_L,
+// dans LEDGE_W x LEDGE_H.
+const LEDGE_W = 320, LEDGE_H = 320, LEDGE_GRIP = 150, LEDGE_BLOCK_L = 110
+// Abaissement du sprite sous le sommet : lecture « suspendu » du ledge catch.
+const LEDGE_DROP = 11
+
+// Nombre borné : non numérique -> défaut ; 0 est une valeur valide.
+function numBound(v, def, lo, hi) {
+  v = +v
+  if (!isFinite(v)) v = def
+  return Math.max(lo, Math.min(hi, v))
+}
 
 function applyLayout() {
   const l = Patterns.getLayout()
   if (l && l.walls) {
-    WALL = { ceil: l.walls.ceil, left: l.walls.left, right: l.walls.right }
+    WALL = { left: l.walls.left, right: l.walls.right }
   }
   if (l && l.plat) {
     PLAT = {
-      crumbleT: Math.max(0.2, Math.min(2, +l.plat.crumbleT || CRUMBLE_T)),
-      dynLife: Math.max(1, Math.min(10, +l.plat.dynLife || 4)),
-      spdMul: Math.max(0.5, Math.min(2, +l.plat.spdMul || 1))
+      crumbleT: numBound(l.plat.crumbleT, CRUMBLE_T, 0.2, 2),
+      dynLife: numBound(l.plat.dynLife, 4, 1, 10),
+      spdMul: numBound(l.plat.spdMul, 1, 0.5, 2)
+    }
+  }
+  if (l && l.powers) {
+    const dj = l.powers.doubleJump, sm = l.powers.slowmo, lg = l.powers.ledge || {}
+    POWERS = {
+      doubleJump: {
+        enabled: dj.enabled !== false,
+        cooldown: numBound(dj.cooldown, 4, 0, 15),
+        charges: Math.round(numBound(dj.charges, 1, 1, 3)),
+        powerMul: numBound(dj.powerMul, 1, 0.5, 1.5)
+      },
+      slowmo: {
+        enabled: sm.enabled !== false,
+        scale: numBound(sm.scale, 0.35, 0.15, 0.8),
+        duration: numBound(sm.duration, 0.6, 0.2, 2)
+      },
+      ledge: {
+        enabled: lg.enabled !== false,
+        hangT: numBound(lg.hangT, 1, 0.3, 3),
+        window: Math.round(numBound(lg.window, 8, 4, 16))
+      }
+    }
+  }
+  if (l && l.view) {
+    VIEW = {
+      zoom: numBound(l.view.zoom, 1, 1, 4),
+      showTrajectory: l.view.showTrajectory !== false,
+      shake: l.view.shake !== false
     }
   }
   Phys.setWalls(l && l.walls ? l.walls : null)
   Phys.setPhys(l && l.phys ? l.phys : null)
+}
+
+// Recharge le stockage (éditeur ouvert dans un autre onglet) et ré-applique
+// tout le layout en cours de partie : physique, pouvoirs, vue, murs, pool.
+function refreshLayout() {
+  Patterns.load()
+  applyLayout()
 }
 
 const COLORS = [
@@ -93,6 +149,8 @@ const C_D_TOP = 13, C_D_SIDE = 14, C_D_DARK = 15
 const C_YELLOW = 16, C_ORANGE = 17
 const C_RED = 18, C_RED_D = 19
 const C_WHITE = 20, C_BLACK = 21, C_GREEN = 22, C_GRAY = 23
+// Écran tactile ? (pour l'astuce de visée relative sur l'écran titre)
+const TOUCH_DEVICE = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0)
 const C_CR_TOP = 24, C_CR_SIDE = 25, C_CR_DARK = 26
 const C_GH_TOP = 27, C_GH_SIDE = 28, C_GH_DARK = 29
 const C_BO_SIDE = 30, C_BO_DARK = 31
@@ -118,16 +176,29 @@ const LETTERS = {
 let state = 'title'
 let runStarted = false
 let camX = 0, camSpd = 40, elapsed = 0
+// Horloge du jeu ralentie par le slow-mo (oscillation des plateformes...) et
+// échelle de temps courante (1 = vitesse normale).
+let gameT = 0, ts = 1
+// Slow-mo : temps réel restant pendant lequel le jeu tourne au ralenti.
+let slowmoT = 0
+// Fenêtre de vue zoomée (monde) : centre + taille, recalculée à chaque frame.
+let camW = VW, camH = VH, camCx = VW / 2, camCy = VH / 2
 let platforms = [], balls = [], particles = [], decors = [], wallsArr = []
 let slime = null
-let charge = { on: false, t: 0, id: -1, aim: { x: 0, y: 0 } }
-let ballsCollected = 0, goldsCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
+// Visée du saut : le point (monde) visé par le clic/touch. `air` = double saut.
+let aim = { on: false, x: 0, y: 0, id: -1, air: false }
+// Tactile (id >= 1) : visée RELATIVE — le doigt démarre n'importe où (sans
+// couvrir la cible) et le réticule suit son déplacement (delta × AIM_SENS).
+// `aimPad` = position écran du doigt pendant la visée (null = souris, absolu).
+const AIM_SENS = 1.1
+let aimPad = null
+let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
 let best = 0, newRecord = false
 let testMode = false, testSecT = 0
 
 function slimeR() { return PH().slimeR }
 function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
-function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS }
+function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS + bonusCollected * 30 }
 function camRatio() {
   const P = PH()
   return clamp((camSpd - P.camBase) / Math.max(1, P.camMax - P.camBase), 0, 1)
@@ -135,6 +206,34 @@ function camRatio() {
 function fmtTime(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60)
   return m + ':' + String(s).padStart(2, '0')
+}
+
+// Conversion écran (pixels canvas) -> monde, en passant par la fenêtre zoomée.
+function s2w(px, py) {
+  calcView()
+  const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
+  const kx = camW / VW, ky = camH / VH
+  return { x: camCx + (vx - VW / 2) * kx, y: camCy + (vy - VH / 2) * ky }
+}
+
+// Recadre la fenêtre de vue : zoom global (VIEW.zoom) centré sur le slime,
+// borné à la bande de jeu [camX, camX+VW] x [0, VH]. Titre = plein cadre.
+function updateCam() {
+  const z = clamp(+VIEW.zoom || 1, 1, 4)
+  if (state === 'title' || !slime || z <= 1.001) {
+    camW = VW; camH = VH
+    camCx = camX + VW / 2; camCy = VH / 2
+    return
+  }
+  camW = VW / z; camH = VH / z
+  camCx = clamp(slime.x, camX + camW / 2, camX + VW - camW / 2)
+  camCy = clamp(slime.y, camH / 2, VH - camH / 2)
+}
+
+// Double saut disponible ? Pouvoir activé + charge aérienne + cooldown écoulé.
+function canDoubleJump() {
+  const dj = POWERS.doubleJump
+  return dj.enabled && slime.airJumps > 0 && slime.djCd <= 0
 }
 
 function h32(n) {
@@ -189,6 +288,9 @@ function startGame() {
   elapsed = 0
   camX = 0
   camSpd = 40
+  gameT = 0
+  ts = 1
+  slowmoT = 0
   platforms = []
   balls = []
   particles = []
@@ -196,26 +298,30 @@ function startGame() {
   wallsArr = []
   ballsCollected = 0
   goldsCollected = 0
+  bonusCollected = 0
   newRecord = false
   scoreCode = null
   deathT = 0
   copiedT = 0
   shakeT = 0
   testSecT = 0
-  charge = { on: false, t: 0, id: -1, aim: { x: 0, y: 0 } }
+  aim = { on: false, x: 0, y: 0, id: -1, air: false }
+  aimPad = null
   // Départ : plateforme + slime centrés au milieu de l'écran.
   const first = { x: VW / 2 - (5 * CELL) / 2, row: 2, y: rowY(2), baseY: rowY(2), w: 5 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null }
   platforms.push(first)
   slime = {
     x: VW / 2, y: rowY(2) - slimeR(), vx: 0, vy: 0, size: 3,
     grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0,
-    coyote: PH().coyote, buffer: 0, bufferRel: false, bufferId: -1, bufferAim: null
+    coyote: PH().coyote, airJumps: POWERS.doubleJump.charges, djCd: 0,
+    hang: null, noCatchT: 0, pumpT: 0, face: 1
   }
   slime.r = slimeR()
   let guard = 0
   while (platforms[platforms.length - 1].x + platforms[platforms.length - 1].w < VW * 2 && guard++ < 60) spawnNext()
   state = 'playing'
   runStarted = false
+  updateCam()
 }
 
 function damage() {
@@ -232,7 +338,10 @@ function die() {
   if (state === 'over') return
   state = 'over'
   deathT = 0
-  charge.on = false
+  aim.on = false
+  aimPad = null
+  slowmoT = 0
+  slime.hang = null
   const s = currentScore()
   newRecord = s > best && s > 0
   if (newRecord) {
@@ -246,53 +355,55 @@ function die() {
   burst(slime.x, slime.y, C_SLIME_L, 12, 160)
 }
 
-function doJump() {
-  const P = PH()
-  const p = 0.12 + 0.88 * Math.min(charge.t / P.chargeT, 1)
-  const v = lerp(P.vmin, P.vmax, p) * slime.jumpMul
+// Exécute le saut visé : puissance = distance du point visé au slime (bornée
+// par aimMin/aimMax -> vmin/vmax), direction = angle slime -> point visé.
+// En l'air (aim.air) : double saut — consomme une charge et démarre le cooldown.
+function execJump() {
+  const dj = POWERS.doubleJump
+  const mul = Phys.aimVel(dist(slime.x, slime.y, aim.x, aim.y)) * slime.jumpMul * (aim.air ? dj.powerMul : 1)
+  const ang = Math.atan2(aim.y - slime.y, aim.x - slime.x)
+  slime.vx = Math.cos(ang) * mul
+  slime.vy = Math.sin(ang) * mul
+  slime.face = aim.x >= slime.x ? 1 : -1
+  // Saut depuis une accroche : décroche proprement (pas de glissade).
+  if (slime.hang) {
+    slime.hang = null
+    slime.noCatchT = 0.3
+  }
   const gp = slime.groundPlat
-  const ang = Math.atan2(charge.aim.y - slime.y, charge.aim.x - slime.x)
-  slime.vx = Math.cos(ang) * v
-  slime.vy = Math.sin(ang) * v
   if (gp && gp.type === 'ghost') {
     killPlat(gp, C_GH_SIDE)
     sfx(SFX_COIN, -4, 0.4)
   }
-  slime.grounded = false
-  slime.groundPlat = null
+  if (aim.air) {
+    slime.airJumps--
+    slime.djCd = dj.cooldown
+    slime.pumpT = 0.18
+    burst(slime.x, slime.y, C_BLUE_L, 12, 140)
+    sfx(SFX_JUMP, 3, 1.15)
+  } else {
+    slime.grounded = false
+    slime.groundPlat = null
+    sfx(SFX_JUMP)
+  }
   slime.jumpMul = 1
   slime.coyote = 0
-  slime.buffer = 0
+  aim.on = false
+  aimPad = null
+  slowmoT = 0 // le ralenti ne concerne que la visée : le saut part à pleine vitesse
   runStarted = true
-  sfx(SFX_JUMP)
-}
-
-// Consomme un appui mémorisé en l'air (jump buffer) à l'atterrissage :
-// doigt encore posé -> la charge démarre ; déjà relâché -> saut faible immédiat.
-function consumeBuffer() {
-  if (!(slime.buffer > 0)) { slime.buffer = 0; return }
-  const rel = slime.bufferRel, id = slime.bufferId, aim = slime.bufferAim
-  slime.buffer = 0
-  if (charge.on) return
-  if (aim) charge.aim = aim
-  if (rel) {
-    charge.t = 0
-    charge.on = false
-    doJump()
-  } else {
-    charge.on = true
-    charge.t = 0
-    charge.id = id
-  }
 }
 
 function land(p) {
+  // Chaque contact avec une plateforme recharge les sauts aériens ; une visée
+  // de double saut en cours devient une visée de saut au sol (slow-mo coupé).
+  slime.airJumps = POWERS.doubleJump.charges
+  if (aim.on && aim.air) { aim.air = false; slowmoT = 0 }
   if (p.type === 'bouncy') {
     const P = PH()
     slime.vy = -P.bounceVy
     if (Math.abs(slime.vx) < P.bounceVx) slime.vx = P.bounceVx
     slime.squashT = 0.12
-    slime.buffer = 0
     sfx(SFX_LAND, -2, 0.7)
     return
   }
@@ -308,12 +419,86 @@ function land(p) {
     p.timer = p.dynLife || PLAT.dynLife
   }
   sfx(SFX_LAND, 0, 0.2)
-  consumeBuffer()
+}
+
+// ---------- Ledge catch ----------
+// Manqué une plateforme de justesse ? Si le bord est dépassé de quelques
+// pixels (fenêtre réglable) pendant que le bas du slime frôle le sommet,
+// il s'y agrippe in-extremis : pose possible d'un saut, décroche auto à la
+// fin du délai. Les effets « atterrissage » s'appliquent (casse, timer,
+// disparition éphémère).
+function tryLedgeCatch(prevY) {
+  const win = POWERS.ledge.window
+  for (const p of platforms) {
+    if (p.dead) continue
+    // bas du slime à peine sous le sommet, en train de franchir le bord
+    if (slime.y + slime.r < p.y || slime.y + slime.r > p.y + 12) continue
+    if (prevY + slime.r > p.y + 6) continue
+    let side = 0
+    if (slime.x >= p.x - 6 - win && slime.x < p.x - 6) side = -1
+    else if (slime.x <= p.x + p.w + 6 + win && slime.x > p.x + p.w + 6) side = 1
+    if (!side) continue
+    catchLedge(p, side)
+    return
+  }
+}
+
+function catchLedge(p, side) {
+  if (p.type === 'ghost') { // éphémère : disparaît, pas d'accroche
+    killPlat(p, C_GH_SIDE)
+    sfx(SFX_COIN, -4, 0.4)
+    return
+  }
+  if (p.type === 'crumble' && !p.crackT) p.crackT = p.crumbleT || PLAT.crumbleT
+  if (p.type === 'dynamic' && !p.timerSet) {
+    p.timerSet = true
+    p.timer = p.dynLife || PLAT.dynLife
+  }
+  slime.hang = { plat: p, side, t: POWERS.ledge.hangT }
+  slime.grounded = false
+  slime.groundPlat = null
+  slime.vx = 0
+  slime.vy = 0
+  slime.jumpMul = p.type === 'sticky' ? PH().stickyMul : 1
+  sfx(SFX_LAND, 4, 0.45)
+}
+
+// Accroché : suit la plateforme (dynamique), décroche à la fin du délai,
+// si elle meurt ou si le pouvoir est coupé en vol.
+function updHang(dt) {
+  const h = slime.hang, p = h.plat
+  if (!POWERS.ledge.enabled || !p || p.dead || h.t <= 0) {
+    releaseLedge(true)
+    return
+  }
+  h.t -= dt
+  slime.x = h.side < 0 ? p.x - slime.r * 0.45 : p.x + p.w + slime.r * 0.45
+  slime.y = p.y + slime.r * 0.35
+  slime.vx = 0
+  slime.vy = 0
+}
+
+function releaseLedge(slip) {
+  if (!slime.hang) return
+  const side = slime.hang.side
+  slime.hang = null
+  slime.noCatchT = 0.5
+  slime.grounded = false
+  if (slip) { // décroche : glisse hors du bord puis tombe
+    slime.vx = side * 30
+    slime.vy = 60
+  }
 }
 
 function updSlime(dt) {
   const P = PH()
   const prevY = slime.y
+  if (slime.noCatchT > 0) slime.noCatchT -= dt
+  if (slime.pumpT > 0) slime.pumpT -= dt
+  if (slime.hang) {
+    updHang(dt)
+    return
+  }
   if (slime.grounded) {
     const p = slime.groundPlat
     if (!p || p.dead || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
@@ -330,22 +515,18 @@ function updSlime(dt) {
       slime.x += slime.vx * dt
       slime.y = p.y - slime.r
       slime.coyote = P.coyote
-      slime.buffer = 0
     }
   }
   if (!slime.grounded) {
     if (slime.coyote > 0) slime.coyote -= dt
-    if (slime.buffer > 0) slime.buffer -= dt
     slime.vy += P.grav * dt
     if (slime.vy > P.fallMax) slime.vy = P.fallMax
     slime.vx *= Math.pow(P.dragAir, dt)
+    if (Math.abs(slime.vx) > 40) slime.face = slime.vx > 0 ? 1 : -1
     slime.x += slime.vx * dt
     slime.y += slime.vy * dt
-    if (slime.y - slime.r < WALL.ceil) {
-      slime.y = WALL.ceil + slime.r
-      if (slime.vy < 0) slime.vy = 0
-      damage()
-    }
+    // Pas de plafond : le slime peut monter au-dessus de l'écran (un
+    // indicateur en haut le signale, voir drawOffscreen).
     if (slime.vy >= 0) {
       for (const p of platforms) {
         if (p.dead) continue
@@ -354,6 +535,8 @@ function updSlime(dt) {
           break
         }
       }
+      // Atterrissage raté de justesse -> accroche au bord (ledge catch).
+      if (!slime.grounded && POWERS.ledge.enabled && slime.noCatchT <= 0) tryLedgeCatch(prevY)
     }
   }
   // Murs verticaux : contact latéral = repoussé (dégât si flancs piqués).
@@ -408,9 +591,20 @@ function updSlime(dt) {
 function updBalls() {
   for (const b of balls) {
     if (b.taken) continue
-    if (dist(slime.x, slime.y, b.x, b.y) < slime.r + (b.gold ? 9 : 6)) {
+    if (dist(slime.x, slime.y, b.x, b.y) < slime.r + (b.gold || b.life ? 9 : 6)) {
       b.taken = true
-      if (b.gold) {
+      if (b.life) {
+        // Bonus slime « as in HUD » : +1 vie, ou points si déjà au max.
+        bonusCollected++
+        if (slime.size < 3) {
+          slime.size++
+          sfx(SFX_COIN, 4, 1.1)
+          burst(b.x, b.y, C_SLIME, 12, 140)
+        } else {
+          sfx(SFX_COIN, 2, 1.2)
+          burst(b.x, b.y, C_SLIME_L, 14, 160)
+        }
+      } else if (b.gold) {
         goldsCollected++
         sfx(SFX_COIN, 2, 1.2)
         burst(b.x, b.y, C_GOLD, 14, 160)
@@ -436,30 +630,38 @@ function updParticles(dt) {
 function update(dt) {
   if (dt > 1) dt /= 1000
   if (iskeypressed('m')) Music.toggle()
+  // Slow-mo : la durée décroit en temps réel ; l'échelle de temps du jeu
+  // (ts) glisse en douceur vers la cible (1 = vitesse normale).
+  if (slowmoT > 0) {
+    slowmoT -= dt
+    if (slowmoT <= 0) slowmoT = 0
+  }
+  const target = slowmoT > 0 && POWERS.slowmo.enabled ? POWERS.slowmo.scale : 1
+  ts += (target - ts) * Math.min(1, dt * 12)
+  if (Math.abs(ts - target) < 0.01) ts = target
+  const dts = dt * ts
+  gameT += dts
   if (state === 'title') { camX += 14 * dt; return }
-  if (state === 'over') { deathT += dt; if (copiedT > 0) copiedT -= dt; updParticles(dt); if (shakeT > 0) shakeT -= dt; return }
+  if (state === 'over') { deathT += dt; if (copiedT > 0) copiedT -= dt; updParticles(dts); if (shakeT > 0) shakeT -= dt; return }
   // Avant le premier saut : tout est gelé (caméra, chrono, timers, musique),
   // seule la visée du saut est active.
   if (!runStarted) {
-    if (charge.on) {
-      charge.t += dt
-      if (!slime.grounded && slime.coyote <= 0) charge.on = false
-    }
-    updParticles(dt)
+    if (aim.on && !aim.air && !slime.grounded && !slime.hang && slime.coyote <= 0) { aim.on = false; aimPad = null }
+    updParticles(dts)
     return
   }
-  elapsed += dt
+  elapsed += dts
   const P = PH()
   camSpd = testMode ? 55 : Math.min(P.camBase + Math.floor(elapsed / P.camRampT) * 5, P.camMax)
-  camX += camSpd * dt
-  if (testMode) testSecT += dt
-  if (shakeT > 0) shakeT -= dt
+  camX += camSpd * dts
+  if (testMode) testSecT += dts
+  if (shakeT > 0) shakeT -= dts
   genUntil()
   cleanup()
   for (const p of platforms) {
-    if (p.type === 'dynamic') p.y = p.baseY + Math.sin(T * p.spd * PLAT.spdMul + p.ph) * p.amp
+    if (p.type === 'dynamic') p.y = p.baseY + Math.sin(gameT * p.spd * PLAT.spdMul + p.ph) * p.amp
     if (p.crackT > 0) {
-      p.crackT -= dt
+      p.crackT -= dts
       if (p.crackT <= 0) {
         p.crackT = 0
         killPlat(p, C_CR_SIDE)
@@ -467,7 +669,7 @@ function update(dt) {
       }
     }
     if (p.timerSet) {
-      p.timer -= dt
+      p.timer -= dts
       if (p.timer <= 0) {
         p.timer = 0
         killPlat(p, C_BLUE_L)
@@ -475,13 +677,12 @@ function update(dt) {
       }
     }
   }
-  updSlime(dt)
-  if (charge.on) {
-    charge.t += dt
-    if (!slime.grounded && slime.coyote <= 0) charge.on = false
-  }
+  if (slime.djCd > 0) slime.djCd = Math.max(0, slime.djCd - dts)
+  updSlime(dts)
+  // Visée au sol devenue impossible (plateforme quittée sans sauter).
+  if (aim.on && !aim.air && !slime.grounded && !slime.hang && slime.coyote <= 0) { aim.on = false; aimPad = null }
   updBalls()
-  updParticles(dt)
+  updParticles(dts)
   Music.tick(dt, camRatio())
   if (slime.x + slime.r < camX) die()
   if (slime.y - slime.r > VH + 30) die()
@@ -489,46 +690,57 @@ function update(dt) {
 
 function tap(px, py, touchId) {
   calcView()
-  const x = (px - VOX) / VSC
-  const y = (py - VOY) / VSC
-  if (x < 30 && y < 24) { Music.toggle(); return }
-  if (fsSupported() && x > VW - 34 && y < 26) { toggleFullscreen(); return }
-  if (state === 'title') startGame() // pas de return : ce même appui charge le 1er saut
+  const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
+  if (vx < 30 && vy < 24) { Music.toggle(); return }
+  if (fsCanEnter() && !fsStandalone() && vx > VW - 34 && vy < 26) { toggleFullscreen(); return }
+  if (state === 'title') startGame() // pas de return : ce même appui vise le 1er saut
   if (state === 'over') {
     if (deathT < 0.7) return
-    if (hitBtn(x, y, BTN_COPY)) { copyCode(); return }
-    if (hitBtn(x, y, BTN_REPLAY)) { startGame(); return }
+    if (hitBtn(vx, vy, BTN_COPY)) { copyCode(); return }
+    if (hitBtn(vx, vy, BTN_REPLAY)) { startGame(); return }
     return
   }
-  if (slime.grounded || slime.coyote > 0) {
-    if (!charge.on) {
-      charge.on = true
-      charge.t = 0
-      charge.id = touchId
-      charge.aim = { x: clamp(x, 0, VW) + camX, y: clamp(y, 0, VH) }
+  const w = s2w(px, py)
+  const touch = touchId > 0
+  const sx = touch ? slime.x : w.x, sy = touch ? slime.y : w.y
+  if (slime.grounded || slime.coyote > 0 || slime.hang) {
+    if (!aim.on) {
+      aim = { on: true, x: sx, y: sy, id: touchId, air: false }
+      aimPad = touch ? { x: px, y: py } : null
     }
-  } else if (PH().jumpBuffer > 0) {
-    // En l'air : l'appui est mémorisé et sera consommé à l'atterrissage.
-    slime.buffer = PH().jumpBuffer
-    slime.bufferRel = false
-    slime.bufferId = touchId
-    slime.bufferAim = { x: clamp(x, 0, VW) + camX, y: clamp(y, 0, VH) }
+  } else if (canDoubleJump()) {
+    if (!aim.on) {
+      aim = { on: true, x: sx, y: sy, id: touchId, air: true }
+      aimPad = touch ? { x: px, y: py } : null
+      // Bullet time : le jeu ralentit pendant la visée du double saut.
+      if (POWERS.slowmo.enabled) slowmoT = POWERS.slowmo.duration
+    }
   }
+  // Sinon (en l'air, pouvoir indisponible) : l'appui est ignoré.
 }
 
 function tapping(px, py, touchId) {
-  calcView()
-  if (charge.on && touchId === charge.id) {
-    charge.aim = { x: clamp((px - VOX) / VSC, 0, VW) + camX, y: clamp((py - VOY) / VSC, 0, VH) }
+  if (aim.on && touchId === aim.id) {
+    if (aimPad) {
+      // Tactile : le réticule suit le DELTA du doigt, converti en unités monde
+      // (zoom de vue inclus) et borné autour de la caméra.
+      const k = AIM_SENS * camW / (VW * VSC)
+      aim.x = clamp(aim.x + (px - aimPad.x) * k, camX - 120, camX + VW + 120)
+      aim.y = clamp(aim.y + (py - aimPad.y) * k, -240, VH + 40)
+      aimPad.x = px
+      aimPad.y = py
+    } else {
+      const w = s2w(px, py)
+      aim.x = w.x
+      aim.y = w.y
+    }
   }
 }
 
-function untap(x, y, touchId) {
-  if (charge.on && touchId === charge.id) {
-    charge.on = false
-    doJump()
-  } else if (slime.buffer > 0 && touchId === slime.bufferId) {
-    slime.bufferRel = true
+function untap(px, py, touchId) {
+  if (aim.on && touchId === aim.id) {
+    aimPad = null
+    execJump()
   }
 }
 
@@ -645,9 +857,9 @@ function drawTitle() {
   }
   textalign('center', 'top')
   textsize(10)
-  text(VW / 2, 166, 'Maintiens pour charger, vise avec le curseur, relache', C_WHITE)
+  text(VW / 2, 166, 'Vise avec le curseur : plus loin = plus fort, relache pour sauter', C_WHITE)
   alpha(0.55 + 0.45 * Math.sin(T * 3))
-  text(VW / 2, 182, "Vise meme vers l'arriere pour les billes dorees !", C_GOLD)
+  text(VW / 2, 182, "Vise vers l'arriere pour les billes dorees, double saut en l'air !", C_GOLD)
   alpha(1)
   textsize(12)
   alpha(0.55 + 0.45 * Math.sin(T * 3))
@@ -656,9 +868,9 @@ function drawTitle() {
   if (window.innerHeight > window.innerWidth) {
     textsize(9)
     text(VW / 2, 244, 'Tourne ton ecran en paysage', C_ORANGE)
-  } else if (/iP(hone|od|ad)/.test(navigator.userAgent || '') && !fsSupported()) {
-    // iPhone/Safari sans API plein écran : l'ajout à l'écran d'accueil
-    // lance le jeu plein écran (métas apple-mobile-web-app-*).
+  } else if (!fsCanEnter() && !fsStandalone()) {
+    // Aucune API plein écran : l'ajout à l'écran d'accueil lance le jeu
+    // plein écran (métas apple-mobile-web-app-*).
     textsize(8)
     alpha(0.7)
     text(VW / 2, 245, "Plein ecran : ajoute a l'ecran d'accueil", C_WHITE)
@@ -677,7 +889,8 @@ function drawReadyHint() {
   textalign('center', 'top')
   textsize(10)
   alpha(0.55 + 0.45 * Math.sin(T * 3))
-  text(VW / 2, 108, 'Maintiens pour viser, relache pour sauter', charge.on ? C_GREEN : C_GOLD)
+  text(VW / 2, 108, 'Vise avec le curseur, relache pour sauter', aim.on ? C_GREEN : C_GOLD)
+  if (TOUCH_DEVICE) text(VW / 2, 122, 'Touche n importe ou, glisse pour viser', C_GRAY)
   alpha(1)
   textalign('start', 'top')
 }
@@ -824,6 +1037,19 @@ function drawPlat(p) {
 }
 
 function drawBall(b) {
+  if (b.life) {
+    const pu = 1 + 0.1 * Math.sin(T * 4)
+    alpha(0.35)
+    circ(b.x, b.y, 11 * pu, C_SLIME_L)
+    alpha(1)
+    if (!Sprites.drawImage('bonusLife', b.x - 11, b.y - 9, 22)) {
+      circ(b.x, b.y, 7.5, C_BLACK)
+      circfill(b.x, b.y, 6, C_SLIME)
+      circfill(b.x - 2, b.y - 2, 1.6, C_WHITE)
+      circfill(b.x + 2, b.y - 2, 1.6, C_WHITE)
+    }
+    return
+  }
   if (b.gold) {
     const pu = 1 + 0.12 * Math.sin(T * 5)
     alpha(0.4)
@@ -840,20 +1066,43 @@ function drawBall(b) {
   circfill(b.x - 1.5, b.y - 1.5, 1.4, C_WHITE)
 }
 
+// Halo sous le doigt (visée tactile relative) : repère le pouce pendant que le
+// réticule — posé plus loin, lui — reste lisible.
+function drawAimPad() {
+  const w = s2w(aimPad.x, aimPad.y)
+  alpha(0.12)
+  circfill(w.x, w.y, 17, C_WHITE)
+  alpha(0.4)
+  circ(w.x, w.y, 17, C_WHITE)
+  alpha(1)
+}
+
 function drawTrajectory() {
   const P = PH()
-  const p = 0.12 + 0.88 * Math.min(charge.t / P.chargeT, 1)
-  const v = lerp(P.vmin, P.vmax, p) * slime.jumpMul
-  const ang = Math.atan2(charge.aim.y - slime.y, charge.aim.x - slime.x)
+  const pw = Phys.aimRatio(dist(slime.x, slime.y, aim.x, aim.y))
+  const v = Phys.aimVel(dist(slime.x, slime.y, aim.x, aim.y)) * slime.jumpMul * (aim.air ? POWERS.doubleJump.powerMul : 1)
+  const ang = Math.atan2(aim.y - slime.y, aim.x - slime.x)
+  // Anneaux de portée : min (vmin) et max (vmax) autour du slime + réticule.
+  alpha(0.18)
+  circ(slime.x, slime.y, P.aimMin, C_WHITE)
+  circ(slime.x, slime.y, P.aimMax, pw >= 1 ? C_GOLD : C_WHITE)
+  alpha(1)
+  alpha(0.7)
+  circ(aim.x, aim.y, 5, C_WHITE)
+  alpha(0.9)
+  line(aim.x - 9, aim.y, aim.x - 3, aim.y, C_WHITE)
+  line(aim.x + 3, aim.y, aim.x + 9, aim.y, C_WHITE)
+  line(aim.x, aim.y - 9, aim.x, aim.y - 3, C_WHITE)
+  line(aim.x, aim.y + 3, aim.x, aim.y + 9, C_WHITE)
+  alpha(1)
   let x = slime.x, y = slime.y
   let vx = Math.cos(ang) * v, vy = Math.sin(ang) * v
   const dt = 1 / 60
   let idx = 0
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 120; i++) {
     vy += P.grav * dt
     x += vx * dt
     y += vy * dt
-    if (y - slime.r < WALL.ceil) { y = WALL.ceil + slime.r; if (vy < 0) vy = 0 }
     let hit = false
     if (vy >= 0) {
       for (const p2 of platforms) {
@@ -863,7 +1112,7 @@ function drawTrajectory() {
     }
     if (i % 3 === 0) {
       alpha(0.85 - idx * 0.04)
-      circfill(x, y, Math.max(1.2, 2.6 - idx * 0.12), C_WHITE)
+      circfill(x, y, Math.max(1.2, 2.6 - idx * 0.12), pw >= 1 ? C_GOLD : C_WHITE)
       alpha(1)
       idx++
     }
@@ -872,31 +1121,97 @@ function drawTrajectory() {
 }
 
 function drawSlime() {
-  const feet = slime.y + slime.r * 0.92
+  // Bas du sprite ancré 1 px sous le plan de collision (slime.y + r) :
+  // contact visuel garanti avec la plateforme, couture d'AA masquée.
+  const feet = slime.y + slime.r + 1
   const suffix = slime.size >= 3 ? '' : slime.size === 2 ? '_orange' : '_red'
   if (Sprites.ready) {
+    // Ledge catch : frame d'accroche (yeux écarquillés) puis boucle fatigué.
+    // Sprites calés sur canevas LEDGE_* : ligne des bras = sommet plateforme,
+    // face du bloc = bord de la plateforme (corps collé au mur) ; miroir
+    // selon le côté. Facteur 2 : échelle visible identique à 1.5/240.
+    if (slime.hang) {
+      const grab = slime.hang.t > POWERS.ledge.hangT - 0.35
+      let key = grab ? 'ledge' : (Math.floor(gameT * 3) % 2 ? 'ledge0' : 'ledge1')
+      let k = key + suffix
+      if (!(Sprites.get(k) && Sprites.get(k).width)) k = key
+      const im = Sprites.get(k)
+      if (im && im.width) {
+        const w = slimeDrawW() * 2
+        const h = w * LEDGE_H / LEDGE_W
+        const p = slime.hang.plat
+        const flip = slime.hang.side > 0
+        const x = flip ? p.x + p.w - 2 - w * (1 - LEDGE_BLOCK_L / LEDGE_W)
+                       : p.x + 2 - w * (LEDGE_BLOCK_L / LEDGE_W)
+        if (slime.invuln > 0) alpha(Math.floor(T * 14) % 2 === 0 ? 1 : 0.55)
+        Sprites.drawTL(k, x, p.y - 1 + LEDGE_DROP - h * (LEDGE_GRIP / LEDGE_H), w, flip)
+        alpha(1)
+      } else {
+        drawHangFallback()
+      }
+      return
+    }
+    // Double saut : pendant le ralenti de visée, le slime « time warp »
+    // (teal + tourbillons) remplace la boule ; sinon boule + lignes de
+    // vitesse, puis anneau d'impulsion juste après le relâcher.
+    if (!slime.grounded && (slime.pumpT > 0 || (aim.on && aim.air))) {
+      const ring = slime.pumpT > 0
+      const tw = !ring && ts < 0.9 ? Sprites.get('timeWarp') : null
+      if (tw && tw.width) {
+        const wt = slimeDrawW() * 1.35
+        const ht = wt * tw.height / tw.width
+        alpha(0.6 + 0.25 * Math.sin(T * 8))
+        Sprites.drawTL('timeWarp', slime.x - wt / 2, slime.y - ht * 0.55, wt, false)
+        alpha(1)
+        return
+      }
+      let key = ring ? 'djPump1' : 'djPump0'
+      let k = key + suffix
+      if (!(Sprites.get(k) && Sprites.get(k).width)) k = key
+      const im = Sprites.get(k)
+      if (im && im.width) {
+        const w = slimeDrawW() * 1.05
+        const h = w * im.height / im.width
+        Sprites.drawTL(k, slime.x - w / 2, slime.y - h / 2 + slime.r * 0.15, w, false)
+      } else {
+        drawPumpFallback(ring)
+      }
+      return
+    }
     let key
     if (slime.squashT > 0) key = 'land' + suffix
     else if (!slime.grounded) key = slime.vy < 60 ? 'jump' + suffix : 'fall' + suffix
     else key = (Math.floor(T * 3) % 2 ? 'idle0' : 'idle1') + suffix
     let sx = 1, sy = 1
-    if (charge.on) {
-      const c = Math.min(charge.t / PH().chargeT, 1)
-      sy = 1 - 0.26 * c
-      sx = 1 + 0.2 * c
+    if (aim.on) {
+      const c = Phys.aimRatio(dist(slime.x, slime.y, aim.x, aim.y))
+      sy = 1 - 0.2 * c
+      sx = 1 + 0.15 * c
     }
+    // « invert too » : saut/chute vers la gauche = sprites en miroir.
+    if (!slime.grounded && key !== 'land' + suffix && slime.face < 0) sx = -1
     if (slime.invuln > 0) alpha(Math.floor(T * 14) % 2 === 0 ? 1 : 0.45)
     Sprites.draw(key, slime.x, feet, slimeDrawW(), sx, sy)
     alpha(1)
+    // Bullet time (time warp) : tourbillons autour du slime en plein ralenti.
+    if (ts < 0.9 && !slime.hang) drawTimeWarp()
     return
   }
   const blink = slime.invuln > 0 && Math.floor(T * 18) % 2 === 0
   const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
   let sx = 1, sy = 1
-  if (charge.on) {
-    const c = Math.min(charge.t / PH().chargeT, 1)
-    sy = 1 - 0.28 * c
-    sx = 1 + 0.22 * c
+  if (slime.hang) {
+    drawHangFallback()
+    return
+  }
+  if (!slime.grounded && (slime.pumpT > 0 || (aim.on && aim.air))) {
+    drawPumpFallback(slime.pumpT > 0)
+    return
+  }
+  if (aim.on) {
+    const c = Phys.aimRatio(dist(slime.x, slime.y, aim.x, aim.y))
+    sy = 1 - 0.22 * c
+    sx = 1 + 0.17 * c
   } else if (slime.squashT > 0) {
     sx = 1.22
     sy = 0.78
@@ -919,6 +1234,91 @@ function drawSlime() {
   pop()
 }
 
+// Ledge catch sans asset : corps sous le bord, deux bras sur le sommet,
+// yeux fatigués (traits).
+function drawHangFallback() {
+  const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
+  const p = slime.hang.plat
+  const dir = slime.hang.side < 0 ? 1 : -1 // bord côté plateforme
+  push(slime.x, slime.y + slime.r * 0.4, 0, 1, 0.85)
+  circfill(0, -slime.r * 0.2, slime.r * 0.88, C_BLACK)
+  circfill(0, -slime.r * 0.2, slime.r * 0.78, col)
+  pop()
+  // bras par-dessus le bord de la plateforme
+  const ex = slime.x + dir * slime.r * 0.7
+  rectfill(ex - 3, p.y - 3, 6, 3, col)
+  rectfill(ex + dir * 6 - 2, p.y - 3, 5, 3, col)
+  // yeux fatigués
+  const ey = slime.y + slime.r * 0.25
+  line(slime.x - 5, ey, slime.x - 1, ey, C_BLACK)
+  line(slime.x + 1, ey, slime.x + 5, ey, C_BLACK)
+}
+
+// Double saut sans asset : boule comprimée cerclée de noir, arcs de vitesse
+// (visée) ou anneau d'impulsion (relâcher).
+function drawPumpFallback(ring) {
+  const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
+  const rr = slime.r * 0.78
+  circfill(slime.x, slime.y, rr + 2, C_BLACK)
+  circfill(slime.x, slime.y, rr, col)
+  circfill(slime.x - rr * 0.3, slime.y - rr * 0.3, rr * 0.22, C_WHITE)
+  alpha(0.8)
+  if (ring) {
+    circ(slime.x, slime.y, rr + 5 + Math.sin(T * 20) * 1.5, C_SLIME_L)
+  } else {
+    for (let i = -1; i <= 1; i++) {
+      const a = T * 14 + i * 0.9
+      line(slime.x + Math.cos(a) * (rr + 3), slime.y + Math.sin(a) * (rr + 3), slime.x + Math.cos(a) * (rr + 7), slime.y + Math.sin(a) * (rr + 7), C_SLIME_L)
+    }
+  }
+  alpha(1)
+}
+
+// Time warp sans asset : anneaux cyan rotatifs autour du slime.
+function drawTimeWarp() {
+  const tw = Sprites.get('timeWarp')
+  if (tw && tw.width) {
+    const w = slimeDrawW() * 1.35
+    const h = w * tw.height / tw.width
+    alpha(0.55 + 0.25 * Math.sin(T * 8))
+    Sprites.drawTL('timeWarp', slime.x - w / 2, slime.y - h * 0.55, w, false)
+    alpha(1)
+    return
+  }
+  alpha(0.45 + 0.2 * Math.sin(T * 9))
+  for (let i = 0; i < 2; i++) {
+    const rr = slime.r + 4 + i * 4
+    const a0 = T * (6 - i * 2.5) + i * 2.4
+    let px = slime.x + Math.cos(a0) * rr, py = slime.y + Math.sin(a0) * rr * 0.85
+    for (let k = 1; k <= 5; k++) {
+      const a = a0 + k * 0.42
+      const nx = slime.x + Math.cos(a) * rr, ny = slime.y + Math.sin(a) * rr * 0.85
+      line(px, py, nx, ny, C_BLUE_HI)
+      px = nx; py = ny
+    }
+  }
+  alpha(1)
+}
+
+// Mort en séquence (cf. planche annotée) : splat -> gouttes -> bulles ->
+// fines particules (~0.12 s/frame) qui s'estompent ; les particules du burst
+// prennent ensuite le relais. Fallback : splat seul, comme avant.
+function drawDeath() {
+  if (!Sprites.ready) return
+  const feet = slime.y + slime.r + 1
+  const f = Math.floor(deathT / 0.12)
+  if (f >= 1 && f <= 3) {
+    const im = Sprites.get('death' + f)
+    if (im && im.width) {
+      alpha(clamp(1.7 - deathT * 1.4, 0.3, 1))
+      Sprites.draw('death' + f, slime.x, feet, slimeDrawW() * 1.9)
+      alpha(1)
+      return
+    }
+  }
+  if (deathT < 0.5) Sprites.draw('splat', slime.x, feet, slimeDrawW() * 1.5)
+}
+
 function drawParticles() {
   for (const p of particles) {
     alpha(clamp(p.life * 2, 0, 1))
@@ -927,7 +1327,7 @@ function drawParticles() {
   alpha(1)
 }
 
-// ---------- Bandes de danger (rendu unifié : plafond / gauche / droite / bas) ----------
+// ---------- Bandes de danger (rendu unifié : gauche / droite / bas) ----------
 // Texture bedrock (voidBand) teintée rouge = « ne pas toucher », avec liseré
 // vif sur la frontière létale (sauf pour le bas : chute sous l'écran).
 function drawDamageBand(x, y, w, h, edge) {
@@ -955,14 +1355,56 @@ function drawDamageBand(x, y, w, h, edge) {
   }
 }
 
+// Bandes latérales en coordonnées MONDE : dessinées dans le transform zoomé,
+// elles restent alignées sur les hitboxes quel que soit le zoom.
 function drawDamageWalls() {
-  drawDamageBand(0, 0, VW, WALL.ceil, 'bottom')
-  drawDamageBand(0, WALL.ceil, WALL.left, VH - WALL.ceil, 'right')
-  drawDamageBand(VW - WALL.right, WALL.ceil, WALL.right, VH - WALL.ceil, 'left')
+  drawDamageBand(camX, 0, WALL.left, VH, 'right')
+  drawDamageBand(camX + VW - WALL.right, 0, WALL.right, VH, 'left')
 }
 
 function drawFrameEdges() {
   drawDamageBand(0, VH - 8, VW, 8, null)
+}
+
+// ---------- HUD vitesse (compact) ----------
+// Barre segmentée « VITESSE » (asset v3 en escalier, 15 cellules) + icône
+// flèche ; les cellules se remplissent de vert à rouge avec camRatio().
+// Fallback : mini-arc procédural avec aiguille (ancien style, réduit).
+// 15 cellules de l'asset gauge_bar (659x91) : [x0, x1, yHaut], bas commun 91.
+const GAUGE_CELLS = [[5, 38, 41], [46, 84, 40], [92, 126, 34], [134, 172, 34], [180, 214, 29], [222, 256, 29], [264, 302, 23], [310, 344, 23], [352, 389, 17], [397, 431, 17], [439, 477, 12], [485, 520, 11], [528, 565, 6], [573, 607, 5], [615, 652, 0]]
+const GAUGE_W = 659, GAUGE_H = 91
+
+function drawSpeedGauge(ratio) {
+  const bar = Sprites.get('gaugeBar')
+  if (bar && bar.width) {
+    textsize(7)
+    text(VW - 70, 18, 'VITESSE', C_WHITE)
+    Sprites.drawImage('speedArrow', VW - 70, 26, 12)
+    const bw = 50, bh = 8, bx = VW - 56, by = 28
+    Sprites.drawImage('gaugeBar', bx, by, bw)
+    const filled = Math.round(ratio * GAUGE_CELLS.length)
+    for (let i = 0; i < filled; i++) {
+      const c = GAUGE_CELLS[i]
+      const col = i < 7 ? C_SLIME : i < 11 ? C_ORANGE : C_RED
+      rectfill(bx + c[0] / GAUGE_W * bw + 0.5, by + c[2] / GAUGE_H * bh + 0.4,
+        (c[1] - c[0]) / GAUGE_W * bw - 1, (GAUGE_H - c[2]) / GAUGE_H * bh - 0.8, col)
+    }
+  } else {
+    const gx = VW - 24, gy = 36, r = 12
+    textsize(7)
+    text(VW - 70, 24, 'VITESSE', C_WHITE)
+    text(VW - 70, 32, 'CAMERA', C_WHITE)
+    for (let i = 0; i <= 8; i++) {
+      const a0 = Math.PI * (1 - i / 8)
+      const col = i < 4 ? C_SLIME : i < 6.5 ? C_ORANGE : C_RED
+      line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 3), gy - Math.sin(a0) * (r + 3), col)
+    }
+    const na = Math.PI * (1 - ratio)
+    if (Sprites.ready) Sprites.rotated('needleH', -na, gx, gy, 0.08, 0.5, 0.3)
+    else line(gx, gy, gx + Math.cos(na) * (r - 3), gy - Math.sin(na) * (r - 3), C_WHITE)
+    circfill(gx, gy, 1.5, C_BLACK)
+  }
+  textsize(9)
 }
 
 function drawHUD() {
@@ -984,24 +1426,7 @@ function drawHUD() {
       }
     }
   }
-  const ratio = camRatio()
-  const gx = VW - 76, gy = 56, r = 14
-  rectfill(VW - 98, 32, 90, 30, C_FRAME, 10)
-  rect(VW - 98, 32, 90, 30, C_BLACK, 2)
-  for (let i = 0; i <= 10; i++) {
-    const a0 = Math.PI * (1 - i / 10)
-    const col = i < 5 ? C_SLIME : i < 8 ? C_ORANGE : C_RED
-    line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 3), gy - Math.sin(a0) * (r + 3), col)
-  }
-  const na = Math.PI * (1 - ratio)
-  if (Sprites.ready) {
-    Sprites.rotated('needleH', -na, gx, gy, 0.08, 0.5, 0.45)
-  } else {
-    line(gx, gy, gx + Math.cos(na) * (r - 4), gy - Math.sin(na) * (r - 4), C_WHITE)
-  }
-  circfill(gx, gy, 2, C_BLACK)
-  textsize(7)
-  text(VW - 52, 43, 'VITESSE', C_WHITE)
+  drawSpeedGauge(camRatio())
   textsize(9)
   if (testMode) {
     const name = Patterns.getPinned() ? Patterns.getPinned().name : '?'
@@ -1013,13 +1438,31 @@ function drawHUD() {
   }
   if (slime.x - slime.r < camX + 40) {
     alpha(0.4 + 0.3 * Math.sin(T * 12))
-    rectfill(0, WALL.ceil - 12, 5, VH - WALL.ceil + 12, C_RED)
+    rectfill(0, -12, 5, VH + 24, C_RED)
     textalign('center', 'top')
     textsize(10)
     text(30, 60, 'DANGER', C_RED)
     alpha(1)
     textalign('start', 'top')
   }
+  drawPowerHud()
+}
+
+// Indicateur du double saut : jauge de recharge + chevrons, à droite des
+// têtes de vie. Pleine et bleue = prêt, grise = en cooldown / épuisée.
+function drawPowerHud() {
+  const dj = POWERS.doubleJump
+  if (!dj.enabled) return
+  const x = 12 + 3 * 28 + 6, y = VH - 30, w = 14, h = 24
+  const ready = canDoubleJump()
+  rectfill(x - 1, y - 1, w + 2, h + 2, C_FRAME, 4)
+  rect(x - 1, y - 1, w + 2, h + 2, C_BLACK, 2)
+  const f = ready ? 1 : slime.djCd > 0 && dj.cooldown > 0 ? 1 - slime.djCd / dj.cooldown : 0
+  rectfill(x + 1, y + 1 + (h - 2) * (1 - f), w - 2, (h - 2) * f, ready ? C_BLUE : C_GRAY)
+  alpha(ready ? 0.85 + 0.15 * Math.sin(T * 6) : 0.45)
+  shape([x + 3, y + 11, x + 7, y + 6, x + 11, y + 11]); fill(C_WHITE)
+  shape([x + 3, y + 18, x + 7, y + 13, x + 11, y + 18]); fill(C_WHITE)
+  alpha(1)
 }
 
 const BTN_COPY = { x: 62, y: 188, w: 156, h: 30 }
@@ -1116,17 +1559,43 @@ function drawSoundIcon() {
 }
 
 // ---------- Plein écran (mobile) ----------
+// Android/desktop : API Fullscreen native. iPhone : Safari n'expose l'API
+// que sur <video> — on diffuse le canvas dans une <video> via captureStream
+// et on passe celle-ci en plein écran (seul moyen de masquer l'UI Safari).
+let fsVideo = null
+let fsVideoOn = false
+let fsVideoBound = false
+let fsMouseDown = false
+
 function fsSupported() {
   const el = document.documentElement
   return !!(el.requestFullscreen || el.webkitRequestFullscreen)
 }
 
+// Vrai plein écran disponible : API native (Android/desktop) ou astuce vidéo (iOS).
+function fsCanEnter() {
+  if (fsSupported()) return true
+  const v = typeof HTMLVideoElement !== 'undefined' && HTMLVideoElement.prototype
+  return !!(v && (v.webkitEnterFullscreen || v.webkitRequestFullscreen) && canvas().captureStream)
+}
+
+// Déjà plein écran via l'ajout à l'écran d'accueil (iOS standalone / PWA).
+function fsStandalone() {
+  return !!navigator.standalone ||
+    !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+}
+
+function fsFullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement || fsVideoOn)
+}
+
 function toggleFullscreen() {
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
-    const exit = document.exitFullscreen || document.webkitExitFullscreen
-    if (exit) exit.call(document)
-    return
-  }
+  if (fsFullscreenActive()) { fsExit(); return }
+  if (fsSupported()) { fsEnterNative(); return }
+  fsEnterVideo()
+}
+
+function fsEnterNative() {
   const el = document.documentElement
   const req = el.requestFullscreen || el.webkitRequestFullscreen
   if (!req) return
@@ -1144,9 +1613,150 @@ function toggleFullscreen() {
   } catch (e) {}
 }
 
+function fsExit() {
+  if (fsVideoOn && fsVideo) {
+    try { if (fsVideo.webkitExitFullscreen) fsVideo.webkitExitFullscreen() } catch (e) {}
+    try { if (document.webkitExitFullscreen) document.webkitExitFullscreen() } catch (e) {}
+    return
+  }
+  const exit = document.exitFullscreen || document.webkitExitFullscreen
+  if (exit) exit.call(document)
+}
+
+// Astuce iOS : captureStream du canvas -> <video> plein écran. Le play() et
+// l'entrée en plein écran doivent rester dans le geste (tap sur l'icône).
+function fsEnterVideo() {
+  const cv = canvas()
+  if (!cv.captureStream) return
+  try {
+    if (!fsVideo) {
+      fsVideo = document.createElement('video')
+      fsVideo.muted = true
+      fsVideo.playsInline = true
+      fsVideo.setAttribute('playsinline', '')
+      fsVideo.setAttribute('webkit-playsinline', '')
+      fsVideo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:2px;height:2px;opacity:0;pointer-events:none'
+      document.body.appendChild(fsVideo)
+      // iPhone : webkitbegin/endfullscreen ; iPad : (webkit)fullscreenchange.
+      for (const ev of ['webkitbeginfullscreen', 'webkitendfullscreen', 'fullscreenchange', 'webkitfullscreenchange']) {
+        fsVideo.addEventListener(ev, fsVideoState)
+      }
+    }
+    if (fsVideo.srcObject && fsVideo.srcObject.getTracks) {
+      try { fsVideo.srcObject.getTracks().forEach(t => t.stop()) } catch (e) {}
+    }
+    fsVideo.srcObject = cv.captureStream()
+    const p = fsVideo.play()
+    if (p && p.catch) p.catch(() => {})
+    if (fsVideo.webkitEnterFullscreen) fsVideo.webkitEnterFullscreen()
+    else if (fsVideo.webkitRequestFullscreen) {
+      const q = fsVideo.webkitRequestFullscreen()
+      if (q && q.catch) q.catch(() => {})
+    }
+  } catch (e) {}
+}
+
+function fsVideoState() {
+  const v = fsVideo
+  const on = !!v && (!!v.webkitDisplayingFullscreen ||
+    document.fullscreenElement === v || document.webkitFullscreenElement === v)
+  if (on === fsVideoOn) return
+  fsVideoOn = on
+  if (on) fsVideoBind()
+  else fsVideoUnbind()
+}
+
+// Pendant le plein écran vidéo, la vidéo capte les touchers à la place du
+// canvas : conversion des coordonnées écran (letterbox) puis relais direct
+// vers les mêmes callbacks tap/tapping/untap que le canvas.
+function fsVideoToCanvas(cx, cy) {
+  const cv = canvas()
+  const r = fsVideo.getBoundingClientRect()
+  const vw = fsVideo.videoWidth || cv.width
+  const vh = fsVideo.videoHeight || cv.height
+  const k = Math.min(r.width / vw, r.height / vh)
+  const ox = r.left + (r.width - vw * k) / 2
+  const oy = r.top + (r.height - vh * k) / 2
+  return [(cx - ox) / k, (cy - oy) / k]
+}
+
+function fsVideoBind() {
+  if (fsVideoBound || !fsVideo) return
+  fsVideoBound = true
+  fsVideo.addEventListener('touchstart', fsTouchStart, { passive: false })
+  fsVideo.addEventListener('touchmove', fsTouchMove, { passive: false })
+  fsVideo.addEventListener('touchend', fsTouchEnd, { passive: false })
+  fsVideo.addEventListener('touchcancel', fsTouchEnd, { passive: false })
+  fsVideo.addEventListener('mousedown', fsMouseDownFn)
+  fsVideo.addEventListener('mousemove', fsMouseMove)
+  fsVideo.addEventListener('mouseup', fsMouseUpFn)
+  window.addEventListener('mouseup', fsMouseUpFn)
+}
+
+function fsVideoUnbind() {
+  if (!fsVideoBound || !fsVideo) return
+  fsVideoBound = false
+  fsMouseDown = false
+  fsVideo.removeEventListener('touchstart', fsTouchStart)
+  fsVideo.removeEventListener('touchmove', fsTouchMove)
+  fsVideo.removeEventListener('touchend', fsTouchEnd)
+  fsVideo.removeEventListener('touchcancel', fsTouchEnd)
+  fsVideo.removeEventListener('mousedown', fsMouseDownFn)
+  fsVideo.removeEventListener('mousemove', fsMouseMove)
+  fsVideo.removeEventListener('mouseup', fsMouseUpFn)
+  window.removeEventListener('mouseup', fsMouseUpFn)
+}
+
+function fsTouchStart(e) {
+  e.preventDefault()
+  for (const t of e.changedTouches) {
+    const c = fsVideoToCanvas(t.clientX, t.clientY)
+    tap(c[0], c[1], t.identifier + 1)
+  }
+}
+
+function fsTouchMove(e) {
+  e.preventDefault()
+  for (const t of e.changedTouches) {
+    const c = fsVideoToCanvas(t.clientX, t.clientY)
+    tapping(c[0], c[1], t.identifier + 1)
+  }
+}
+
+function fsTouchEnd(e) {
+  e.preventDefault()
+  for (const t of e.changedTouches) {
+    const c = fsVideoToCanvas(t.clientX, t.clientY)
+    untap(c[0], c[1], t.identifier + 1)
+  }
+}
+
+function fsMouseDownFn(e) {
+  if (e.button) return
+  e.preventDefault()
+  fsMouseDown = true
+  const c = fsVideoToCanvas(e.clientX, e.clientY)
+  tap(c[0], c[1], 0)
+}
+
+function fsMouseMove(e) {
+  if (!fsMouseDown) return
+  e.preventDefault()
+  const c = fsVideoToCanvas(e.clientX, e.clientY)
+  tapping(c[0], c[1], 0)
+}
+
+function fsMouseUpFn(e) {
+  if (e.button || !fsMouseDown) return
+  e.preventDefault()
+  fsMouseDown = false
+  const c = fsVideoToCanvas(e.clientX, e.clientY)
+  untap(c[0], c[1], 0)
+}
+
 function drawFsIcon() {
-  if (!fsSupported()) return
-  alpha(0.85)
+  if (!fsCanEnter() || fsStandalone()) return
+  alpha(fsFullscreenActive() ? 0.45 : 0.85)
   const l = 5
   const x0 = VW - 26, x1 = VW - 8, y0 = 5, y1 = 23
   // 4 coins "agrandir"
@@ -1157,42 +1767,80 @@ function drawFsIcon() {
   alpha(1)
 }
 
+// Indicateur hors-écran : flèche + tête de slime en haut quand il vole
+// au-dessus du cadre (possible depuis la suppression du plafond).
+function drawOffscreen() {
+  if (state !== 'playing' || !slime) return
+  const kx = camW / VW, ky = camH / VH
+  const vy = VH / 2 + (slime.y - camCy) / ky
+  if (vy - slime.r / kx > 6) return
+  const vx = clamp(VW / 2 + (slime.x - camCx) / kx, 18, VW - 18)
+  alpha(0.55 + 0.45 * Math.sin(T * 10))
+  shape([vx - 7, 15, vx, 5, vx + 7, 15]); fill(C_WHITE)
+  circfill(vx, 21, 6, C_SLIME)
+  circ(vx, 21, 6, C_BLACK)
+  circfill(vx - 2, 20, 1.2, C_WHITE)
+  circfill(vx + 2, 20, 1.2, C_WHITE)
+  alpha(1)
+  const d = Math.round(camCy - camH / 2 - slime.y)
+  if (d > 12) {
+    textalign('center', 'top')
+    textsize(7)
+    text(vx, 30, '+' + d, C_WHITE)
+    textalign('start', 'top')
+  }
+}
+
+// Voile bleu pendant le slow-mo (bullet time du double saut).
+function drawSlowmoOverlay() {
+  if (ts >= 0.995) return
+  alpha(Math.min(0.28, (1 - ts) * 0.55))
+  rectfill(0, 0, VW, VH, C_BLUE_HI)
+  alpha(1)
+}
+
 function draw() {
   calcView()
   ensureVoidPattern()
   drawOuterFrame()
   const c = ctx()
   c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
+  updateCam()
   c.save()
   c.beginPath()
   c.rect(0, 0, VW, VH)
   c.clip()
   drawBG()
-  if (state === 'title') {
-    drawTitle()
-    drawSoundIcon()
-    drawFsIcon()
-    drawVignette()
+  if (state !== 'title') {
+    const shx = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
+    const shy = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
+    // Monde : fenêtre zoomée centrée sur le slime (identité à zoom 1).
+    c.save()
+    c.translate(VW / 2 + shx, VH / 2 + shy)
+    c.scale(camW / VW, camH / VH)
+    c.translate(-camCx, -camCy)
+    for (const d of decors) Sprites.drawImage(d.sprite, d.x, d.y, d.w)
+    drawWalls()
+    for (const p of platforms) drawPlat(p)
+    for (const b of balls) if (!b.taken) drawBall(b)
+    drawParticles()
+    if (state === 'over') drawDeath()
+    else drawSlime()
+    if (aim.on) {
+      if (aimPad) drawAimPad()
+      if (VIEW.showTrajectory) drawTrajectory()
+    }
+    drawDamageWalls()
     c.restore()
-    rect(-1, -1, VW + 2, VH + 2, C_BLACK)
-    return
+    drawOffscreen()
+    drawSlowmoOverlay()
+    drawFrameEdges()
+    if (state === 'playing' && !runStarted) drawReadyHint()
+    drawHUD()
+  } else {
+    // Titre : espace vue (le parallax de fond défile via camX).
+    drawTitle()
   }
-  const shx = shakeT > 0 ? rand(-3, 3) : 0
-  const shy = shakeT > 0 ? rand(-3, 3) : 0
-  push(Math.round(-camX) + shx, shy)
-  for (const d of decors) Sprites.drawImage(d.sprite, d.x, d.y, d.w)
-  drawWalls()
-  for (const p of platforms) drawPlat(p)
-  for (const b of balls) if (!b.taken) drawBall(b)
-  drawParticles()
-  if (state === 'over' && Sprites.ready) Sprites.draw('splat', slime.x, slime.y + slime.r * 0.9, slimeDrawW() * 1.5)
-  else drawSlime()
-  if (charge.on) drawTrajectory()
-  pop()
-  drawDamageWalls()
-  drawFrameEdges()
-  if (state === 'playing' && !runStarted) drawReadyHint()
-  drawHUD()
   if (state === 'over') drawOver()
   drawSoundIcon()
   drawFsIcon()
@@ -1219,6 +1867,10 @@ function setupTestMode() {
 function init() {
   pal(COLORS, C_WHITE)
   textsize(9)
+  // Simulation 240 Hz (dt-correct : toute la physique est basée sur dt) et
+  // rendu quasi à chaque rAF : supprime le judder sur écrans 120/144 Hz.
+  // Garde : le stub litecanvas de tools/game_sim.mjs n'a pas cette API.
+  if (typeof framerate === 'function') framerate(240)
   try {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
   } catch (e) {}
@@ -1230,4 +1882,14 @@ function init() {
   Music.restore()
   Sprites.load()
   buildFramePattern()
+  // L'éditeur (autre onglet) a sauvegardé : rechargement du layout en direct
+  // — physique, pouvoirs, vue, murs et pool se mettent à jour sans recharger.
+  // Sync LAN : un autre appareil a poussé le pool (server.mjs) -> pareil.
+  try {
+    window.addEventListener('storage', e => {
+      if (!e || !e.key || e.key === 'slime_patterns_v1' || e.key === 'slime_patterns_v1_bak') refreshLayout()
+    })
+    window.addEventListener('focus', refreshLayout)
+    if (Patterns.lanOnChange) Patterns.lanOnChange(refreshLayout)
+  } catch (e) {}
 }
