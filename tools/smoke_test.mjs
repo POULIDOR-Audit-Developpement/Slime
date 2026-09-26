@@ -195,9 +195,9 @@ check('mur-bloquant : détecté impossible', Patterns.validatePatternJumps(murBl
 const anchorKo = { x: -128, row: 2, y: rowY(2), baseY: rowY(2), w: 128, type: 'basic', amp: 0, spd: 0, ph: 0 }
 Patterns.pin(murBloque)
 Patterns.setLayout({ checkJumps: true })
-check('vérif active (défaut) : repli sécurité', Patterns.spawnSection(anchorKo, 0).platforms.some(p => p.safety))
+check('vérif active (défaut) : repli sécurité', Patterns.spawnSection(anchorKo, 120).platforms.some(p => p.safety))
 Patterns.setLayout({ checkJumps: false })
-const secKo = Patterns.spawnSection(anchorKo, 0)
+const secKo = Patterns.spawnSection(anchorKo, 120)
 check('vérif coupée : pattern injoignable joué tel quel',
   secKo.platforms.length === Patterns.instantiate(murBloque, anchorKo).platforms.length &&
   !secKo.platforms.some(p => p.safety))

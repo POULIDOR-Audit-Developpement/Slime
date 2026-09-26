@@ -170,6 +170,14 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('slider zoom -> layout.view.zoom', Patterns.getLayout().view.zoom === 2.5)
   els.btnResetL.handlers.click()
   check('reset vue : zoom défaut ×1', Patterns.getLayout().view.zoom === 1)
+  // vérification des sauts : optionnelle (non infaillible), l'admin décide
+  check('case vérif des sauts présente', lh.includes('vChkJumps'))
+  els.vChkJumps.checked = false
+  els.vChkJumps.handlers.change({ target: els.vChkJumps })
+  check('case décochée -> layout.checkJumps false', Patterns.getLayout().checkJumps === false)
+  els.vChkJumps.checked = true
+  els.vChkJumps.handlers.change({ target: els.vChkJumps })
+  check('case cochée -> layout.checkJumps true', Patterns.getLayout().checkJumps === true)
   // reset murs : préserve physique et plateformes, remets les murs par défaut
   const L0 = Patterns.getLayout()
   L0.walls.left = 40; L0.phys.grav = 777

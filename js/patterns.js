@@ -359,7 +359,7 @@ const Patterns = (() => {
       }
       if (!pick) pick = pool[pool.length - 1]
       const inst = instantiate(pick, last)
-      if (strict || validateInstance(last, inst)) {
+      if (!strict || validateInstance(last, inst)) {
         lastId = pick.id
         return inst
       }
