@@ -95,5 +95,5 @@ const Crypto = (() => {
     }
   }
 
-  return { SECRET, makeCode, verifyCode }
+  return { SECRET, makeCode, verifyCode, digestHex: sha256Hex }
 })()

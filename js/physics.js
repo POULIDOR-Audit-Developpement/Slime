@@ -44,26 +44,28 @@ function physBound(v, def, lo, hi) {
 function normPhys(n) {
   const d = PHYS_DEF
   n = n && typeof n === 'object' ? n : {}
+  // Bornes = union des anciennes bornes et des plages de sliders de l'éditeur
+  // (chaque défaut est le milieu exact de son slider, onglet PHYS).
   const out = {
-    slimeR: physBound(n.slimeR, d.slimeR, 8, 18),
-    grav: physBound(n.grav, d.grav, 300, 1000),
-    vmin: physBound(n.vmin, d.vmin, 100, 400),
-    vmax: physBound(n.vmax, d.vmax, 200, 600),
-    aimMin: physBound(n.aimMin, d.aimMin, 8, 60),
-    aimMax: physBound(n.aimMax, d.aimMax, 60, 240),
-    fallMax: physBound(n.fallMax, d.fallMax, 300, 900),
+    slimeR: physBound(n.slimeR, d.slimeR, 8, 19),
+    grav: physBound(n.grav, d.grav, 270, 1000),
+    vmin: physBound(n.vmin, d.vmin, 60, 400),
+    vmax: physBound(n.vmax, d.vmax, 160, 600),
+    aimMin: physBound(n.aimMin, d.aimMin, 0, 60),
+    aimMax: physBound(n.aimMax, d.aimMax, 50, 240),
+    fallMax: physBound(n.fallMax, d.fallMax, 220, 900),
     dragAir: physBound(n.dragAir, d.dragAir, 0.2, 1),
-    bounceVy: physBound(n.bounceVy, d.bounceVy, 250, 650),
-    bounceVx: physBound(n.bounceVx, d.bounceVx, 60, 300),
-    stickyMul: physBound(n.stickyMul, d.stickyMul, 0.4, 1),
+    bounceVy: physBound(n.bounceVy, d.bounceVy, 200, 650),
+    bounceVx: physBound(n.bounceVx, d.bounceVx, 20, 300),
+    stickyMul: physBound(n.stickyMul, d.stickyMul, 0.4, 1.1),
     invuln: physBound(n.invuln, d.invuln, 0.3, 3),
-    hurtRecoil: physBound(n.hurtRecoil, d.hurtRecoil, 0.5, 2),
+    hurtRecoil: physBound(n.hurtRecoil, d.hurtRecoil, 0.25, 2),
     coyote: physBound(n.coyote, d.coyote, 0, 0.25),
     // Caméra : bornes élargies pour couvrir la nouvelle base ×2 (80/240)
     // avec de la marge dans les deux sens.
     camBase: physBound(n.camBase, d.camBase, 20, 200),
     camMax: physBound(n.camMax, d.camMax, 60, 400),
-    camRampT: physBound(n.camRampT, d.camRampT, 4, 30)
+    camRampT: physBound(n.camRampT, d.camRampT, 0, 30)
   }
   // Migration : l'ancienne base (40/120) stockée dans des saves antérieurs
   // au passage à la base ×2 est considérée non personnalisée -> nouvelle base.

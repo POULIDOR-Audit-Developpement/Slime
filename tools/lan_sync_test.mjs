@@ -37,6 +37,9 @@ try {
   // ---- 2) API brute ----
   let r = await fetch(BASE + '/')
   assert.strictEqual(r.status, 200)
+  assert.match(await r.text(), /endless runner pixel-art/, '/ = page de présentation')
+  r = await fetch(BASE + '/play.html')
+  assert.strictEqual(r.status, 200)
   assert.match(await r.text(), /<title>SLIME<\/title>/)
   r = await fetch(BASE + '/api/rev')
   const rev0 = (await r.json()).rev
@@ -55,6 +58,11 @@ try {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state: store })
   })
+  assert.strictEqual(r.status, 401, 'PUT sans clé refusé')
+  r = await fetch(BASE + '/api/state', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
+    body: JSON.stringify({ state: store })
+  })
   assert.strictEqual(r.status, 200)
   const put = await r.json()
   assert.strictEqual(put.rev, rev0 + 1)
@@ -65,14 +73,19 @@ try {
   assert.strictEqual(st.state.patterns[0].id, 't1')
 
   r = await fetch(BASE + '/api/state', { method: 'PUT', body: '{"format":"autre"}' })
-  assert.strictEqual(r.status, 400, 'PUT invalide rejeté')
+  assert.strictEqual(r.status, 401, 'PUT invalide sans clé -> 401 d\'abord')
+  r = await fetch(BASE + '/api/state', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
+    body: '{"format":"autre"}'
+  })
+  assert.strictEqual(r.status, 400)
 
   r = await fetch(BASE + '/editor.html')
   assert.strictEqual(r.status, 200)
   console.log('ok   API statique + rev/state/PUT + rejet format invalide')
 
   // ---- 3) client Patterns (vrai fichier, fetch branché sur le serveur) ----
-  const storeStub = {}
+  const storeStub = { slime_key: 'slime' } // éditeur déverrouillé : la clé part avec chaque push
   const sandbox = {
     console,
     setTimeout, clearTimeout, setInterval: (fn, ms) => { lanPoll = fn; return 1 },
@@ -119,7 +132,7 @@ try {
   P.lanOnChange(r => { if (r === 'remote') events.push(r) })
   const storeB = JSON.parse(JSON.stringify(st2.state)); storeB.patterns = storeB.patterns.slice(0, 1)
   await fetch(BASE + '/api/state', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
     body: JSON.stringify({ state: storeB })
   })
   assert.ok(lanPoll, 'boucle de polling armée')
@@ -133,7 +146,7 @@ try {
   const emptyState = JSON.parse(JSON.stringify(st2.state))
   emptyState.patterns = []
   await fetch(BASE + '/api/state', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
     body: JSON.stringify({ state: emptyState })
   })
   await lanPoll()

@@ -12,6 +12,7 @@ const files = [
   'js/sprites.js',
   'js/patterns-defaults.js',
   'js/patterns.js',
+  'js/i18n.js',
   'js/game.js'
 ]
 const src = files.map(f => readFileSync(new URL('../' + f, import.meta.url), 'utf8')).join('\n')
@@ -21,9 +22,11 @@ const W = 960, H = 540
 const noop = () => {}
 const ctxStub = () => {
   const c = {}
+  const grad = { addColorStop: noop }
   return new Proxy(c, {
     get: (t, k) => {
       if (k === 'canvas') return { width: W, height: H }
+      if (k === 'createRadialGradient' || k === 'createLinearGradient') return () => grad
       return (t[k] ||= (...a) => undefined)
     },
     set: (t, k, v) => { t[k] = v; return true }

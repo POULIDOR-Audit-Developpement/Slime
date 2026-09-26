@@ -118,6 +118,37 @@
   .btnRow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .applyBtn.dirty { background: var(--gold); color: #0a0a12; border-color: var(--gold); }
   .dirtyNote { color: var(--gold); font-size: 11px; font-weight: 700; }
+  /* ---------- portail mot de passe (style présentation) ---------- */
+  #gate {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(ellipse 90% 60% at 50% -10%, #10173a 0%, transparent 60%),
+      var(--bg);
+  }
+  #gateCard {
+    background: var(--panel); border: 2px solid var(--line); padding: 34px 38px;
+    text-align: center; box-shadow: 0 8px 0 #0a0a12; max-width: 340px;
+  }
+  #gateCard.shake { animation: shake .3s; }
+  @keyframes shake { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-8px) } 75% { transform: translateX(8px) } }
+  #gateCard .gl {
+    font-size: 30px; font-weight: 900; letter-spacing: .08em; color: var(--acc);
+    text-shadow: 0 3px 0 #12521d, 0 6px 0 #0a0a12, 0 0 22px rgba(62,203,62,.45);
+  }
+  #gateCard .gl small { display: block; font-size: 12px; font-weight: 700; color: var(--gold); letter-spacing: .4em; margin-top: 6px; }
+  #gateCard p { color: var(--dim); font-size: 13px; margin: 14px 0 16px; }
+  #gatePwd {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--txt);
+    padding: 10px 12px; font: inherit; text-align: center; letter-spacing: .2em;
+  }
+  #gateBtn {
+    width: 100%; margin-top: 12px; padding: 11px 0; font-weight: 800; cursor: pointer;
+    background: var(--acc); color: #062806; border: 0; box-shadow: 0 4px 0 #12521d, 0 6px 0 #0a0a12;
+    letter-spacing: .06em;
+  }
+  #gateBtn:active { transform: translateY(2px); }
+  #gateErr { color: var(--red); font-size: 12px; min-height: 16px; margin-top: 10px; font-weight: 700; }
   /* onglet COULEURS : une carte par palier (preview slime + seuil + teinte) */
   .tierRow { display: flex; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--line); padding: 8px 10px; margin-top: 8px; }
   .tierRow canvas { width: 56px; height: 56px; image-rendering: pixelated; background: var(--panel2); border-radius: 4px; flex: 0 0 56px; }
@@ -132,6 +163,15 @@
 </style>
 </head>
 <body>
+<div id="gate">
+  <div id="gateCard">
+    <div class="gl">SLIME<small>EDITEUR</small></div>
+    <p>Acces protege. Mot de passe ?</p>
+    <input type="password" id="gatePwd" autocomplete="current-password" placeholder="••••"/>
+    <button id="gateBtn">OK</button>
+    <div id="gateErr"></div>
+  </div>
+</div>
 <header>
   <div class="logo">SLIME <small>éditeur</small></div>
   <div class="tabs">
@@ -165,12 +205,67 @@
   <span id="status"></span>
   <span class="spacer"></span>
   <span id="storeInfo"></span>
+  <button id="btnLock" title="Verrouiller l'editeur (oublier le mot de passe)">🔒</button>
 </footer>
 <script src="js/physics.js?v=20260926a"></script>
 <script src="js/slime-colors.js?v=20260926a"></script>
 <script src="js/sprites.js?v=20260926b"></script>
 <script src="js/patterns-defaults.js?v=20260925b"></script>
-<script src="js/patterns.js?v=20260926a"></script>
-<script src="js/editor.js?v=20260926b"></script>
+<script src="js/patterns.js?v=20260926d"></script>
+<script src="js/crypto.js?v=20260926d"></script>
+<script>
+// ---------- portail : editor.js n'est charge qu'apres le bon mot de passe ----------
+// Hash sale de la cle : la source ne contient pas le mot de passe en clair, et
+// la cle est conservee pour l'API LAN (en-tete X-Slime-Key sur PUT /api/state).
+(function () {
+  var SALT = 'slime::editeur::2026'
+  var HASH = '62392f80d2b3003249b4c267b06241c8d02ae30f803037bed3bed3d65b3373bf'
+  var KEY_STORE = 'slime_key'
+
+  function getKey() {
+    try { return localStorage.getItem(KEY_STORE) || '' } catch (e) { return '' }
+  }
+  function unlocked() {
+    try { return Crypto.digestHex(SALT + getKey()) === HASH } catch (e) { return false }
+  }
+  function loadEditor() {
+    var s = document.createElement('script')
+    s.src = 'js/editor.js?v=20260926d'
+    document.body.appendChild(s)
+  }
+  function fail(msg) {
+    document.getElementById('gateErr').textContent = msg
+    var card = document.getElementById('gateCard')
+    card.classList.remove('shake')
+    void card.offsetWidth
+    card.classList.add('shake')
+  }
+  function tryUnlock() {
+    var v = document.getElementById('gatePwd').value
+    if (Crypto.digestHex(SALT + v) === HASH) {
+      try { localStorage.setItem(KEY_STORE, v) } catch (e) {}
+      document.getElementById('gate').style.display = 'none'
+      loadEditor()
+    } else fail('Mot de passe incorrect')
+  }
+
+  var lock = document.getElementById('btnLock')
+  if (lock) lock.addEventListener('click', function () {
+    try { localStorage.removeItem(KEY_STORE) } catch (e) {}
+    location.reload()
+  })
+
+  if (unlocked()) {
+    document.getElementById('gate').style.display = 'none'
+    loadEditor()
+  } else {
+    document.getElementById('gateBtn').addEventListener('click', tryUnlock)
+    document.getElementById('gatePwd').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') tryUnlock()
+    })
+    try { document.getElementById('gatePwd').focus() } catch (e) {}
+  }
+})()
+</script>
 </body>
 </html>

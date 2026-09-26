@@ -59,7 +59,7 @@ const Patterns = (() => {
     dj.charges = Math.round(numBound(dj.charges, djd.charges, 1, 3))
     dj.powerMul = numBound(dj.powerMul, djd.powerMul, 0.5, 1.5)
     sm.enabled = sm.enabled !== false
-    sm.scale = numBound(sm.scale, smd.scale, 0.15, 0.8)
+    sm.scale = numBound(sm.scale, smd.scale, 0.05, 0.8)
     sm.duration = numBound(sm.duration, smd.duration, 0.2, 2)
     lg.enabled = lg.enabled !== false
     // pullT (ex hangT : durée d'accroche -> durée de remontée). Migration des
@@ -479,9 +479,14 @@ const Patterns = (() => {
 
   async function lanPush() {
     try {
+      // Clé de l'éditeur déverrouillé (server.mjs refuse les PUT sans elle).
+      let key = null
+      try { key = localStorage.getItem('slime_key') } catch (e) {}
+      const headers = { 'Content-Type': 'application/json' }
+      if (key) headers['X-Slime-Key'] = key
       const d = await lanApi('/api/state', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ state: { format: FORMAT, patterns: store.patterns, layout } })
       })
       lan.rev = d.rev

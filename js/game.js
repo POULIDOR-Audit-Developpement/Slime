@@ -140,9 +140,12 @@ const COLORS = [
   '#ffd700',
   '#4a5ed7', '#5f74e3', '#4152c8', '#3946a8', '#6b83ec',
   '#131735', '#20264f',
-  '#6b1d1d', '#c98d4b'
+  '#6b1d1d', '#c98d4b',
+  // Style « présentation » : fond vitrine, panneaux, ombre du logo.
+  '#05050e', '#1c2148', '#12521d'
 ]
 const C_BG0 = 0, C_BG1 = 1, C_BG2 = 2, C_BG3 = 3
+const C_PAGE = COLORS.length - 3, C_PANEL2 = COLORS.length - 2, C_LOGO_D = COLORS.length - 1
 const C_SLIME = 4, C_SLIME_D = 5, C_SLIME_L = 6
 const C_P_TOP = 7, C_P_SIDE = 8, C_P_DARK = 9
 const C_S_TOP = 10, C_S_SIDE = 11, C_S_DARK = 12
@@ -748,6 +751,7 @@ function update(dt) {
 function tap(px, py, touchId) {
   calcView()
   const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
+  if ((state === 'title' || state === 'over') && langTapped(vx, vy)) return
   if (vx < 30 && vy < 24) { Music.toggle(); return }
   if (fsCanEnter() && !fsStandalone() && vx > VW - 34 && vy < 26) { toggleFullscreen(); return }
   if (state === 'title') startGame() // pas de return : ce même appui vise le 1er saut
@@ -860,83 +864,146 @@ function drawVignette() {
   alpha(1)
 }
 
+// ---------- titre : style « présentation » (fond sombre, panneaux flottants,
+// sol en tuiles, logo à ombres superposées) ----------
+const LANG_W = 30, LANG_GAP = 6, LANG_H = 17
+
+function langZone() {
+  const ls = I18N.langs()
+  const total = ls.length * LANG_W + (ls.length - 1) * LANG_GAP
+  return { x: VW / 2 - total / 2, y: 5, w: total, h: LANG_H + 5 }
+}
+
+function drawLangToggle() {
+  const z = langZone()
+  const c = ctx()
+  c.save()
+  c.globalAlpha = 0.5
+  rectfill(z.x - 5, z.y - 1, z.w + 10, z.h + 2, C_PAGE, 6)
+  c.restore()
+  textalign('center', 'top')
+  textsize(8)
+  let x = z.x
+  for (const l of I18N.langs()) {
+    const on = I18N.get() === l
+    rectfill(x, z.y, LANG_W, LANG_H, on ? C_GREEN : C_PANEL2, 5)
+    if (!on) rect(x, z.y, LANG_W, LANG_H, C_BG3, 1)
+    text(x + LANG_W / 2, z.y + 5, I18N.label(l), on ? C_BLACK : C_WHITE, on ? '900' : 'normal')
+    x += LANG_W + LANG_GAP
+  }
+  textalign('start', 'top')
+}
+
+// true si le tap est dans le sélecteur de langue (et change la langue).
+function langTapped(vx, vy) {
+  const z = langZone()
+  if (vx < z.x || vx > z.x + z.w || vy > z.y + z.h) return false
+  const ls = I18N.langs()
+  const idx = Math.max(0, Math.min(ls.length - 1, Math.floor((vx - z.x) / (LANG_W + LANG_GAP))))
+  I18N.set(ls[idx])
+  return true
+}
+
+function drawTitleBG() {
+  cls(C_PAGE)
+  const c = ctx()
+  // Halo vert doux derrière le logo (équivalent du radial-gradient CSS).
+  c.save()
+  const g = c.createRadialGradient(VW / 2, -30, 20, VW / 2, -30, 230)
+  g.addColorStop(0, 'rgba(62,203,62,0.17)')
+  g.addColorStop(1, 'rgba(62,203,62,0)')
+  c.fillStyle = g
+  c.fillRect(0, 0, VW, VH)
+  c.restore()
+  if (!Sprites.ready) return
+  // Panneaux du décor, flottants, très discrets (comme .floatPanel).
+  const P = [
+    ['bgPanel1', 48, 58, 62, 0],
+    ['bgPanel2', 372, 80, 54, 3],
+    ['bgPanel3', 86, 148, 58, 5],
+    ['bgPanel4', 338, 162, 48, 7]
+  ]
+  alpha(0.10)
+  for (let k = 0; k < P.length; k++) {
+    Sprites.drawImage(P[k][0], P[k][1], P[k][2] + Math.sin(T * 0.8 + P[k][4]) * 5, P[k][3])
+  }
+  alpha(1)
+  // Sol en tuiles vertes + liseré noir (comme .ground).
+  for (let x = 0; x < VW; x += 64) Sprites.drawImage('tileGreen', x, VH - 48, 64, 48)
+  rectfill(0, VH - 48, VW, 3, C_BLACK)
+}
+
+function drawLogo() {
+  const c = ctx()
+  const pw = 320, ph = 70
+  const px = VW / 2 - pw / 2, py = 26
+  // Ombre décalée puis panneau à bordure fine (style .card).
+  rectfill(px - 3, py + 6, pw + 6, ph, C_BLACK, 10)
+  rectfill(px, py, pw, ph, C_FRAME, 10)
+  rect(px, py, pw, ph, C_BG3, 2)
+  const word = 'SLIME', ty = py + 12
+  textalign('center', 'top')
+  textsize(46)
+  text(VW / 2, ty + 8, word, C_BLACK, '900')
+  text(VW / 2, ty + 4, word, C_LOGO_D, '900')
+  c.save()
+  c.shadowColor = 'rgba(62,203,62,0.5)'
+  c.shadowBlur = 22
+  text(VW / 2, ty, word, C_GREEN, '900')
+  c.restore()
+  // Deux tons : moitié haute plus claire (comme le logo d'origine).
+  c.save()
+  c.beginPath()
+  c.rect(px + 6, ty, pw - 12, 19)
+  c.clip()
+  text(VW / 2, ty, word, C_SLIME_L, '900')
+  c.restore()
+  textalign('start', 'top')
+}
+
+function drawTitleSlime() {
+  if (!Sprites.ready) {
+    drawBlob(VW / 2, VH - 74, 20, 1, 1, false)
+    return
+  }
+  const bob = Math.sin(T * 2.5) * 4
+  const feet = VH - 46
+  alpha(0.25)
+  push(VW / 2, feet + 2, 0, 1 + 0.04 * bob / 4, 0.28)
+  circfill(0, 0, 26, C_BLACK)
+  pop()
+  alpha(1)
+  // Le slime du titre porte la couleur du high score (record masqué).
+  const k = 'big' + tierSuffix(SlimeColors.tierIndex(TIERS, best))
+  if (!Sprites.draw(k, VW / 2, feet + bob, 52)) Sprites.draw('big', VW / 2, feet + bob, 52)
+}
+
 function drawTitle() {
-  const word = 'SLIME'
-  const px = 9
-  const totalW = word.length * 6 * px - px
-  rectfill(VW / 2 - totalW / 2 - 20, 34, totalW + 40, 5 * px + 30, C_FRAME, 8)
-  for (let dx = 0; dx < totalW + 40; dx += 12) {
-    rectfill(VW / 2 - totalW / 2 - 20 + dx, 32, 4, 4, C_WHITE)
-    rectfill(VW / 2 - totalW / 2 - 20 + dx, 34 + 5 * px + 26, 4, 4, C_WHITE)
-  }
-  for (let dy = 0; dy < 5 * px + 30; dy += 12) {
-    rectfill(VW / 2 - totalW / 2 - 22, 34 + dy, 4, 4, C_WHITE)
-    rectfill(VW / 2 + totalW / 2 + 18, 34 + dy, 4, 4, C_WHITE)
-  }
-  let lx = (VW - totalW) / 2
-  for (let li = 0; li < word.length; li++) {
-    const rows = LETTERS[word[li]]
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 5; c++) {
-        if (rows[r][c] === '#') {
-          rectfill(lx + c * px - 2, 48 + r * px, px + 4, px, C_BLACK)
-          rectfill(lx + c * px + 2, 48 + r * px, px, px + 4, C_BLACK)
-          rectfill(lx + c * px, 48 + r * px - 2, px, px + 4, C_BLACK)
-          rectfill(lx + c * px, 48 + r * px + 2, px, px + 4, C_BLACK)
-        }
-      }
-    }
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 5; c++) {
-        if (rows[r][c] === '#') {
-          rectfill(lx + c * px, 48 + r * px, px, px, r < 2 ? C_SLIME_L : C_GREEN)
-        }
-      }
-    }
-    for (let c = 0; c < 5; c++) {
-      if (rows[4][c] === '#' && h32(li * 31 + c * 7) < 0.4) {
-        const dl = 1 + Math.floor(h32(li * 13 + c) * 3)
-        rectfill(lx + c * px + 1, 48 + 5 * px, px - 2, dl * 4, C_GREEN)
-      }
-    }
-    lx += 6 * px
-  }
-  const bob = Math.sin(T * 2.5) * 6
-  if (Sprites.ready) {
-    alpha(0.25)
-    push(VW / 2, 153, 0, 1 + 0.05 * bob / 6, 0.28)
-    circfill(0, 0, 24, C_BLACK)
-    pop()
-    alpha(1)
-    // Le slime du titre porte la couleur du high score (record masqué).
-    if (!Sprites.draw('big' + tierSuffix(SlimeColors.tierIndex(TIERS, best)), VW / 2, 152 + bob, 48)) Sprites.draw('big', VW / 2, 152 + bob, 48)
-  } else {
-    const bt = SlimeColors.tierIndex(TIERS, best)
-    drawBlob(VW / 2, 128 + bob, 20, 1, 1, false, tierCol(bt), tierColD(bt))
-  }
+  drawTitleBG()
+  drawLogo()
+  drawTitleSlime()
+  drawLangToggle()
   textalign('center', 'top')
   textsize(10)
-  text(VW / 2, 166, 'Vise avec le curseur : plus loin = plus fort, relache pour sauter', C_WHITE)
-  alpha(0.55 + 0.45 * Math.sin(T * 3))
-  text(VW / 2, 182, "Vise vers l'arriere pour les billes dorees, double saut en l'air !", C_GOLD)
-  alpha(1)
+  text(VW / 2, 118, I18N.t('aim'), C_WHITE)
   textsize(12)
   alpha(0.55 + 0.45 * Math.sin(T * 3))
-  text(VW / 2, 200, 'Clique ou touche pour commencer', C_GREEN)
+  text(VW / 2, 140, I18N.t('start'), C_GOLD, 'bold')
   alpha(1)
   if (window.innerHeight > window.innerWidth) {
     textsize(9)
-    text(VW / 2, 244, 'Tourne ton ecran en paysage', C_ORANGE)
+    text(VW / 2, 196, I18N.t('rotate'), C_ORANGE, 'bold')
   } else if (!fsCanEnter() && !fsStandalone()) {
     // Aucune API plein écran : l'ajout à l'écran d'accueil lance le jeu
     // plein écran (métas apple-mobile-web-app-*).
     textsize(8)
     alpha(0.7)
-    text(VW / 2, 245, "Plein ecran : ajoute a l'ecran d'accueil", C_WHITE)
+    text(VW / 2, 198, I18N.t('addhome'), C_WHITE)
     alpha(1)
   }
   textsize(8)
-  text(VW - 24, VH - 12, 'v' + VERSION, C_GRAY)
+  rectfill(VW - 46, VH - 22, 42, 15, C_PAGE, 4)
+  text(VW - 25, VH - 18, 'v' + VERSION, C_GRAY)
   textalign('start', 'top')
 }
 
@@ -944,8 +1011,8 @@ function drawReadyHint() {
   textalign('center', 'top')
   textsize(10)
   alpha(0.55 + 0.45 * Math.sin(T * 3))
-  text(VW / 2, 108, 'Vise avec le curseur, relache pour sauter', aim.on ? C_GREEN : C_GOLD)
-  if (TOUCH_DEVICE) text(VW / 2, 122, 'Touche n importe ou, glisse pour viser', C_GRAY)
+  text(VW / 2, 108, I18N.t('aim'), aim.on ? C_GREEN : C_GOLD)
+  if (TOUCH_DEVICE) text(VW / 2, 122, I18N.t('anywhere'), C_GRAY)
   alpha(1)
   textalign('start', 'top')
 }
@@ -1448,14 +1515,14 @@ function drawSpeedGauge(ratio) {
   const dial = Sprites.get(gkey)
   if (dial && dial.width) {
     textsize(7)
-    text(VW - 70, 18, 'VITESSE', C_WHITE)
+    text(VW - 70, 18, I18N.t('speed'), C_WHITE)
     const dh = 22, dw = dh * dial.width / dial.height
     Sprites.drawImage(gkey, VW - 8 - dw, 10, dw)
   } else {
     const bar = Sprites.get('gaugeBar')
     if (bar && bar.width) {
       textsize(7)
-      text(VW - 70, 18, 'VITESSE', C_WHITE)
+      text(VW - 70, 18, I18N.t('speed'), C_WHITE)
       Sprites.drawImage('speedArrow', VW - 70, 26, 12)
       const bw = 50, bh = 8, bx = VW - 56, by = 28
       Sprites.drawImage('gaugeBar', bx, by, bw)
@@ -1469,7 +1536,7 @@ function drawSpeedGauge(ratio) {
     } else {
       const gx = VW - 24, gy = 36, r = 12
       textsize(7)
-      text(VW - 70, 24, 'VITESSE', C_WHITE)
+      text(VW - 70, 24, I18N.t('speed'), C_WHITE)
       text(VW - 70, 32, 'CAMERA', C_WHITE)
       for (let i = 0; i <= 8; i++) {
         const a0 = Math.PI * (1 - i / 8)
@@ -1543,8 +1610,8 @@ function drawPowerHud() {
   alpha(1)
 }
 
-const BTN_COPY = { x: 62, y: 188, w: 156, h: 30 }
-const BTN_REPLAY = { x: 262, y: 188, w: 156, h: 30 }
+const BTN_COPY = { x: 62, y: 180, w: 156, h: 34 }
+const BTN_REPLAY = { x: 262, y: 180, w: 156, h: 34 }
 
 function hitBtn(x, y, b) {
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
@@ -1574,12 +1641,14 @@ function copyCode() {
   } catch (e) { manual() }
 }
 
-function drawBtn(b, label, col, hot) {
-  rectfill(b.x, b.y, b.w, b.h, hot ? C_BG2 : C_FRAME, 8)
+// Bouton « chunky » style présentation : ombre décalée + panneau + bordure.
+function drawBtn(b, label, col, hot, accent) {
+  rectfill(b.x, b.y + 4, b.w, b.h, C_BLACK, 8)
+  rectfill(b.x, b.y, b.w, b.h, hot ? C_PANEL2 : (accent || C_PANEL2), 8)
   rect(b.x, b.y, b.w, b.h, C_BLACK, 2)
-  rect(b.x + 3, b.y + 3, b.w - 6, b.h - 6, C_GRAY)
+  if (!hot) rect(b.x + 2, b.y + 2, b.w - 4, b.h - 4, C_BG3, 1)
   textsize(9)
-  text(b.x + b.w / 2, b.y + 11, label, col)
+  text(b.x + b.w / 2, b.y + 13, label, col, '900')
 }
 
 function drawOver() {
@@ -1590,32 +1659,38 @@ function drawOver() {
   rectfill(0, 0, W, H, C_BLACK)
   alpha(1)
   c.restore()
+  // Panneau central, style « présentation ».
+  rectfill(VW / 2 - 3, 30, 406, 226, C_BLACK, 12)
+  rectfill(VW / 2 - 200, 24, 400, 226, C_FRAME, 12)
+  rect(VW / 2 - 200, 24, 400, 226, C_BG3, 2)
+  drawLangToggle()
   textalign('center', 'top')
-  textsize(26)
-  text(VW / 2, 40, 'PERDU !', C_RED, 'bold')
+  // Titre à ombres superposées.
+  textsize(30)
+  text(VW / 2, 46, I18N.t('over'), C_BLACK, '900')
+  text(VW / 2, 42, I18N.t('over'), C_RED, '900')
   if (newRecord) {
     alpha(0.55 + 0.45 * Math.sin(T * 6))
     textsize(13)
-    text(VW / 2, 76, 'NOUVEAU RECORD !', C_GOLD, 'bold')
+    text(VW / 2, 80, I18N.t('record'), C_GOLD, 'bold')
     alpha(1)
   }
   textsize(9)
-  text(VW / 2, 98, 'CODE DE SCORE', C_GRAY)
-  rectfill(72, 108, 336, 30, C_BG0)
-  rect(72, 108, 336, 30, C_BLACK, 2)
-  rect(76, 112, 328, 22, C_GRAY)
+  text(VW / 2, 102, I18N.t('code'), C_GRAY)
+  rectfill(72, 112, 336, 28, C_PAGE, 6)
+  rect(72, 112, 336, 28, C_BG3, 2)
   textsize(9)
-  text(VW / 2, 118, scoreCode, C_WHITE)
+  text(VW / 2, 120, scoreCode, C_WHITE)
   textsize(8)
-  text(VW / 2, 152, 'Donne ce code au createur pour valider ton score', C_GRAY)
+  text(VW / 2, 148, I18N.t('codehint'), C_GRAY)
   textsize(9)
-  text(VW / 2, 170, 'TEMPS DE JEU : ' + fmtTime(elapsed), C_WHITE)
+  text(VW / 2, 164, I18N.t('time') + ' ' + fmtTime(elapsed), C_WHITE)
   if (deathT > 0.7) {
-    alpha(clamp((deathT - 0.7) * 3, 0, 1))
     const copied = copiedT > 0
-    drawBtn(BTN_COPY, copied ? 'CODE COPIE !' : 'COPIER LE CODE', copied ? C_SLIME_L : C_WHITE, copied)
+    alpha(clamp((deathT - 0.7) * 3, 0, 1))
+    drawBtn(BTN_COPY, copied ? I18N.t('copied') : I18N.t('copy'), copied ? C_SLIME_L : C_GOLD, copied)
     alpha(clamp((deathT - 0.7) * 3, 0, 1) * (0.6 + 0.4 * Math.sin(T * 4)))
-    drawBtn(BTN_REPLAY, 'REJOUER', C_GREEN)
+    drawBtn(BTN_REPLAY, I18N.t('replay'), C_BLACK, false, C_GREEN)
     alpha(1)
   }
   textalign('start', 'top')

@@ -4,7 +4,9 @@ Endless runner rétro pixel-art : guide un slime le plus loin possible alors que
 
 ## Jouer
 
-Ouvrir `index.html` dans un navigateur — c'est tout.
+Ouvrir `index.html` : c'est la **page de présentation** (vitrine animée avec les sprites, FR/EN/中文). Le bouton **JOUER** lance le jeu : `play.html`.
+
+Le jeu affiche le même univers (fond sombre, panneaux flottants, sol en tuiles) et un sélecteur de langue FR / EN / 中文 sur le titre et l'écran de game over.
 
 ### Jouer / éditer depuis le réseau local (LAN), pool synchronisé
 
@@ -12,16 +14,21 @@ Ouvrir `index.html` dans un navigateur — c'est tout.
 node server.mjs    # à lancer depuis ce dossier (port 8471, --port N pour changer)
 ```
 
-Puis depuis n'importe quel appareil du LAN : `http://<IP-de-la-machine>:8471/` (jeu) ou `http://<IP-de-la-machine>:8471/editor.html` (éditeur). IP locale : `hostname -I`.
+Puis depuis n'importe quel appareil du LAN : `http://<IP-de-la-machine>:8471/` (présentation), `http://<IP-de-la-machine>:8471/play.html` (jeu) ou `http://<IP-de-la-machine>:8471/editor.html` (éditeur). IP locale : `hostname -I`.
 
 Avec ce serveur, le **pool de patterns + le layout (VUE/PHYS/POWER) sont partagés** entre tous les appareils : édite depuis la tablette, le jeu sur le PC et le téléphone se mettent à jour en ~2 s (polling, dernier écrit gagne). Sans serveur (ou avec `python3 -m http.server`), tout reste local au navigateur comme avant — l'éditeur affiche l'état de la sync dans son pied de page. Le pool partagé vit dans `data/pool.json` (ignoré par git) ; premier appareil connecté avec un pool local non vide → il le partage automatiquement.
+
+#### Éditeur protégé
+
+L'éditeur demande un **mot de passe** (par défaut : `slime`) — les joueurs peuvent voir la présentation et jouer, mais pas modifier le jeu. Le serveur refuse aussi toute écriture du pool (`PUT /api/state`) sans la clé (en-tête `X-Slime-Key`). Pour changer la clé : variable d'environnement `SLIME_KEY=autre node server.mjs` — attention, le hash du portail reste dans `editor.html` (page autonome sans serveur), changer la clé côté serveur seul ne suffit pas pour un changement complet.
 
 ### Structure du projet
 
 ```
-index.html              ← page hôte (charge les scripts)
-presentation.html       ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu
-server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev)
+index.html              ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu (FR/EN/中文)
+play.html               ← page hôte du jeu (charge les scripts)
+js/i18n.js              ← traductions FR/EN/中文 (jeu + page de présentation, très peu de mots)
+server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev, PUT protégé par X-Slime-Key)
 data/pool.json          ← pool partagé du LAN (créé par server.mjs, ignoré par git)
 editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs + couleurs du slime (autonome)
 css/style.css           ← styles de la page
@@ -80,7 +87,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 
 ## Éditeur & patterns (créateur de jeu)
 
-Ouvrir **`editor.html`** — tout est sauvegardé en `localStorage` (clé `slime_patterns_v1`) et appliqué au jeu immédiatement. Le panneau de propriétés (à droite) est **redimensionnable** : glisse la poignée entre le canvas et le panneau (200→560 px, largeur mémorisée).
+Ouvrir **`editor.html`** — un mot de passe est demandé (défaut : `slime`, voir « Éditeur protégé » plus haut ; mémorisé jusqu'au clic sur 🔒 dans le pied de page). Tout est sauvegardé en `localStorage` (clé `slime_patterns_v1`) et appliqué au jeu immédiatement. Le panneau de propriétés (à droite) est **redimensionnable** : glisse la poignée entre le canvas et le panneau (200→560 px, largeur mémorisée).
 
 > ⚠ **Où sont stockés tes réglages ?** Dans le `localStorage` du navigateur — c'est-à-dire **par machine, par navigateur ET par origine** : `http://localhost:8471` et `http://192.168.1.68:8471` sont deux origines **distinctes** avec deux stockages indépendants. Si tes réglages « se remettent aux défauts », tu as probablement changé d'adresse, de navigateur ou de machine — l'origine active est affichée en bas de l'éditeur (« stockage : … »). Une copie de secours (`slime_patterns_v1_bak`, une sauvegarde en arrière) est tenue à jour et restaurée automatiquement si le stockage principal devient illisible.
 

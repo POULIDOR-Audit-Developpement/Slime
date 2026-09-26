@@ -870,18 +870,18 @@ const Ed = (() => {
     const w = L.walls
     const v = L.view
     let html = `<h3>Murs de damage</h3>
-    <div class="row"><label>Gauche</label><input type="range" id="wLeft" min="4" max="60" value="${w.left}"/><span class="val" id="wLeftV">${w.left}</span></div>
-    <div class="row"><label>Droite</label><input type="range" id="wRight" min="4" max="60" value="${w.right}"/><span class="val" id="wRightV">${w.right}</span></div>
+    <div class="row"><label>Gauche</label><input type="range" id="wLeft" min="4" max="18" value="${w.left}"/><span class="val" id="wLeftV">${w.left}</span></div>
+    <div class="row"><label>Droite</label><input type="range" id="wRight" min="4" max="24" value="${w.right}"/><span class="val" id="wRightV">${w.right}</span></div>
     <div class="note">Glisse les poignées dorées directement sur la vue. Ces hitboxes s'appliquent au jeu immédiatement. Pas de plafond : le haut est ouvert, les grands sauts passent.</div>
     <h3>Vue du jeu</h3>
     <div class="row"><label>Zoom</label><input type="range" id="vZoom" min="10" max="40" value="${Math.round(v.zoom * 10)}"/><span class="val" id="vZoomV">×${v.zoom.toFixed(1)}</span></div>
     <div class="chk"><input type="checkbox" id="vTraj" ${v.showTrajectory ? 'checked' : ''}/> afficher la trajectoire de saut</div>
     <div class="chk"><input type="checkbox" id="vShake" ${v.shake ? 'checked' : ''}/> secousse d'écran (dégâts, mort)</div>
-    <div class="note">Zoom global de la vue en jeu, centré sur le slime (fixe pendant la partie). ×1 = cadrage complet 480×270. Utile pour bien voir un slime réduit (onglet PHYS, taille 8). L'aperçu au centre de la vue montre la fenêtre visible.</div>
+    <div class="note">Zoom global de la vue en jeu, centré sur le slime (fixe pendant la partie). ×1 = cadrage complet 480×270. Utile pour bien voir un slime réduit (onglet PHYS, taille 9). L'aperçu au centre de la vue montre la fenêtre visible.</div>
     <h3>Plateformes (global)</h3>
-    <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="20" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
-    <div class="row"><label>Dyn. vie</label><input type="range" id="pDynLife" min="10" max="100" step="5" value="${Math.round(L.plat.dynLife * 10)}"/><span class="val" id="pDynLifeV">${L.plat.dynLife.toFixed(1)} s</span></div>
-    <div class="row"><label>Dyn. vit.</label><input type="range" id="pSpdMul" min="5" max="20" value="${Math.round(L.plat.spdMul * 10)}"/><span class="val" id="pSpdMulV">${L.plat.spdMul.toFixed(1)} ×</span></div>
+    <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="8" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
+    <div class="row"><label>Dyn. vie</label><input type="range" id="pDynLife" min="10" max="70" step="5" value="${Math.round(L.plat.dynLife * 10)}"/><span class="val" id="pDynLifeV">${L.plat.dynLife.toFixed(1)} s</span></div>
+    <div class="row"><label>Dyn. vit.</label><input type="range" id="pSpdMul" min="5" max="15" value="${Math.round(L.plat.spdMul * 10)}"/><span class="val" id="pSpdMulV">${L.plat.spdMul.toFixed(1)} ×</span></div>
     <div class="note">Cassable : délai avant casse. Dynamique : durée de vie après atterrissage et vitesse d'oscillation globale. Une plateforme peut surcharger ces valeurs (onglet PATTERNS, case « réglage global »).</div>
     <h3>Décor</h3>
     <div class="row"><label>Asset</label><select id="lDSprite">${DECOR_SPRITES.map(k => `<option value="${k}" ${decorSprite === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
@@ -956,35 +956,37 @@ const Ed = (() => {
 
   // ---------- onglet PHYS ----------
   // [groupe, [[clé, libellé, min, max, pas, format], ...]]
+  // Chaque plage est centrée sur la valeur par défaut (PHYS_DEF) : le défaut
+  // est le milieu exact du slider.
   const PHYS_SLIDERS = [
     ['Slime', [
-      ['slimeR', 'Taille', 8, 18, 1, v => Math.round(v) + ' px']
+      ['slimeR', 'Taille', 9, 19, 1, v => Math.round(v) + ' px']
     ]],
     ['Saut & visée', [
-      ['grav', 'Gravité', 300, 1000, 10, v => Math.round(v)],
-      ['vmin', 'Saut min', 100, 400, 5, v => Math.round(v)],
-      ['vmax', 'Saut max', 200, 600, 5, v => Math.round(v)],
-      ['aimMin', 'Portée min', 8, 60, 1, v => Math.round(v) + ' px'],
-      ['aimMax', 'Portée max', 60, 240, 5, v => Math.round(v) + ' px'],
-      ['fallMax', 'Chute max', 300, 900, 10, v => Math.round(v)],
+      ['grav', 'Gravité', 270, 970, 10, v => Math.round(v)],
+      ['vmin', 'Saut min', 60, 360, 5, v => Math.round(v)],
+      ['vmax', 'Saut max', 160, 560, 5, v => Math.round(v)],
+      ['aimMin', 'Portée min', 0, 48, 1, v => Math.round(v) + ' px'],
+      ['aimMax', 'Portée max', 50, 230, 5, v => Math.round(v) + ' px'],
+      ['fallMax', 'Chute max', 220, 820, 10, v => Math.round(v)],
       ['dragAir', 'Traînée air', 0.2, 1, 0.05, v => (+v).toFixed(2)]
     ]],
     ['Rebond & collant', [
-      ['bounceVy', 'Rebond VY', 250, 650, 5, v => Math.round(v)],
-      ['bounceVx', 'Rebond VX', 60, 300, 5, v => Math.round(v)],
-      ['stickyMul', 'Puiss. collant', 0.4, 1, 0.05, v => '×' + (+v).toFixed(2)]
+      ['bounceVy', 'Rebond VY', 200, 600, 5, v => Math.round(v)],
+      ['bounceVx', 'Rebond VX', 20, 260, 5, v => Math.round(v)],
+      ['stickyMul', 'Puiss. collant', 0.5, 1.1, 0.05, v => '×' + (+v).toFixed(2)]
     ]],
     ['Dégâts', [
-      ['invuln', 'Invincible', 0.3, 3, 0.1, v => (+v).toFixed(1) + ' s'],
-      ['hurtRecoil', 'Recul', 0.5, 2, 0.05, v => '×' + (+v).toFixed(2)]
+      ['invuln', 'Invincible', 0.3, 2.3, 0.1, v => (+v).toFixed(1) + ' s'],
+      ['hurtRecoil', 'Recul', 0.25, 1.75, 0.05, v => '×' + (+v).toFixed(2)]
     ]],
     ['Caméra', [
-      ['camBase', 'Vitesse base', 20, 200, 5, v => Math.round(v)],
-      ['camMax', 'Vitesse max', 60, 400, 5, v => Math.round(v)],
-      ['camRampT', 'Palier', 4, 30, 1, v => Math.round(v) + ' s']
+      ['camBase', 'Vitesse base', 20, 140, 5, v => Math.round(v)],
+      ['camMax', 'Vitesse max', 80, 400, 5, v => Math.round(v)],
+      ['camRampT', 'Palier', 0, 20, 1, v => Math.round(v) + ' s']
     ]],
     ['Game feel', [
-      ['coyote', 'Coyote', 0, 0.25, 0.01, v => (+v).toFixed(2) + ' s']
+      ['coyote', 'Coyote', 0, 0.16, 0.01, v => (+v).toFixed(2) + ' s']
     ]]
   ]
   const physDef = key => { for (const [, rows] of PHYS_SLIDERS) { const r = rows.find(r => r[0] === key); if (r) return r } return null }
@@ -1055,22 +1057,24 @@ const Ed = (() => {
 
   // ---------- onglet POWER ----------
   // [[groupe, [[clé, libellé, min, max, pas, format] | ['enabled', 'Activé'], ...]]]
+  // Chaque plage est centrée sur la valeur par défaut (POWERS_DEF) ; exceptions
+  // : charges (défaut 1 = minimum entier possible) et powerMul (déjà centré).
   const POWER_CARDS = [
     ['doubleJump', 'Double saut', [
       ['enabled', 'Activé'],
-      ['cooldown', 'Recharge', 0, 15, 0.5, v => (+v).toFixed(1) + ' s'],
+      ['cooldown', 'Recharge', 0, 8, 0.5, v => (+v).toFixed(1) + ' s'],
       ['charges', 'Charges', 1, 3, 1, v => Math.round(v)],
       ['powerMul', 'Puissance', 0.5, 1.5, 0.05, v => '×' + (+v).toFixed(2)]
     ]],
     ['slowmo', 'Slow-mo (bullet time)', [
       ['enabled', 'Activé'],
-      ['scale', 'Échelle temps', 0.15, 0.8, 0.05, v => '×' + (+v).toFixed(2)],
-      ['duration', 'Durée', 0.2, 2, 0.1, v => (+v).toFixed(1) + ' s']
+      ['scale', 'Échelle temps', 0.05, 0.65, 0.05, v => '×' + (+v).toFixed(2)],
+      ['duration', 'Durée', 0.2, 1, 0.1, v => (+v).toFixed(1) + ' s']
     ]],
     ['ledge', 'Ledge catch (remontée)', [
       ['enabled', 'Activé'],
-      ['pullT', 'Durée de la remontée', 0.3, 3, 0.1, v => (+v).toFixed(1) + ' s'],
-      ['window', 'Fenêtre', 4, 16, 1, v => Math.round(v) + ' px']
+      ['pullT', 'Durée de la remontée', 0.3, 0.9, 0.1, v => (+v).toFixed(1) + ' s'],
+      ['window', 'Fenêtre', 4, 12, 1, v => Math.round(v) + ' px']
     ]]
   ]
   const powerDef = (grp, key) => {
@@ -1902,8 +1906,8 @@ const Ed = (() => {
     } else if (mode === 'layout') {
       const L = Patterns.getLayout()
       const wx = s2lX(sx), wy = s2lY(sy)
-      if (drag.grip === 'left') { L.walls.left = clampN(Math.round(wx), 4, 60); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
-      else if (drag.grip === 'right') { L.walls.right = clampN(Math.round(VW - wx), 4, 60); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
+      if (drag.grip === 'left') { L.walls.left = clampN(Math.round(wx), 4, 18); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
+      else if (drag.grip === 'right') { L.walls.right = clampN(Math.round(VW - wx), 4, 24); Patterns.setLayout(L); Phys.setWalls(L.walls); persistSilent(); renderPropsLayoutThrottled() }
       else if (drag.decor != null) {
         const d = L.decor[drag.decor]
         d.x = Math.round(wx + drag.dx); d.y = Math.round(wy + drag.dy)

@@ -26,6 +26,8 @@ let argPort = 8471
 const ai = process.argv.indexOf('--port')
 if (ai > 0 && process.argv[ai + 1]) argPort = parseInt(process.argv[ai + 1], 10) || argPort
 const PORT = process.env.PORT ? (parseInt(process.env.PORT, 10) || argPort) : argPort
+// Cle d'ecriture du pool (mot de passe de l'editeur). SLIME_KEY pour changer.
+const WRITE_KEY = process.env.SLIME_KEY || 'slime'
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -112,6 +114,10 @@ const server = http.createServer(async (req, res) => {
     if (u.pathname === '/api/rev' && req.method === 'GET') return send(res, 200, { rev: pool.rev })
     if (u.pathname === '/api/state' && req.method === 'GET') return send(res, 200, { rev: pool.rev, state: pool.state })
     if (u.pathname === '/api/state' && req.method === 'PUT') {
+      // Écriture réservée aux éditeurs déverrouillés (en-tête X-Slime-Key).
+      if ((req.headers['x-slime-key'] || '') !== WRITE_KEY) {
+        return send(res, 401, { error: 'cle requise' })
+      }
       let body
       try { body = JSON.parse(await readBody(req)) } catch (e) { return send(res, 400, { error: 'JSON invalide' }) }
       const state = body && typeof body === 'object' && body.state ? body.state : body
