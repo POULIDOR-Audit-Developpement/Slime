@@ -51,19 +51,19 @@ let PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
 let POWERS = {
   doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
   slowmo: { enabled: true, scale: 0.35, duration: 0.6 },
-  ledge: { enabled: true, hangT: 1, window: 8 }
+  ledge: { enabled: true, pullT: 0.6, window: 8 }
 }
 let VIEW = { zoom: 1, showTrajectory: true, shake: true }
 // Raccourci : physique courante (onglet PHYS de l'éditeur -> layout.phys).
 const PH = () => Phys.phys()
 // Largeur de dessin du sprite de référence (pour un rayon de 18).
 const SLIME_DRAW_W = 44
-// Canevas des frames ledge (tools/make_v3_sprites.py) : ligne des bras à
-// LEDGE_GRIP, face gauche du bloc (là où pend le corps) à LEDGE_BLOCK_L,
-// dans LEDGE_W x LEDGE_H.
+// Canevas des frames ledge (tools/make_v4_sprites.py) : haut du bloc = ligne
+// des bras = sommet de plateforme à LEDGE_GRIP, face gauche du bloc (là où
+// pend le corps au départ) à LEDGE_BLOCK_L, dans LEDGE_W x LEDGE_H.
+// LEDGE_TOP_CX : centre du slime assis dans ledgeTop (fin de remontée).
 const LEDGE_W = 320, LEDGE_H = 320, LEDGE_GRIP = 150, LEDGE_BLOCK_L = 110
-// Abaissement du sprite sous le sommet : lecture « suspendu » du ledge catch.
-const LEDGE_DROP = 11
+const LEDGE_TOP_CX = 167
 
 // Nombre borné : non numérique -> défaut ; 0 est une valeur valide.
 function numBound(v, def, lo, hi) {
@@ -100,7 +100,8 @@ function applyLayout() {
       },
       ledge: {
         enabled: lg.enabled !== false,
-        hangT: numBound(lg.hangT, 1, 0.3, 3),
+        // pullT (ex hangT) : durée de la remontée ; migration des anciens saves.
+        pullT: numBound(lg.pullT !== undefined ? lg.pullT : lg.hangT, 0.6, 0.3, 3),
         window: Math.round(numBound(lg.window, 8, 4, 16))
       }
     }
@@ -314,7 +315,7 @@ function startGame() {
     x: VW / 2, y: rowY(2) - slimeR(), vx: 0, vy: 0, size: 3,
     grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0,
     coyote: PH().coyote, airJumps: POWERS.doubleJump.charges, djCd: 0,
-    hang: null, noCatchT: 0, pumpT: 0, face: 1
+    pull: null, noCatchT: 0, pumpT: 0, face: 1
   }
   slime.r = slimeR()
   let guard = 0
@@ -341,7 +342,7 @@ function die() {
   aim.on = false
   aimPad = null
   slowmoT = 0
-  slime.hang = null
+  slime.pull = null
   const s = currentScore()
   newRecord = s > best && s > 0
   if (newRecord) {
@@ -365,9 +366,9 @@ function execJump() {
   slime.vx = Math.cos(ang) * mul
   slime.vy = Math.sin(ang) * mul
   slime.face = aim.x >= slime.x ? 1 : -1
-  // Saut depuis une accroche : décroche proprement (pas de glissade).
-  if (slime.hang) {
-    slime.hang = null
+  // Saut pendant la remontée : interrompt le pull-up proprement (pas de glissade).
+  if (slime.pull) {
+    slime.pull = null
     slime.noCatchT = 0.3
   }
   const gp = slime.groundPlat
@@ -424,9 +425,10 @@ function land(p) {
 // ---------- Ledge catch ----------
 // Manqué une plateforme de justesse ? Si le bord est dépassé de quelques
 // pixels (fenêtre réglable) pendant que le bas du slime frôle le sommet,
-// il s'y agrippe in-extremis : pose possible d'un saut, décroche auto à la
-// fin du délai. Les effets « atterrissage » s'appliquent (casse, timer,
-// disparition éphémère).
+// il s'y agrippe in-extremis et se hisse immédiatement dessus : la remontée
+// dure pullT secondes (« pulled up time »), à la fin il est posé. Un appui
+// pendant la remontée permet de viser un saut. Les effets « atterrissage »
+// s'appliquent dès l'accroche (casse, timer, disparition éphémère).
 function tryLedgeCatch(prevY) {
   const win = POWERS.ledge.window
   for (const p of platforms) {
@@ -454,7 +456,7 @@ function catchLedge(p, side) {
     p.timerSet = true
     p.timer = p.dynLife || PLAT.dynLife
   }
-  slime.hang = { plat: p, side, t: POWERS.ledge.hangT }
+  slime.pull = { plat: p, side, t: POWERS.ledge.pullT, dur: POWERS.ledge.pullT }
   slime.grounded = false
   slime.groundPlat = null
   slime.vx = 0
@@ -463,25 +465,41 @@ function catchLedge(p, side) {
   sfx(SFX_LAND, 4, 0.45)
 }
 
-// Accroché : suit la plateforme (dynamique), décroche à la fin du délai,
-// si elle meurt ou si le pouvoir est coupé en vol.
-function updHang(dt) {
-  const h = slime.hang, p = h.plat
-  if (!POWERS.ledge.enabled || !p || p.dead || h.t <= 0) {
+// Remontée (pull-up) : le slime se hisse sur la plateforme en pullT s. La
+// position logique glisse du bord (corps pendant hors du bord) vers sa place
+// assise (centre mesuré sur la frame ledgeTop, cf. LEDGE_TOP_CX), lissée en
+// smoothstep avec une petite élévation en arc ; la plateforme mouvante est
+// suivie. À la fin il est posé (land) ; si elle meurt pendant l'effort,
+// il glisse hors du bord.
+function updPull(dt) {
+  const h = slime.pull, p = h.plat
+  if (!POWERS.ledge.enabled || !p || p.dead) {
     releaseLedge(true)
     return
   }
   h.t -= dt
-  slime.x = h.side < 0 ? p.x - slime.r * 0.45 : p.x + p.w + slime.r * 0.45
-  slime.y = p.y + slime.r * 0.35
+  const k = 1 - Math.max(h.t, 0) / h.dur
+  const e = k * k * (3 - 2 * k)
+  const inset = (LEDGE_TOP_CX - LEDGE_BLOCK_L) / LEDGE_W * (slimeDrawW() * 2)
+  const edgeX = h.side < 0 ? p.x - slime.r * 0.45 : p.x + p.w + slime.r * 0.45
+  const standX = h.side < 0 ? p.x + inset : p.x + p.w - inset
+  const y0 = p.y + slime.r * 0.35, y1 = p.y - slime.r
+  slime.x = edgeX + (standX - edgeX) * e
+  slime.y = y0 + (y1 - y0) * e - Math.sin(k * Math.PI) * slime.r * 0.3
   slime.vx = 0
   slime.vy = 0
+  if (h.t <= 0) {
+    slime.pull = null
+    land(p)
+  }
 }
 
+// Relâche (plateforme morte ou pouvoir coupé en pleine remontée) : glisse
+// hors du bord puis tombe.
 function releaseLedge(slip) {
-  if (!slime.hang) return
-  const side = slime.hang.side
-  slime.hang = null
+  if (!slime.pull) return
+  const side = slime.pull.side
+  slime.pull = null
   slime.noCatchT = 0.5
   slime.grounded = false
   if (slip) { // décroche : glisse hors du bord puis tombe
@@ -495,8 +513,8 @@ function updSlime(dt) {
   const prevY = slime.y
   if (slime.noCatchT > 0) slime.noCatchT -= dt
   if (slime.pumpT > 0) slime.pumpT -= dt
-  if (slime.hang) {
-    updHang(dt)
+  if (slime.pull) {
+    updPull(dt)
     return
   }
   if (slime.grounded) {
@@ -646,7 +664,7 @@ function update(dt) {
   // Avant le premier saut : tout est gelé (caméra, chrono, timers, musique),
   // seule la visée du saut est active.
   if (!runStarted) {
-    if (aim.on && !aim.air && !slime.grounded && !slime.hang && slime.coyote <= 0) { aim.on = false; aimPad = null }
+    if (aim.on && !aim.air && !slime.grounded && !slime.pull && slime.coyote <= 0) { aim.on = false; aimPad = null }
     updParticles(dts)
     return
   }
@@ -680,7 +698,7 @@ function update(dt) {
   if (slime.djCd > 0) slime.djCd = Math.max(0, slime.djCd - dts)
   updSlime(dts)
   // Visée au sol devenue impossible (plateforme quittée sans sauter).
-  if (aim.on && !aim.air && !slime.grounded && !slime.hang && slime.coyote <= 0) { aim.on = false; aimPad = null }
+  if (aim.on && !aim.air && !slime.grounded && !slime.pull && slime.coyote <= 0) { aim.on = false; aimPad = null }
   updBalls()
   updParticles(dts)
   Music.tick(dt, camRatio())
@@ -703,7 +721,7 @@ function tap(px, py, touchId) {
   const w = s2w(px, py)
   const touch = touchId > 0
   const sx = touch ? slime.x : w.x, sy = touch ? slime.y : w.y
-  if (slime.grounded || slime.coyote > 0 || slime.hang) {
+  if (slime.grounded || slime.coyote > 0 || slime.pull) {
     if (!aim.on) {
       aim = { on: true, x: sx, y: sy, id: touchId, air: false }
       aimPad = touch ? { x: px, y: py } : null
@@ -1126,28 +1144,29 @@ function drawSlime() {
   const feet = slime.y + slime.r + 1
   const suffix = slime.size >= 3 ? '' : slime.size === 2 ? '_orange' : '_red'
   if (Sprites.ready) {
-    // Ledge catch : frame d'accroche (yeux écarquillés) puis boucle fatigué.
-    // Sprites calés sur canevas LEDGE_* : ligne des bras = sommet plateforme,
-    // face du bloc = bord de la plateforme (corps collé au mur) ; miroir
-    // selon le côté. Facteur 2 : échelle visible identique à 1.5/240.
-    if (slime.hang) {
-      const grab = slime.hang.t > POWERS.ledge.hangT - 0.35
-      let key = grab ? 'ledge' : (Math.floor(gameT * 3) % 2 ? 'ledge0' : 'ledge1')
+    // Ledge catch : remontée en 3 frames calées sur le canevas LEDGE_* (haut
+    // du bloc = sommet plateforme, face du bloc = bord de la plateforme) :
+    // drapé sur le coin (accroche), traction (effort), assis (posé). Le
+    // déplacement est intégré aux frames ; miroir selon le côté. Facteur 2 :
+    // échelle visible identique à 1.5/240.
+    if (slime.pull) {
+      const kk = 1 - Math.max(slime.pull.t, 0) / slime.pull.dur
+      const key = kk < 0.25 ? 'ledge' : kk < 0.8 ? 'ledgeUp' : 'ledgeTop'
       let k = key + suffix
       if (!(Sprites.get(k) && Sprites.get(k).width)) k = key
       const im = Sprites.get(k)
       if (im && im.width) {
         const w = slimeDrawW() * 2
         const h = w * LEDGE_H / LEDGE_W
-        const p = slime.hang.plat
-        const flip = slime.hang.side > 0
+        const p = slime.pull.plat
+        const flip = slime.pull.side > 0
         const x = flip ? p.x + p.w - 2 - w * (1 - LEDGE_BLOCK_L / LEDGE_W)
                        : p.x + 2 - w * (LEDGE_BLOCK_L / LEDGE_W)
         if (slime.invuln > 0) alpha(Math.floor(T * 14) % 2 === 0 ? 1 : 0.55)
-        Sprites.drawTL(k, x, p.y - 1 + LEDGE_DROP - h * (LEDGE_GRIP / LEDGE_H), w, flip)
+        Sprites.drawTL(k, x, p.y - 1 - h * (LEDGE_GRIP / LEDGE_H), w, flip)
         alpha(1)
       } else {
-        drawHangFallback()
+        drawPullFallback(kk)
       }
       return
     }
@@ -1194,14 +1213,14 @@ function drawSlime() {
     Sprites.draw(key, slime.x, feet, slimeDrawW(), sx, sy)
     alpha(1)
     // Bullet time (time warp) : tourbillons autour du slime en plein ralenti.
-    if (ts < 0.9 && !slime.hang) drawTimeWarp()
+    if (ts < 0.9 && !slime.pull) drawTimeWarp()
     return
   }
   const blink = slime.invuln > 0 && Math.floor(T * 18) % 2 === 0
   const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
   let sx = 1, sy = 1
-  if (slime.hang) {
-    drawHangFallback()
+  if (slime.pull) {
+    drawPullFallback(1 - Math.max(slime.pull.t, 0) / slime.pull.dur)
     return
   }
   if (!slime.grounded && (slime.pumpT > 0 || (aim.on && aim.air))) {
@@ -1234,24 +1253,31 @@ function drawSlime() {
   pop()
 }
 
-// Ledge catch sans asset : corps sous le bord, deux bras sur le sommet,
-// yeux fatigués (traits).
-function drawHangFallback() {
+// Remontée sans asset : première moitié — corps pendant sous le bord, deux
+// bras sur le sommet ; seconde moitié — corps qui s'élève au-dessus du bord.
+function drawPullFallback(k) {
   const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
-  const p = slime.hang.plat
-  const dir = slime.hang.side < 0 ? 1 : -1 // bord côté plateforme
-  push(slime.x, slime.y + slime.r * 0.4, 0, 1, 0.85)
-  circfill(0, -slime.r * 0.2, slime.r * 0.88, C_BLACK)
-  circfill(0, -slime.r * 0.2, slime.r * 0.78, col)
-  pop()
-  // bras par-dessus le bord de la plateforme
-  const ex = slime.x + dir * slime.r * 0.7
-  rectfill(ex - 3, p.y - 3, 6, 3, col)
-  rectfill(ex + dir * 6 - 2, p.y - 3, 5, 3, col)
-  // yeux fatigués
-  const ey = slime.y + slime.r * 0.25
-  line(slime.x - 5, ey, slime.x - 1, ey, C_BLACK)
-  line(slime.x + 1, ey, slime.x + 5, ey, C_BLACK)
+  const p = slime.pull.plat
+  const dir = slime.pull.side < 0 ? 1 : -1 // bord côté plateforme
+  if (k < 0.5) {
+    push(slime.x, slime.y + slime.r * 0.4, 0, 1, 0.85)
+    circfill(0, -slime.r * 0.2, slime.r * 0.88, C_BLACK)
+    circfill(0, -slime.r * 0.2, slime.r * 0.78, col)
+    pop()
+    // bras par-dessus le bord de la plateforme
+    const ex = slime.x + dir * slime.r * 0.7
+    rectfill(ex - 3, p.y - 3, 6, 3, col)
+    rectfill(ex + dir * 6 - 2, p.y - 3, 5, 3, col)
+    // yeux fatigués
+    const ey = slime.y + slime.r * 0.25
+    line(slime.x - 5, ey, slime.x - 1, ey, C_BLACK)
+    line(slime.x + 1, ey, slime.x + 5, ey, C_BLACK)
+  } else {
+    push(slime.x, slime.y + slime.r, 0, 1, 1 - 0.15 * (1 - k))
+    circfill(0, -slime.r * 0.5, slime.r * 0.95, C_BLACK)
+    circfill(0, -slime.r * 0.5, slime.r * 0.85, col)
+    pop()
+  }
 }
 
 // Double saut sans asset : boule comprimée cerclée de noir, arcs de vitesse
@@ -1367,42 +1393,53 @@ function drawFrameEdges() {
 }
 
 // ---------- HUD vitesse (compact) ----------
-// Barre segmentée « VITESSE » (asset v3 en escalier, 15 cellules) + icône
-// flèche ; les cellules se remplissent de vert à rouge avec camRatio().
-// Fallback : mini-arc procédural avec aiguille (ancien style, réduit).
+// Jauge « VITESSE » v4 : cadran pré-rendu selon l'état (LENT / MOYEN /
+// RAPIDE / TRÈS RAPIDE — pointes rouges), choisi par quartile de camRatio().
+// Fallback : barre segmentée v3 en escalier (asset gauge_bar) remplie de
+// vert à rouge ; puis mini-arc procédural avec aiguille (ancien style).
 // 15 cellules de l'asset gauge_bar (659x91) : [x0, x1, yHaut], bas commun 91.
 const GAUGE_CELLS = [[5, 38, 41], [46, 84, 40], [92, 126, 34], [134, 172, 34], [180, 214, 29], [222, 256, 29], [264, 302, 23], [310, 344, 23], [352, 389, 17], [397, 431, 17], [439, 477, 12], [485, 520, 11], [528, 565, 6], [573, 607, 5], [615, 652, 0]]
 const GAUGE_W = 659, GAUGE_H = 91
+const GAUGE_STATES = ['gaugeSlow', 'gaugeMid', 'gaugeFast', 'gaugeVeryFast']
 
 function drawSpeedGauge(ratio) {
-  const bar = Sprites.get('gaugeBar')
-  if (bar && bar.width) {
+  const gkey = GAUGE_STATES[Math.min(3, Math.max(0, Math.floor(ratio * 4)))]
+  const dial = Sprites.get(gkey)
+  if (dial && dial.width) {
     textsize(7)
     text(VW - 70, 18, 'VITESSE', C_WHITE)
-    Sprites.drawImage('speedArrow', VW - 70, 26, 12)
-    const bw = 50, bh = 8, bx = VW - 56, by = 28
-    Sprites.drawImage('gaugeBar', bx, by, bw)
-    const filled = Math.round(ratio * GAUGE_CELLS.length)
-    for (let i = 0; i < filled; i++) {
-      const c = GAUGE_CELLS[i]
-      const col = i < 7 ? C_SLIME : i < 11 ? C_ORANGE : C_RED
-      rectfill(bx + c[0] / GAUGE_W * bw + 0.5, by + c[2] / GAUGE_H * bh + 0.4,
-        (c[1] - c[0]) / GAUGE_W * bw - 1, (GAUGE_H - c[2]) / GAUGE_H * bh - 0.8, col)
-    }
+    const dh = 22, dw = dh * dial.width / dial.height
+    Sprites.drawImage(gkey, VW - 8 - dw, 10, dw)
   } else {
-    const gx = VW - 24, gy = 36, r = 12
-    textsize(7)
-    text(VW - 70, 24, 'VITESSE', C_WHITE)
-    text(VW - 70, 32, 'CAMERA', C_WHITE)
-    for (let i = 0; i <= 8; i++) {
-      const a0 = Math.PI * (1 - i / 8)
-      const col = i < 4 ? C_SLIME : i < 6.5 ? C_ORANGE : C_RED
-      line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 3), gy - Math.sin(a0) * (r + 3), col)
+    const bar = Sprites.get('gaugeBar')
+    if (bar && bar.width) {
+      textsize(7)
+      text(VW - 70, 18, 'VITESSE', C_WHITE)
+      Sprites.drawImage('speedArrow', VW - 70, 26, 12)
+      const bw = 50, bh = 8, bx = VW - 56, by = 28
+      Sprites.drawImage('gaugeBar', bx, by, bw)
+      const filled = Math.round(ratio * GAUGE_CELLS.length)
+      for (let i = 0; i < filled; i++) {
+        const c = GAUGE_CELLS[i]
+        const col = i < 7 ? C_SLIME : i < 11 ? C_ORANGE : C_RED
+        rectfill(bx + c[0] / GAUGE_W * bw + 0.5, by + c[2] / GAUGE_H * bh + 0.4,
+          (c[1] - c[0]) / GAUGE_W * bw - 1, (GAUGE_H - c[2]) / GAUGE_H * bh - 0.8, col)
+      }
+    } else {
+      const gx = VW - 24, gy = 36, r = 12
+      textsize(7)
+      text(VW - 70, 24, 'VITESSE', C_WHITE)
+      text(VW - 70, 32, 'CAMERA', C_WHITE)
+      for (let i = 0; i <= 8; i++) {
+        const a0 = Math.PI * (1 - i / 8)
+        const col = i < 4 ? C_SLIME : i < 6.5 ? C_ORANGE : C_RED
+        line(gx + Math.cos(a0) * (r - 4), gy - Math.sin(a0) * (r - 4), gx + Math.cos(a0) * (r + 3), gy - Math.sin(a0) * (r + 3), col)
+      }
+      const na = Math.PI * (1 - ratio)
+      if (Sprites.ready) Sprites.rotated('needleH', -na, gx, gy, 0.08, 0.5, 0.3)
+      else line(gx, gy, gx + Math.cos(na) * (r - 3), gy - Math.sin(na) * (r - 3), C_WHITE)
+      circfill(gx, gy, 1.5, C_BLACK)
     }
-    const na = Math.PI * (1 - ratio)
-    if (Sprites.ready) Sprites.rotated('needleH', -na, gx, gy, 0.08, 0.5, 0.3)
-    else line(gx, gy, gx + Math.cos(na) * (r - 3), gy - Math.sin(na) * (r - 3), C_WHITE)
-    circfill(gx, gy, 1.5, C_BLACK)
   }
   textsize(9)
 }

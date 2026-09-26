@@ -12,10 +12,12 @@ const Patterns = (() => {
   const DEFAULT_POOL_JSON = (typeof SLIME_DEFAULT_POOL === 'string' && SLIME_DEFAULT_POOL) || '[]'
   const DEFAULT_PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
   // Pouvoirs (onglet POWER) et vue du jeu (onglet VUE) : valeurs par défaut.
+  // ledge.pullT : durée de la remontée (« pulled up time ») — le slime ne
+  // s'accroche plus, il se hisse sur la plateforme.
   const POWERS_DEF = {
     doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
     slowmo: { enabled: true, scale: 0.35, duration: 0.6 },
-    ledge: { enabled: true, hangT: 1, window: 8 }
+    ledge: { enabled: true, pullT: 0.6, window: 8 }
   }
   const VIEW_DEF = { zoom: 1, showTrajectory: true, shake: true }
 
@@ -59,7 +61,10 @@ const Patterns = (() => {
     sm.scale = numBound(sm.scale, smd.scale, 0.15, 0.8)
     sm.duration = numBound(sm.duration, smd.duration, 0.2, 2)
     lg.enabled = lg.enabled !== false
-    lg.hangT = numBound(lg.hangT, lgd.hangT, 0.3, 3)
+    // pullT (ex hangT : durée d'accroche -> durée de remontée). Migration des
+    // anciens saves qui ne connaissent que hangT.
+    lg.pullT = numBound(lg.pullT !== undefined ? lg.pullT : lg.hangT, lgd.pullT, 0.3, 3)
+    delete lg.hangT
     lg.window = Math.round(numBound(lg.window, lgd.window, 4, 16))
     out.powers = { doubleJump: dj, slowmo: sm, ledge: lg }
     // Vue : zoom global du jeu (1 = cadrage 480x270), options d'affichage.

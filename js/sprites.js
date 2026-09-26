@@ -25,12 +25,16 @@ const Sprites = (() => {
     death3: 'death3',
     bonusLife: 'bonus_life',
     ledge: 'ledge',
-    ledge0: 'ledge0',
-    ledge1: 'ledge1',
+    ledgeUp: 'ledgeUp',
+    ledgeTop: 'ledgeTop',
     djPump0: 'dj_pump0',
     djPump1: 'dj_pump1',
     timeWarp: 'time_warp',
     gaugeBar: 'gauge_bar',
+    gaugeSlow: 'gauge_slow',
+    gaugeMid: 'gauge_mid',
+    gaugeFast: 'gauge_fast',
+    gaugeVeryFast: 'gauge_veryfast',
     speedArrow: 'speed_arrow',
     bgBig: 'bg_big',
     bgPanel1: 'bg_panel1',
@@ -54,7 +58,7 @@ const Sprites = (() => {
       const im = new Image()
       im.onload = () => { if (++loaded >= keys.length) ready = true }
       im.onerror = () => { loaded++ }
-      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20260924e'
+      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20260926a'
       imgs[k] = im
     }
   }

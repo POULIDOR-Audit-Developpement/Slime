@@ -1066,9 +1066,9 @@ const Ed = (() => {
       ['scale', 'Échelle temps', 0.15, 0.8, 0.05, v => '×' + (+v).toFixed(2)],
       ['duration', 'Durée', 0.2, 2, 0.1, v => (+v).toFixed(1) + ' s']
     ]],
-    ['ledge', 'Ledge catch (accroche)', [
+    ['ledge', 'Ledge catch (remontée)', [
       ['enabled', 'Activé'],
-      ['hangT', "Durée d'accroche", 0.3, 3, 0.1, v => (+v).toFixed(1) + ' s'],
+      ['pullT', 'Durée de la remontée', 0.3, 3, 0.1, v => (+v).toFixed(1) + ' s'],
       ['window', 'Fenêtre', 4, 16, 1, v => Math.round(v) + ' px']
     ]]
   ]
@@ -1086,7 +1086,7 @@ const Ed = (() => {
     let html = `<div class="physHead">
       <div>
         <h3>Pouvoirs du slime</h3>
-        <div class="note"><b>Double saut</b> : en l'air, appui = visée en temps ralenti (si slow-mo activé), relâcher = double saut à pleine vitesse dans la direction et la puissance visées. Recharge : délai avant de pouvoir réutiliser. Charges : sauts aériens par atterrissage. <b>Slow-mo</b> : échelle du temps (×0.35 = 3× plus lent) et durée maximale du ralenti pendant la visée. <b>Ledge catch</b> : un bord manqué de justesse (dans la fenêtre réglable) est agrippé in-extremis — le slime y reste accroché (durée réglable), un appui permet de viser un saut depuis le bord, sinon il décroche tout seul. Inclus dans l'export (.json / code compact).</div>
+        <div class="note"><b>Double saut</b> : en l'air, appui = visée en temps ralenti (si slow-mo activé), relâcher = double saut à pleine vitesse dans la direction et la puissance visées. Recharge : délai avant de pouvoir réutiliser. Charges : sauts aériens par atterrissage. <b>Slow-mo</b> : échelle du temps (×0.35 = 3× plus lent) et durée maximale du ralenti pendant la visée. <b>Ledge catch</b> : un bord manqué de justesse (dans la fenêtre réglable) est agrippé in-extremis — le slime se hisse immédiatement sur la plateforme (durée de la remontée réglable), un appui pendant qu'il se tire vers le haut permet de viser un saut. Inclus dans l'export (.json / code compact).</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="powDirtyNote" style="display:none">● modifications non appliquées</span>

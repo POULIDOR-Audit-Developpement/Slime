@@ -41,7 +41,7 @@ docs/                   ← spécifications de design + aperçus (docs/previews/
 
 ### Rendu et sprites
 
-Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites des feuilles fournies (`ASSETS/sprites/game/`) : idle animé, saut et chute **en version miroir selon la direction**, atterrissage, blessure, **séquence de mort en 4 frames** (splat → gouttes → bulles → particules), **ledge catch** (accroche yeux écarquillés puis boucle fatigué, variantes orange/rouge), **double saut** (boule + lignes de vitesse, anneau d'impulsion) et **bullet time** (slime teal à tourbillons) ; fallback procédural si les images manquent. Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures de bedrock (texture `void`) et la **jauge de vitesse compacte « VITESSE »** (icône flèche + barre en escalier de 15 cellules qui se remplissent vert → orange → rouge avec la vitesse) reprennent la direction artistique. La vie se lit sur 3 têtes de slime en bas à gauche.
+Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites des feuilles fournies (`ASSETS/sprites/game/`) : idle animé, saut et chute **en version miroir selon la direction**, atterrissage, blessure, **séquence de mort en 4 frames** (splat → gouttes → bulles → particules), **ledge catch** (remontée en 3 frames : drapé sur le coin, traction, assis — variantes orange/rouge), **double saut** (boule + lignes de vitesse, anneau d'impulsion) et **bullet time** (slime teal à tourbillons) ; fallback procédural si les images manquent. Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures de bedrock (texture `void`) et la **jauge de vitesse compacte « VITESSE »** (cadran pré-rendu en 4 états — lent/moyen/rapide/très rapide, barre en escalier de secours) reprennent la direction artistique. La vie se lit sur 3 têtes de slime en bas à gauche.
 
 ### Contrôles (PC & mobile)
 
@@ -50,7 +50,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 - **Sur mobile (visée relative)** : pose le doigt **n'importe où** (coin de l'écran, sans couvrir la cible) puis **glisse** — le réticule se déplace avec le doigt (delta × sensibilité) pendant qu'un halo repère le pouce ; le réticule et la trajectoire restent lisibles à l'écran. La souris garde la visée absolue au point cliqué
 - **Relâcher** : sauter
 - **Double saut** : en l'air, appui = visée en **temps ralenti** (bullet time), relâcher = second saut dans la direction et la puissance visées. Recharge réglable (onglet POWER), charges restaurées à chaque atterrissage. Pendant la visée le slime se transforme en boule (lignes de vitesse), anneau d'impulsion au départ ; tourbillons « time warp » pendant le ralenti
-- **Ledge catch** : un bord de plateforme manqué de justesse (fenêtre réglable) est agrippé in-extremis — le slime y reste accroché (durée réglable) ; appui = viser un saut depuis le bord, sinon il décroche tout seul (onglet POWER)
+- **Ledge catch** : un bord de plateforme manqué de justesse (fenêtre réglable) est agrippé in-extremis — le slime se hisse immédiatement dessus (durée de la remontée réglable) ; appui = viser un saut pendant qu'il se tire vers le haut (onglet POWER)
 - **Coyote time** : un appui juste après avoir glissé d'une plateforme saute quand même (fenêtre réglable, 0.08 s par défaut)
 - **M** ou l'icône son (coin haut-gauche) : couper/réactiver le son
 - **Plein écran** : icône coins (haut-droite) — API native sur Android/desktop ; sur iPhone (Safari), le canvas est diffusé dans une vidéo plein écran (contournement de l'API restreinte d'iOS, entrées relais avec conversion letterbox). Si le jeu est ajouté à l'écran d'accueil (standalone), l'icône disparaît : le jeu est déjà plein écran
@@ -105,10 +105,10 @@ Pouvoirs du slime — réglés sur un **brouillon** puis validés par le bouton 
 |---|---|
 | Double saut | activé (oui), recharge (4 s), charges par atterrissage (1), puissance (×1) |
 | Slow-mo | activé (oui), échelle du temps (×0.35), durée max (0.6 s) |
-| Ledge catch | activé (oui), durée d'accroche (1.0 s), fenêtre (8 px) |
+| Ledge catch | activé (oui), durée de la remontée (0.6 s), fenêtre (8 px) |
 
 - En l'air, un appui déclenche la **visée du double saut** (et le ralenti si le slow-mo est activé) ; le ralenti ne concerne **que la visée** — au relâcher, le saut part à pleine vitesse
-- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il y reste accroché (le sommet d'un bord accroché se comporte comme un sol : crumble démarre, timer dynamique lancé, plateformes éphémères disparaissent) ; un appui permet de viser, sinon décroche automatique avec petite glissade
+- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il se hisse immédiatement sur la plateforme (le sommet d'un bord accroché se comporte comme un sol : crumble démarre, timer dynamique lancé, plateformes éphémères disparaissent) ; un appui pendant la remontée permet de viser un saut, sinon il est posé au bout de la durée réglée
 - Le **cooldown** démarre à chaque utilisation ; les charges se rechargent à l'atterrissage
 - Tant que le brouillon diffère, le bouton passe en doré avec la note « modifications non appliquées »
 - « Réinitialiser les pouvoirs » remet les défauts et les applique immédiatement

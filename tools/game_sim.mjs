@@ -240,7 +240,17 @@ function driverFn() {
   applyLayout()
   startGame()
 
-  // --- 5d) ledge catch : bord manqué de justesse -> accroche -> resaut ---
+  // --- 5c2) pullT : migration de l'ancien réglage hangT (durée d'accroche) ---
+  Patterns.setLayout({ powers: { ledge: { hangT: 2 } } })
+  applyLayout()
+  check('migration hangT -> pullT (jeu)', POWERS.ledge.pullT === 2 && POWERS.ledge.hangT === undefined)
+  check('migration hangT -> pullT (layout normalisé)', !('hangT' in Patterns.getLayout().powers.ledge))
+  Patterns.setLayout(null)
+  applyLayout()
+  check('pullT par défaut (0.6 s)', POWERS.ledge.pullT === 0.6)
+  startGame()
+
+  // --- 5d) ledge catch : bord manqué de justesse -> remontée -> resaut ---
   startGame()
   runStarted = true
   for (let i = 0; i < 3; i++) update(1 / 60)
@@ -256,20 +266,20 @@ function driverFn() {
     slime.vx = 0
     slime.vy = 120
     let hf = 0
-    while (!slime.hang && !slime.grounded && state === 'playing' && hf++ < 120) update(1 / 60)
-    check('ledge catch : bord manqué agrippé', !!slime.hang && !slime.grounded)
+    while (!slime.pull && !slime.grounded && state === 'playing' && hf++ < 120) update(1 / 60)
+    check('ledge catch : bord manqué agrippé', !!slime.pull && !slime.grounded)
     check('accroche : vitesse annulée', slime.vx === 0 && slime.vy === 0)
     updateCam()
     const pj = w2px(slime.x + 60, slime.y - 80)
     tap(pj.x, pj.y, 0)
-    check('accroche : visée possible depuis le bord', aim.on === true && aim.air === false)
+    check('accroche : visée possible pendant la remontée', aim.on === true && aim.air === false)
     untap(pj.x, pj.y, 0)
-    check('accroche : saut exécuté depuis le bord', !slime.hang && !slime.grounded && (slime.vx !== 0 || slime.vy !== 0))
+    check('accroche : saut exécuté depuis le bord', !slime.pull && !slime.grounded && (slime.vx !== 0 || slime.vy !== 0))
     waitLand()
   }
   startGame()
 
-  // --- 5e) ledge catch : décroche auto à la fin du délai ---
+  // --- 5e) ledge catch : remontée terminée -> slime posé sur la plateforme ---
   runStarted = true
   for (let i = 0; i < 3; i++) update(1 / 60)
   {
@@ -277,12 +287,12 @@ function driverFn() {
     slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
     slime.x = pL2.x - 12; slime.y = pL2.y - slime.r - 14; slime.vx = 0; slime.vy = 120
     let hf2 = 0
-    while (!slime.hang && state === 'playing' && hf2++ < 120) update(1 / 60)
-    check('décroche : accroché avant timeout', !!slime.hang)
+    while (!slime.pull && state === 'playing' && hf2++ < 120) update(1 / 60)
+    check('remontée : accroché avant la fin', !!slime.pull)
     let rf = 0
-    while (slime.hang && state === 'playing' && rf++ < 300) update(1 / 60)
-    check('décroche auto à la fin du délai', !slime.hang && rf >= 30)
-    check('décroche : glisse puis tombe', !slime.grounded && slime.vy > 0)
+    while (slime.pull && state === 'playing' && rf++ < 300) update(1 / 60)
+    check('remontée : posé à la fin de la durée', !slime.pull && slime.grounded && slime.vy === 0 && rf >= 30)
+    check('remontée : debout sur la plateforme', slime.groundPlat === pL2 && Math.abs(slime.y - (pL2.y - slime.r)) < 1 && slime.x > pL2.x)
   }
   startGame()
 
@@ -297,8 +307,8 @@ function driverFn() {
     slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
     slime.x = pL3.x - 12; slime.y = pL3.y - slime.r - 14; slime.vx = 0; slime.vy = 120
     let hf3 = 0
-    while (!slime.grounded && !slime.hang && state === 'playing' && hf3++ < 120) update(1 / 60)
-    check('ledge désactivé : pas d\'accroche', !slime.hang)
+    while (!slime.grounded && !slime.pull && state === 'playing' && hf3++ < 120) update(1 / 60)
+    check('ledge désactivé : pas d\'accroche', !slime.pull)
     check('ledge désactivé : pouvoir lu du layout', POWERS.ledge.enabled === false)
   }
   Patterns.setLayout(null)
