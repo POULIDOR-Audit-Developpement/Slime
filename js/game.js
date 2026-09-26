@@ -60,10 +60,12 @@ const PH = () => Phys.phys()
 const SLIME_DRAW_W = 44
 // Canevas des frames ledge (tools/make_v4_sprites.py) : haut du bloc = ligne
 // des bras = sommet de plateforme à LEDGE_GRIP, face gauche du bloc (là où
-// pend le corps au départ) à LEDGE_BLOCK_L, dans LEDGE_W x LEDGE_H.
+// pend le corps au départ) à LEDGE_BLOCK_L, dans LEDGE_W x LEDGE_H. Canevas
+// 400x420 : le slime y occupe ~208 px comme dans les frames v3 (sinon il
+// paraît deux fois trop petit à l'écran).
 // LEDGE_TOP_CX : centre du slime assis dans ledgeTop (fin de remontée).
-const LEDGE_W = 320, LEDGE_H = 320, LEDGE_GRIP = 150, LEDGE_BLOCK_L = 110
-const LEDGE_TOP_CX = 167
+const LEDGE_W = 400, LEDGE_H = 420, LEDGE_GRIP = 210, LEDGE_BLOCK_L = 138
+const LEDGE_TOP_CX = 277
 
 // Nombre borné : non numérique -> défaut ; 0 est une valeur valide.
 function numBound(v, def, lo, hi) {
@@ -1082,11 +1084,18 @@ function drawPlat(p) {
     if (p.type === 'sticky') {
       Sprites.drawImage('sticky', p.x + jx - 2, p.y - 4, p.w + 6, Math.min(54, (p.w + 6) * 0.5))
     } else if (p.type === 'dynamic') {
-      const h = clamp(p.w * 0.14, 13, 19)
-      Sprites.drawImage('dynStrip', p.x + jx, p.y, p.w, h)
+      // bande dynamique : 9 tuiles de pas 256/9 (icônes chrono sur les
+      // cellules 1, 5, 9), dessinées par cellule à la même taille que les
+      // autres tuiles (32x24) — l'étirer sur p.w entier la déformait selon
+      // le nombre de cellules.
+      const pitch = 256 / 9
+      for (let i = 0; i < n; i++) {
+        const t = (i % 9) * pitch
+        Sprites.drawSrc('dynStrip', t, 0, pitch, 33, p.x + jx + i * CELL, p.y, CELL, 24)
+      }
       if (p.timerSet && p.timer < 1.5) {
         alpha(0.25 + 0.25 * Math.sin(T * 12))
-        rectfill(p.x + jx, p.y, p.w, h, C_RED)
+        rectfill(p.x + jx, p.y, p.w, 24, C_RED)
         alpha(1)
       }
     } else {

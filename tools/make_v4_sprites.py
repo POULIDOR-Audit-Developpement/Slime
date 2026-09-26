@@ -19,7 +19,12 @@ OUT = 'ASSETS/sprites/game'
 os.makedirs(OUT, exist_ok=True)
 TIERS = {'orange': (255, 157, 46), 'red': (226, 59, 59)}
 
-LEDGE_W, LEDGE_H, LEDGE_GRIP, LEDGE_BLOCK_L = 320, 320, 150, 110
+# Canevas des frames ledge, agrandi à 400x420 pour loger le slime à la taille
+# v3 (~208 px) : la ligne des bras (haut du bloc = sommet de plateforme) est à
+# LEDGE_GRIP, la face gauche du bloc à LEDGE_BLOCK_L. 210 px au-dessus de la
+# ligne (la tête du slime en traction monte haut) ; constantes répercutées
+# dans js/game.js (LEDGE_*).
+LEDGE_W, LEDGE_H, LEDGE_GRIP, LEDGE_BLOCK_L = 400, 420, 210, 138
 
 
 def load4(n):
@@ -64,11 +69,13 @@ def erase_block(im):
     a = np.asarray(im).copy()
     a4 = a.astype(np.int16)
     a4[:, :, 3][block_masks(a4)] = 0
-    # poussiers : on ne garde que les composantes connexes d'au moins 40 px
+    # composantes connexes : on ne garde que la plus grande (le slime, yeux
+    # compris — ils touchent son contour). Élimine îlots de damier emprisonnés
+    # et résidus de bloc/flèche.
     al = a4[:, :, 3]
     opaque = al > 0
     seen = np.zeros(al.shape, dtype=bool)
-    keep = np.zeros(al.shape, dtype=bool)
+    best, best_sz = None, 0
     for sy, sx in zip(*np.where(opaque)):
         if seen[sy, sx]:
             continue
@@ -85,33 +92,58 @@ def erase_block(im):
                         seen[ny, nx] = True
                         comp.append((ny, nx))
                         qq.append((ny, nx))
-        if len(comp) >= 40:
-            for cy, cx in comp:
-                keep[cy, cx] = True
+        if len(comp) > best_sz:
+            best, best_sz = comp, len(comp)
+    keep = np.zeros(al.shape, dtype=bool)
+    for cy, cx in best:
+        keep[cy, cx] = True
     a4[:, :, 3][~keep] = 0
     return Image.fromarray(a4.astype(np.uint8), 'RGBA')
 
 
 def grip_align(im):
     # Cale la face gauche du bloc sur LEDGE_BLOCK_L et le haut du bloc sur
-    # LEDGE_GRIP. La face = première colonne de bloc soutenue (>= 40 px) moins
-    # 15 px de contour ; insensible aux décalages d'extraction. (Le slime
-    # assis sur le bloc dans pull1/pull2 masque le milieu de l'arête : les
-    # profils de lignes/colonnes restent dominés par le bloc.)
+    # LEDGE_GRIP. Seuils robustes : une LIGNE de bloc porte > 25 % de la
+    # largeur (la bouche du slime ou le contour d'une flèche ne passent pas)
+    # et une COLONNE de face porte > 45 % de la hauteur du bloc (le slime
+    # assis ou drapé non plus). Le slime agrandi peut déborder du canevas :
+    # on rogne la source (bords transparents ou bloc voué à l'effacement)
+    # au lieu de coller en coordonnées négatives (refusées par alpha_composite).
     a = np.asarray(im).astype(np.int16)
     block = block_masks(a)
-    rows = np.where(block.sum(axis=1) > 8)[0]
-    prof = block[rows.min():rows.min() + 80, :].sum(axis=0)
-    cols = np.where(prof >= 40)[0]
-    face = int(cols.min()) - 15
+    rows = np.where(block.sum(axis=1) > 0.25 * im.width)[0]
+    top, bot = rows.min(), rows.max()
+    prof = block[top:bot, :].sum(axis=0)
+    cols = np.where(prof >= 0.45 * (bot - top))[0]
+    dx, dy = LEDGE_BLOCK_L - int(cols.min()), LEDGE_GRIP - int(top)
+    sx0, sy0 = max(0, -dx), max(0, -dy)
+    sx1, sy1 = min(im.width, LEDGE_W - dx), min(im.height, LEDGE_H - dy)
     canvas = Image.new('RGBA', (LEDGE_W, LEDGE_H), (0, 0, 0, 0))
-    canvas.alpha_composite(im, (LEDGE_BLOCK_L - face, LEDGE_GRIP - int(rows[0])))
+    canvas.alpha_composite(im.crop((sx0, sy0, sx1, sy1)), (dx + sx0, dy + sy0))
     return canvas
 
 
+# Normalisation de taille : le slime doit occuper la même place dans le
+# canevas que dans les frames v3 (~208 px de large, cf. l'ancien ledge.png)
+# sinon il paraît deux fois trop petit à l'écran. Facteur par frame (poses
+# de proportions différentes) calculé sur la largeur du corps (pixels verts).
+def slime_width(im):
+    a = np.asarray(im).astype(np.int16)
+    r, g, b, al = a[:, :, 0], a[:, :, 1], a[:, :, 2], a[:, :, 3]
+    green = (g > r + 10) & (g > b + 10) & (al > 0)
+    xs = np.where(green)[1]
+    return int(xs.max() - xs.min() + 1)
+
+
+SLIME_TARGET_W = 208
+
 frames = {}
 for src, name in [('ledge_pull0', 'ledge'), ('ledge_pull1', 'ledgeUp'), ('ledge_pull2', 'ledgeTop')]:
-    im = erase_block(grip_align(load4(src)))
+    im = load4(src)
+    f = SLIME_TARGET_W / slime_width(im)
+    im = im.resize((round(im.width * f), round(im.height * f)), Image.NEAREST)
+    print(f'{src}: facteur {f:.2f} -> slime {slime_width(im)} px')
+    im = erase_block(grip_align(im))
     frames[name] = im
     save(im, name)
 for name, im in frames.items():
