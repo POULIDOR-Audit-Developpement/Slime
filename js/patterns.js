@@ -197,11 +197,60 @@ const Patterns = (() => {
     return { x: p.x, y: p.type === 'dynamic' ? p.baseY - p.amp * 0.7 : p.y, w: p.w }
   }
 
-  function jumpOk(a, b, walls) {
-    if (!a || !b) return false
-    return a.type === 'bouncy'
-      ? Phys.canReachBounce(a, targetOf(b), walls)
-      : Phys.canReach(a, targetOf(b), a.type === 'sticky' ? Phys.phys().stickyMul : 1, 1, walls)
+  // Budget de double saut d'une chaîne : le cooldown (4 s par défaut) dépasse
+  // la durée d'un pattern — au plus UN double saut par chaîne de sauts.
+  const DJ_PER_CHAIN = 1
+
+  // Config pouvoirs du layout courant (défauts tant que le layout est absent).
+  function powersNow() {
+    const l = getLayout()
+    return l && l.powers ? l.powers : POWERS_DEF
+  }
+
+  function djBudget() {
+    return { dj: powersNow().doubleJump.enabled ? DJ_PER_CHAIN : 0 }
+  }
+
+  // Le saut a -> b est-il réalisable avec les pouvoirs du layout courant ?
+  // `budget` : { dj } = doubles sauts restants sur la chaîne (consommé si le
+  // saut n'est possible qu'avec le double saut).
+  // Retourne { ok, via, okSimple } — via ∈ 'jump' | 'ledge' | 'double' |
+  // 'double+ledge' | 'bounce' | 'bounce+dj' | 'wallTop', okSimple = atteignable
+  // sans aucun pouvoir. Ordre de recherche : simple -> rattrape de bord ->
+  // double saut -> double + rattrape (les moins coûteux d'abord, le budget
+  // n'est consommé qu'en dernier recours).
+  function jumpOk(a, b, walls, budget) {
+    const fail = { ok: false, via: null, okSimple: false }
+    if (!a || !b) return fail
+    const pw = powersNow()
+    const dj = pw.doubleJump
+    const lg = pw.ledge
+    const tgt = targetOf(b)
+    const opts = { ledge: lg.enabled ? lg.window : 0, catchable: b.type !== 'ghost' }
+    const noLedge = { catchable: opts.catchable }
+    if (a.type === 'bouncy') {
+      if (Phys.canReachBounce(a, tgt, walls, opts)) return { ok: true, via: 'bounce', okSimple: true }
+      if (budget && budget.dj > 0 && dj.enabled &&
+          Phys.canReachBounceExt(a, tgt, walls, dj, opts)) {
+        budget.dj--
+        return { ok: true, via: 'bounce+dj', okSimple: false }
+      }
+      return fail
+    }
+    const mul = a.type === 'sticky' ? Phys.phys().stickyMul : 1
+    if (Phys.canReach(a, tgt, mul, 1, walls)) return { ok: true, via: 'jump', okSimple: true }
+    if (opts.ledge && Phys.canReach(a, tgt, mul, 1, walls, opts)) return { ok: true, via: 'ledge', okSimple: false }
+    if (budget && budget.dj > 0 && dj.enabled) {
+      if (Phys.canReachDouble(a, tgt, mul, 1, walls, dj, noLedge)) {
+        budget.dj--
+        return { ok: true, via: 'double', okSimple: false }
+      }
+      if (opts.ledge && Phys.canReachDouble(a, tgt, mul, 1, walls, dj, opts)) {
+        budget.dj--
+        return { ok: true, via: 'double+ledge', okSimple: false }
+      }
+    }
+    return fail
   }
 
   // Valide le chaînage ancrage -> 1re plateforme puis chaque paire consécutive.
@@ -210,11 +259,12 @@ const Patterns = (() => {
   // saut direct par-dessus (le corps du mur bloque de toute façon la simu).
   function validateInstance(last, inst) {
     const walls = inst.walls || []
+    const budget = djBudget()
     let prev = last
     for (const p of inst.platforms) {
-      const ok = jumpOk(prev, p, walls)
-      if (!ok && p.wallTop) continue
-      if (!ok) return false
+      const r = jumpOk(prev, p, walls, budget)
+      if (!r.ok && p.wallTop) continue
+      if (!r.ok) return false
       prev = p
     }
     return true
@@ -222,23 +272,33 @@ const Patterns = (() => {
 
   // Valide un pattern "sur papier" : chaque saut interne, depuis une ancre virtuelle.
   // Même sémantique que validateInstance (sommets de colonnes optionnels).
+  // Retourne { ok, okSimple, jumps: [{ ok, via, okSimple }...], errors } :
+  // ok = tous les sauts passent avec les pouvoirs du layout, okSimple = tous
+  // les sauts passent en saut visé simple (aucun pouvoir nécessaire).
   function validatePatternJumps(p) {
     const anchorRow = entryRow(p)
     const anchor = { x: -4 * CELL, row: anchorRow, y: rowY(anchorRow), baseY: rowY(anchorRow), w: 4 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0 }
     const inst = instantiate(p, anchor)
     const walls = inst.walls || []
+    const budget = djBudget()
     let prev = anchor
     let allOk = true
+    let allSimple = true
     const results = []
     for (let i = 0; i < inst.platforms.length; i++) {
       const cur = inst.platforms[i]
-      const ok = jumpOk(prev, cur, walls)
-      const res = ok || !!cur.wallTop
-      results.push(res)
-      if (!res) allOk = false
-      if (ok) prev = cur
+      const r = jumpOk(prev, cur, walls, budget)
+      if (!r.ok && cur.wallTop) {
+        // sommet optionnel non atteignable : sauté, ne consomme rien
+        results.push({ ok: true, via: 'wallTop', okSimple: true })
+      } else {
+        results.push(r)
+        if (!r.ok) { allOk = false; allSimple = false }
+        else if (!r.okSimple) allSimple = false
+        if (r.ok) prev = cur
+      }
     }
-    return { ok: allOk, jumps: results, errors: allOk ? [] : validatePattern(p) }
+    return { ok: allOk, okSimple: allSimple, jumps: results, errors: allOk ? [] : validatePattern(p) }
   }
 
   // ---------- pool pondéré ----------

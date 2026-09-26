@@ -18,7 +18,7 @@ const Ed = (() => {
     bouncy: '#cc6d1a', bouncyD: '#8f4a0f',
     spike: '#e23b3b', spikeD: '#8f1f1f',
     ball: '#ffd83d', gold: '#ffd700', ok: '#3ecb3e', ko: '#e23b3b', sel: '#ffd83d',
-    slime: '#3ecb3e'
+    pwr: '#38b6e8', slime: '#3ecb3e'
   }
   const TIER_COLORS = ['#3ecb3e', '#a5f0a5', '#ffd83d', '#ff9d2e', '#e23b3b']
   const TYPE_LABEL = {
@@ -385,24 +385,77 @@ const Ed = (() => {
     c.restore()
   }
 
+  // ---------- validation (avec cache) ----------
+  // La validation double saut coûte ~50x le saut simple : on ne recalcule que
+  // si le pattern ou la config physique/pouvoirs du layout change. La clé
+  // couvre les deux cas — basculer un pouvoir dans l'onglet POWER ou toucher
+  // un slider PHYS invalide donc automatiquement le cache.
+  const valCache = new Map()
+  function valKey(pat) {
+    const L = Patterns.getLayout() || {}
+    const pw = L.powers || {}
+    const dj = pw.doubleJump || {}, lg = pw.ledge || {}
+    return JSON.stringify(pat) + '|' + JSON.stringify(L.phys) + '|' +
+      [!!dj.enabled, dj.powerMul, !!lg.enabled, lg.window].join(',')
+  }
+  function cachedValidate(pat) {
+    const key = valKey(pat)
+    let v = valCache.get(key)
+    if (!v) {
+      if (valCache.size > 64) valCache.clear()
+      v = Patterns.validatePatternJumps(pat)
+      valCache.set(key, v)
+    }
+    return v
+  }
+
+  // Compteurs du résumé de validation : KO = impossible même avec pouvoirs,
+  // pwr = réalisable seulement via double saut / rattrape de bord.
+  function valStats(v) {
+    return {
+      bad: v.jumps.filter(j => !j.ok).length,
+      pwr: v.jumps.filter(j => j.ok && !j.okSimple).length
+    }
+  }
+
+  // Étiquette courte du pouvoir utilisé (badge bleu).
+  function viaTag(via) {
+    return via === 'ledge' ? 'L' : via === 'double' ? 'DJ'
+      : via === 'double+ledge' ? 'DJ+L' : via === 'bounce+dj' ? 'DJ↗' : ''
+  }
+
   function drawValidation(c, pat) {
-    const v = Patterns.validatePatternJumps(pat)
+    const v = cachedValidate(pat)
     const inst = Patterns.instantiate(pat, anchorOf(pat))
     let prev = null
     for (let i = 0; i < inst.platforms.length; i++) {
       const cur = inst.platforms[i]
       if (prev) {
-        const ok = v.jumps[i - 1]
+        const jr = v.jumps[i - 1] || { ok: false, via: null, okSimple: false }
+        const ok = jr.ok
+        const pwr = ok && !jr.okSimple
+        const col = !ok ? COL.ko : (pwr ? COL.pwr : COL.ok)
         const mx = w2sX((prev.x + prev.w + cur.x) / 2)
         const my = w2sY((prev.y + cur.y) / 2) - 16
-        c.beginPath(); c.arc(mx, my, 8, 0, 7)
-        c.fillStyle = ok ? '#123c12' : '#3c1212'; c.fill()
-        c.strokeStyle = ok ? COL.ok : COL.ko; c.lineWidth = 2; c.stroke()
-        c.strokeStyle = ok ? COL.ok : COL.ko; c.lineWidth = 2
+        c.beginPath(); c.arc(mx, my, 9, 0, 7)
+        c.fillStyle = !ok ? '#3c1212' : (pwr ? '#12253c' : '#123c12'); c.fill()
+        c.strokeStyle = col; c.lineWidth = 2; c.stroke()
+        c.strokeStyle = col; c.lineWidth = 2
         c.beginPath()
-        if (ok) { c.moveTo(mx - 4, my); c.lineTo(mx - 1, my + 3); c.lineTo(mx + 4, my - 3) }
-        else { c.moveTo(mx - 3, my - 3); c.lineTo(mx + 3, my + 3); c.moveTo(mx + 3, my - 3); c.lineTo(mx - 3, my + 3) }
-        c.stroke()
+        if (ok) {
+          c.moveTo(mx - 4, my + 2); c.lineTo(mx - 1, my + 5); c.lineTo(mx + 5, my - 2)
+          c.stroke()
+          const tag = viaTag(jr.via)
+          if (tag) {
+            c.fillStyle = col
+            c.font = 'bold 7px monospace'; c.textAlign = 'center'
+            c.fillText(tag, mx + 1, my - 3)
+            c.textAlign = 'left'
+          }
+        } else {
+          c.moveTo(mx - 3, my - 3); c.lineTo(mx + 3, my + 3); c.moveTo(mx + 3, my - 3); c.lineTo(mx - 3, my + 3)
+          c.stroke()
+        }
       }
       prev = cur
     }
@@ -469,11 +522,18 @@ const Ed = (() => {
       }
       ctx.restore()
     }
-    // résumé
-    const bad = v.jumps.filter(j => !j).length
+    // résumé + légende
+    const { bad, pwr } = valStats(v)
     ctx.font = 'bold 12px monospace'
-    ctx.fillStyle = bad ? COL.ko : COL.ok
-    ctx.fillText(bad ? `✗ ${bad} saut(s) impossible(s)` : '✓ tous les sauts passent', 12, 22)
+    ctx.fillStyle = bad ? COL.ko : (pwr ? COL.pwr : COL.ok)
+    let msg
+    if (bad) msg = `✗ ${bad} saut(s) impossible(s)`
+    else if (pwr) msg = `✓ tous les sauts passent — ${pwr} via pouvoir`
+    else msg = '✓ tous les sauts passent (saut simple)'
+    ctx.fillText(msg, 12, 22)
+    ctx.font = '10px monospace'
+    ctx.fillStyle = COL.dim
+    ctx.fillText('vert: saut simple · bleu: via pouvoir (DJ/L) · rouge: KO', 12, 36)
   }
 
   function drawChecker(c, x, y, w, h, size) {
@@ -640,8 +700,13 @@ const Ed = (() => {
       propsEl.innerHTML = `<div class="empty">Crée un pattern avec « + Nouveau »,<br>ou copie le pool par défaut pour l'éditer.<br><br>• molette : défiler<br>• clic : placer / sélectionner<br>• Ctrl+clic / Ctrl+glisser : multi-sélection<br>• Ctrl+C / Ctrl+V : copier / coller<br>• Suppr : effacer la sélection</div>`
       return
     }
-    const v = Patterns.validatePatternJumps(pat)
-    const bad = v.jumps.filter(j => !j).length
+    const v = cachedValidate(pat)
+    const { bad, pwr } = valStats(v)
+    const valBadge = bad
+      ? `<span class="badge ko">${bad} saut(s) KO</span>`
+      : pwr
+        ? `<span class="badge ok" style="background:#12253c;color:${COL.pwr};border-color:${COL.pwr}">${pwr} saut(s) via pouvoir</span>`
+        : `<span class="badge ok">Chaîne valide (saut simple)</span>`
     let html = `<h3>Pattern</h3>
       <div class="row"><label>Nom</label><input type="text" id="pName" value="${esc(pat.name)}"/></div>
       <div class="row"><label>Difficulté</label>
@@ -650,7 +715,7 @@ const Ed = (() => {
       <div class="row"><label>Entrée r</label>
         <select id="pEntry">${[0, 1, 2, 3, 4].map(r => `<option value="${r}" ${Patterns.entryRow(pat) === r ? 'selected' : ''}>ligne ${r}</option>`).join('')}</select>
       </div>
-      <div class="row"><span class="badge ${bad ? 'ko' : 'ok'}">${bad ? bad + ' saut(s) KO' : 'Chaîne valide'}</span>
+      <div class="row">${valBadge}
       <span style="color:var(--dim);font-size:11px">${pat.platforms.length} plat. · ${(pat.walls || []).length} mur(s) · ${pat.balls.length} billes · ${Patterns.patternWidth(pat)}px</span></div>
       <h3>Objet sélectionné</h3>`
     if (selMulti.length > 1) {
@@ -1100,11 +1165,15 @@ const Ed = (() => {
     }
     listEl.innerHTML = patterns.map((p, i) => {
       const t = clampN(p.difficulty | 0, 1, 5)
-      const v = Patterns.validatePatternJumps(p)
-      const bad = v.jumps.filter(j => !j).length
+      const { bad, pwr } = valStats(cachedValidate(p))
+      const state = bad
+        ? `<span style="color:var(--red)">${bad} KO</span>`
+        : pwr
+          ? `<span style="color:${COL.pwr}">${pwr} pwr</span>`
+          : '✓'
       return `<div class="item ${p.id === selId ? 'sel' : ''}" data-i="${i}">
         <div class="tier" style="background:${TIER_COLORS[t - 1]}">${t}</div>
-        <div class="nm"><b>${esc(p.name || 'Sans nom')}</b><span>${p.platforms.length} plat · ${Patterns.patternWidth(p)}px ${bad ? '· <span style="color:var(--red)">' + bad + ' KO</span>' : ' · ✓'}</span></div>
+        <div class="nm"><b>${esc(p.name || 'Sans nom')}</b><span>${p.platforms.length} plat · ${Patterns.patternWidth(p)}px ${bad || pwr ? '· ' + state : ' · ✓'}</span></div>
         <div class="mini"><button data-act="dup" data-i="${i}" title="Dupliquer">⧉</button><button data-act="del" data-i="${i}" class="danger" title="Supprimer">✕</button></div>
       </div>`
     }).join('')
@@ -1215,7 +1284,7 @@ const Ed = (() => {
   function playtest() {
     const p = selPattern()
     if (!p) { flash('Sélectionne un pattern à tester', true); return }
-    if (!Patterns.validatePatternJumps(p).ok && !confirm('Ce pattern contient des sauts impossibles. Tester quand même ?')) return
+    if (!cachedValidate(p).ok && !confirm('Ce pattern contient des sauts impossibles même avec les pouvoirs (double saut, rattrape). Tester quand même ?')) return
     window.open('index.html?pattern=' + encodeURIComponent(Patterns.patternToCode(p)), '_blank')
   }
 

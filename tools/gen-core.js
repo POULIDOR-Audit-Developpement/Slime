@@ -1,6 +1,8 @@
 // SLIME — génération du pool de patterns par défaut.
 // Port fidèle de l'ancien générateur procédural de game.js, découpé en sections
-// autonomes (une ancre + N plateformes), validées par la physique (Phys.canReach).
+// autonomes (une ancre + N plateformes), validées par la physique (reachOk :
+// saut visé simple ; les tiers 4-5 acceptent un saut par section via le
+// double saut — Phys.canReachDouble).
 // Utilisable côté Node (tools/gen_defaults.mjs) et côté navigateur (tools/gen_default_pool.html).
 // Dépend de js/physics.js.
 
@@ -45,7 +47,7 @@ function generateDefaultPool(opts) {
   }
 
   // --- port de spawnNext (game.js d'origine, sans branches ni billes dorées) ---
-  function simSpawnNext(A, plats, balls, simElapsed) {
+  function simSpawnNext(A, plats, balls, simElapsed, budget) {
     const last = plats[plats.length - 1]
     const D = Math.min(simElapsed / 75, 1)
     for (let attempt = 0; attempt < 24; attempt++) {
@@ -83,10 +85,7 @@ function generateDefaultPool(opts) {
       }
       const checkY = type === 'dynamic' ? p.baseY - p.amp * 0.7 : p.y
       const target = { x: p.x, y: checkY, w: p.w }
-      const ok = last.type === 'bouncy'
-        ? Phys.canReachBounce(last, target)
-        : Phys.canReach(last, target, last.type === 'sticky' ? STICKY_MUL : 1, 1)
-      if (ok) {
+      if (reachOk(last, target, budget)) {
         plats.push(p)
         simSpawnBalls(A, last, p, gap, balls)
         return p
@@ -100,6 +99,33 @@ function generateDefaultPool(opts) {
 
   function targetOfRaw(p) {
     return { x: p.x, y: p.type === 'dynamic' ? p.baseY - p.amp * 0.7 : p.y, w: p.w }
+  }
+
+  // --- accessibilité d'un saut (avec double saut pour les hauts tiers) ---
+  // Tiers 1-3 : strict — chaque saut doit passer en saut visé simple.
+  // Tiers 4-5 : UN saut par section peut exiger le double saut (budget
+  // consommé) ; la rattrape de bord n'est jamais requise (précision, pas
+  // conception).
+  const DJ_TIERS = 4
+  const DJ_CFG = { powerMul: 1 }
+
+  function reachOk(a, b, budget) {
+    const t = targetOfRaw(b)
+    const mul = a.type === 'sticky' ? STICKY_MUL : 1
+    if (a.type === 'bouncy') {
+      if (Phys.canReachBounce(a, t)) return true
+      if (budget && budget.dj > 0 && Phys.canReachBounceExt(a, t, null, DJ_CFG)) {
+        budget.dj--
+        return true
+      }
+      return false
+    }
+    if (Phys.canReach(a, t, mul, 1)) return true
+    if (budget && budget.dj > 0 && Phys.canReachDouble(a, t, mul, 1, null, DJ_CFG)) {
+      budget.dj--
+      return true
+    }
+    return false
   }
 
   // Génère perTier sections par difficulté. Retourne { patterns, rejected }.
@@ -116,19 +142,17 @@ function generateDefaultPool(opts) {
         const plats = [anchor]
         const balls = []
         const n = A.randi(7, 11)
-        for (let s = 0; s < n; s++) simSpawnNext(A, plats, balls, TIER_T[tier - 1])
+        const budget = { dj: tier >= DJ_TIERS ? 1 : 0 }
+        for (let s = 0; s < n; s++) simSpawnNext(A, plats, balls, TIER_T[tier - 1], budget)
         const chain = plats.slice(1)
 
-        // Revalidation complète de la chaîne (garantie).
-        let ok = true
+        // Revalidation complète de la chaîne (garantie) — même budget DJ que
+        // la génération : l'ancre + chaque paire consécutive doit passer.
+        let ok = reachOk(anchor, chain[0], budget)
         for (let j = 1; j < chain.length && ok; j++) {
-          const a = chain[j - 1], b = chain[j]
-          ok = a.type === 'bouncy'
-            ? Phys.canReachBounce(a, targetOfRaw(b))
-            : Phys.canReach(a, targetOfRaw(b), a.type === 'sticky' ? STICKY_MUL : 1, 1)
+          ok = reachOk(chain[j - 1], chain[j], budget)
         }
-        const entryOk = Phys.canReach(anchor, targetOfRaw(chain[0]), 1, 1)
-        if (!ok || !entryOk) { rejected++; i--; continue }
+        if (!ok) { rejected++; i--; continue }
 
         const platforms = chain.map(p => {
           const q = {

@@ -169,5 +169,71 @@ check('stalactite : détectée impossible', Patterns.validatePatternJumps(murCei
 const sansMurs = JSON.parse(JSON.stringify(defs[0]))
 check('rétro-compat sans walls', Patterns.validatePattern(sansMurs).length === 0)
 
+// 9. Validation étendue : double saut, rattrape de bord (ledge), budget DJ
+const plat = (x, row, type) => ({ x, row, cells: 3, type: type || 'basic', yOff: 0, amp: 0, spd: 0, spike: null })
+
+// 9a. gap lointain : impossible en simple (portée max ~209 px à hauteur
+// égale), OK via le double saut (bande 210 -> 413)
+const djGap = {
+  id: 't-dj-gap', name: 'gap double saut', difficulty: 5, entry: { row: 2 },
+  platforms: [plat(330, 2)], balls: [], decor: []
+}
+const vDj = Patterns.validatePatternJumps(djGap)
+check('gap lointain : OK via double saut', vDj.ok === true && vDj.okSimple === false && vDj.jumps[0].via === 'double')
+Patterns.setLayout({ powers: { doubleJump: { enabled: false } } })
+check('gap lointain : KO sans double saut', Patterns.validatePatternJumps(djGap).ok === false)
+Patterns.setLayout(null)
+
+// 9b. budget : UN seul double saut par chaîne — deux gaps consécutifs
+// nécessitant le DJ sont infaisables (cooldown 4 s > durée d'un pattern)
+const djDeux = {
+  id: 't-dj-deux', name: 'deux gaps DJ', difficulty: 5, entry: { row: 2 },
+  platforms: [plat(330, 2), plat(716, 2)], balls: [], decor: []
+}
+const vDeux = Patterns.validatePatternJumps(djDeux)
+check('budget DJ : 2e gap KO après consommation', vDeux.ok === false && vDeux.jumps[0].via === 'double' && vDeux.jumps[1].ok === false)
+
+// 9c. rattrape de bord : une plateforme à peine trop loin passe via ledge
+// (recherche de x : atterrissage simple échoue, la fenêtre d'accroche suffit)
+let ledgePat = null
+for (let x = 150; x <= 260 && !ledgePat; x += 2) {
+  const p = { id: 't-ledge', name: 'ledge', difficulty: 5, entry: { row: 2 }, platforms: [plat(x, 2, 'basic')], balls: [], decor: [] }
+  const v = Patterns.validatePatternJumps(p)
+  if (v.ok && !v.okSimple && v.jumps[0].via === 'ledge') ledgePat = p
+}
+check('rattrape de bord détectée (via ledge)', !!ledgePat)
+if (ledgePat) {
+  // coupe ledge ET double saut : la rattrape était la seule issue
+  Patterns.setLayout({ powers: { doubleJump: { enabled: false }, ledge: { enabled: false } } })
+  check('rattrape : KO quand ledge désactivé', Patterns.validatePatternJumps(ledgePat).ok === false)
+  Patterns.setLayout(null)
+}
+
+// 9d. collante + double saut : 1ère jambe affaiblie (x0.8), 2e à pleine puissance
+let stickyPat = null
+for (let x = 380; x <= 620 && !stickyPat; x += 2) {
+  const p = { id: 't-sticky-dj', name: 'sticky dj', difficulty: 5, entry: { row: 2 }, platforms: [plat(160, 2, 'sticky'), plat(x, 2, 'basic')], balls: [], decor: [] }
+  const v = Patterns.validatePatternJumps(p)
+  if (v.ok && v.jumps[0].via === 'jump' && v.jumps[1].via === 'double') stickyPat = p
+}
+check('sticky -> DJ : 1ère jambe simple, 2e via double saut', !!stickyPat)
+
+// 9e. rebondissante + double saut : correction en plein arc
+let bouncePat = null
+for (let x = 300; x <= 620 && !bouncePat; x += 4) {
+  for (const row of [0, 1]) {
+    const p = { id: 't-bounce-dj', name: 'bounce dj', difficulty: 5, entry: { row: 2 }, platforms: [plat(160, 2, 'bouncy'), plat(x, row, 'basic')], balls: [], decor: [] }
+    const v = Patterns.validatePatternJumps(p)
+    if (v.ok && v.jumps[1].via === 'bounce+dj') { bouncePat = p; break }
+  }
+}
+check('rebond + DJ : correction mid-arc détectée', !!bouncePat)
+
+// 9f. désactiver TOUS les pouvoirs : le gap DJ redevient impossible
+Patterns.setLayout({ powers: { doubleJump: { enabled: false }, ledge: { enabled: false } } })
+check('pouvoirs coupés : gap lointain KO', Patterns.validatePatternJumps(djGap).ok === false)
+check('pouvoirs coupés : gap lointain non-simple', Patterns.validatePatternJumps(djGap).okSimple === false)
+Patterns.setLayout(null)
+
 console.log(fails === 0 ? '\nTOUS LES TESTS PASSENT' : `\n${fails} ÉCHEC(S)`)
 process.exit(fails === 0 ? 0 : 1)

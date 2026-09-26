@@ -91,15 +91,41 @@ const Phys = (() => {
   function setPhys(next) { physCfg = normPhys(next) }
   function getPhys() { return physCfg }
 
-  // Simulation pas-à-pas (60 Hz, 4 s) : le slime lancé depuis (sx, sy) avec la
-  // vélocité (vx, vy) retombe-t-il sur la plateforme target ?
-  // Même test d'atterrissage que le jeu : traversée du plan de la plateforme
-  // entre l'image précédente et l'image courante (insensible aux grandes
-  // vitesses de chute).
+  // Prédicat d'impact d'un pas de simulation (60 Hz) : 'land' (atterrissage),
+  // 'ledge' (accroche de bord), 'wall' (mur percé), 'oob' (tombé sous l'écran)
+  // ou false (rien).
+  // - Atterrissage : traversée du plan de la plateforme entre l'image
+  //   précédente et l'image courante (même test que le jeu, insensible aux
+  //   grandes vitesses de chute).
+  // - Accroche (ledge catch) : même fenêtre que tryLedgeCatch (game.js) — en
+  //   descente, bas du slime franchissant le bord de la plateforme de quelques
+  //   pixels (opts.ledge = fenêtre en px) ; les éphémères (ghost) ne sont pas
+  //   rattrapables (opts.catchable).
   // `walls` : murs verticaux optionnels [{ x, y1, y2, w, spiked }] — la
   // trajectoire qui les traverse est invalidée (le sommet, lui, reste
   // atteignable : l'atterrissage est testé avant l'obstacle).
-  function simLandV(sx, sy, vx, vy, target, walls) {
+  function stepHit(x, y, py, vy, target, walls, opts, r) {
+    if (vy >= 0 && x > target.x - 3 && x < target.x + target.w + 3 && py + r <= target.y + 8 && y + r >= target.y) return 'land'
+    if (walls) {
+      for (let j = 0; j < walls.length; j++) {
+        const wl = walls[j]
+        const m = wl.spiked ? 4 : 0
+        if (x + r + m > wl.x && x - r - m < wl.x + wl.w && y + r > wl.y1 + 2 && y - r < wl.y2 - 2) return 'wall'
+      }
+    }
+    const win = opts && opts.ledge
+    if (win && opts.catchable !== false && vy >= 0 && py + r <= target.y + 6 && y + r >= target.y && y + r <= target.y + 12) {
+      if (x >= target.x - 6 - win && x < target.x - 6) return 'ledge'
+      if (x <= target.x + target.w + 6 + win && x > target.x + target.w + 6) return 'ledge'
+    }
+    if (y > VH + 60) return 'oob'
+    return false
+  }
+
+  // Simulation pas-à-pas (60 Hz, 4 s) : le slime lancé depuis (sx, sy) avec la
+  // vélocité (vx, vy) retombe-t-il sur la plateforme target ?
+  // `opts` : { ledge, catchable } — accroche de bord autorisée (voir stepHit).
+  function simLandV(sx, sy, vx, vy, target, walls, opts) {
     const P = physCfg
     let x = sx, y = sy
     const dt = 1 / 60, r = P.slimeR
@@ -109,22 +135,16 @@ const Phys = (() => {
       x += vx * dt
       y += vy * dt
       if (y < -4000) return false // garde-fou (le haut du monde est ouvert)
-      if (vy >= 0 && x > target.x - 3 && x < target.x + target.w + 3 && py + r <= target.y + 8 && y + r >= target.y) return true
-      if (walls) {
-        for (let j = 0; j < walls.length; j++) {
-          const wl = walls[j]
-          const m = wl.spiked ? 4 : 0
-          if (x + r + m > wl.x && x - r - m < wl.x + wl.w && y + r > wl.y1 + 2 && y - r < wl.y2 - 2) return false
-        }
-      }
-      if (y > VH + 60) return false
+      const hit = stepHit(x, y, py, vy, target, walls, opts, r)
+      if (hit === 'land' || hit === 'ledge') return true
+      if (hit === 'wall' || hit === 'oob') return false
     }
     return false
   }
 
   // Le saut de la plateforme a vers la plateforme b est-il réalisable ?
   // Essaie 14 combinaisons angle/puissance (même logique que le générateur d'origine).
-  function canReach(a, target, mul, dirX, walls) {
+  function canReach(a, target, mul, dirX, walls, opts) {
     dirX = dirX || 1
     const sx = dirX > 0 ? a.x + a.w - 10 : a.x + 10
     const sy = a.y - 12
@@ -133,15 +153,73 @@ const Phys = (() => {
         const base = 0.5 + k * 0.13
         const ang = dirX > 0 ? -base : -(Math.PI - base)
         const v = physCfg.vmax * p * (mul || 1)
-        if (simLandV(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target, walls)) return true
+        if (simLandV(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target, walls, opts)) return true
+      }
+    }
+    return false
+  }
+
+  // Simule un 1er saut (jambe 1, déjà lancée) et tente le 2e saut (double saut)
+  // dès l'approche de l'apex : à chaque pas pair où vy >= -60, on re-tire les
+  // 14 combinaisons angle/puissance à vmax × dj.powerMul (la visée en vol est
+  // libre à 360° : angles vers l'avant ET vers l'arrière testés).
+  // `opts.ledge` s'applique aux deux jambes : le combo double saut + rattrape
+  // de bord est donc couvert.
+  function doubleFrom(sx, sy, vx, vy, target, walls, dj, opts) {
+    const P = physCfg
+    let x = sx, y = sy
+    const dt = 1 / 60, r = P.slimeR
+    const pm = dj && dj.powerMul ? dj.powerMul : 1
+    for (let i = 0; i < 240; i++) {
+      const py = y
+      vy += P.grav * dt
+      x += vx * dt
+      y += vy * dt
+      if (y < -4000) return false // garde-fou (le haut du monde est ouvert)
+      const hit = stepHit(x, y, py, vy, target, walls, opts, r)
+      if (hit === 'land' || hit === 'ledge') return true
+      if (hit === 'wall' || hit === 'oob') return false
+      if (vy >= -60 && i >= 3 && (i & 1) === 0) {
+        for (const p of [1, 0.85]) {
+          for (let k = 0; k < 7; k++) {
+            const base = 0.5 + k * 0.13
+            const v2 = physCfg.vmax * p * pm
+            if (simLandV(x, y, Math.cos(-base) * v2, Math.sin(-base) * v2, target, walls, opts)) return true
+            if (simLandV(x, y, Math.cos(-(Math.PI - base)) * v2, Math.sin(-(Math.PI - base)) * v2, target, walls, opts)) return true
+          }
+        }
+      }
+    }
+    return false
+  }
+
+  // Le saut a -> b est-il réalisable avec un double saut (2e impulsion en vol) ?
+  // 1ère jambe : mêmes candidats que canReach (le mul sticky s'applique) ;
+  // puissance du 2e saut × dj.powerMul.
+  function canReachDouble(a, target, mul, dirX, walls, dj, opts) {
+    dirX = dirX || 1
+    const sx = dirX > 0 ? a.x + a.w - 10 : a.x + 10
+    const sy = a.y - 12
+    for (const p of [1, 0.85]) {
+      for (let k = 0; k < 7; k++) {
+        const base = 0.5 + k * 0.13
+        const ang = dirX > 0 ? -base : -(Math.PI - base)
+        const v = physCfg.vmax * p * (mul || 1)
+        if (doubleFrom(sx, sy, Math.cos(ang) * v, Math.sin(ang) * v, target, walls, dj, opts)) return true
       }
     }
     return false
   }
 
   // Rebond automatique d'une plateforme orange : trajectoire fixe.
-  function canReachBounce(a, target, walls) {
-    return simLandV(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls)
+  function canReachBounce(a, target, walls, opts) {
+    return simLandV(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls, opts)
+  }
+
+  // Rebond + correction éventuelle en plein arc par un double saut (si `dj`).
+  function canReachBounceExt(a, target, walls, dj, opts) {
+    if (!dj) return canReachBounce(a, target, walls, opts)
+    return doubleFrom(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls, dj, opts)
   }
 
   // Puissance du saut « visée » : la distance du clic/touch au slime, bornée
@@ -158,5 +236,5 @@ const Phys = (() => {
     return Math.max(0, Math.min(1, (d - P.aimMin) / Math.max(1, P.aimMax - P.aimMin)))
   }
 
-  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachBounce, aimVel, aimRatio }
+  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachDouble, canReachBounce, canReachBounceExt, aimVel, aimRatio }
 })()
