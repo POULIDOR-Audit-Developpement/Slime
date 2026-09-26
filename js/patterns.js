@@ -1,5 +1,6 @@
 // SLIME — catalogue de patterns, pool pondéré par difficulté, layout de vue,
-// stockage local et portabilité (export/import fichier + code).
+// stockage local et portabilité (export/import fichier + code, patterns seuls :
+// les réglages du jeu ne sont jamais exportés ni écrasés par un import).
 // Dépend de js/physics.js. Chargé par le jeu, l'éditeur et les outils.
 
 const Patterns = (() => {
@@ -464,11 +465,16 @@ const Patterns = (() => {
   }
 
   // Récupère l'état complet ; true si un état valide a été adopté.
+  // Garde anti-perte : un état distant VIDE n'efface jamais un pool local
+  // non vide (serveur neuf, réinitialisé ou pollué par un test). Le pool
+  // local sera poussé au serveur par le lanPush() de lanStart à la place.
   async function lanPull() {
     const d = await lanApi('/api/state')
     lan.rev = d.rev
-    if (validRemoteState(d.state)) { adoptRemote(d.state); return true }
-    return false
+    if (!validRemoteState(d.state)) return false
+    if (!d.state.patterns.length && store.patterns.length) return false
+    adoptRemote(d.state)
+    return true
   }
 
   async function lanPush() {
@@ -542,6 +548,9 @@ const Patterns = (() => {
   function getPinned() { return pinned }
 
   // ---------- export / import (portabilité) ----------
+  // L'import/export est DÉDIÉ AUX PATTERNS : les réglages (layout = murs,
+  // plateformes, phys, pouvoirs, vue) ne font jamais partie des échanges
+  // et ne sont jamais modifiés par un import.
   function pack(o) {
     return 'SLIME1.' + btoa(unescape(encodeURIComponent(JSON.stringify(o))))
   }
@@ -549,17 +558,18 @@ const Patterns = (() => {
     return decodeURIComponent(escape(atob(s)))
   }
 
-  function exportAll() {
-    return JSON.stringify({ format: FORMAT, patterns: store.patterns, layout }, null, 2)
+  function exportPatterns() {
+    return JSON.stringify({ format: FORMAT, patterns: store.patterns }, null, 2)
   }
   function exportCode() {
-    return pack({ format: FORMAT, patterns: store.patterns, layout })
+    return pack({ format: FORMAT, patterns: store.patterns })
   }
   function patternToCode(p) {
-    return pack({ format: FORMAT, patterns: [p], layout: null })
+    return pack({ format: FORMAT, patterns: [p] })
   }
 
   // Accepte : code SLIME1.* ou JSON brut. Retourne { ok, data, errors }.
+  // Un `layout` présent dans d'anciens exports est ignoré (import patterns-seuls).
   function importData(text) {
     text = String(text || '').trim()
     if (!text) return { ok: false, error: 'vide' }
@@ -572,6 +582,7 @@ const Patterns = (() => {
       catch (e) { return { ok: false, error: 'JSON invalide' } }
     }
     if (!data || data.format !== FORMAT || !Array.isArray(data.patterns)) return { ok: false, error: 'format inconnu' }
+    delete data.layout
     const errors = []
     data.patterns = data.patterns.filter(p => {
       const errs = validatePattern(p)
@@ -582,7 +593,8 @@ const Patterns = (() => {
   }
 
   function applyImport(res, mode) {
-    // mode: 'replace' | 'merge'
+    // mode: 'replace' | 'merge'. Ne touche JAMAIS au layout : les réglages
+    // du jeu (murs, phys, pouvoirs, vue) restent ceux de la machine.
     if (!res || !res.ok) return 0
     if (mode === 'merge') {
       const byId = {}
@@ -595,7 +607,6 @@ const Patterns = (() => {
       return n
     }
     store.patterns = res.data.patterns
-    if (res.data.layout) layout = normalizeLayout(res.data.layout)
     save()
     return store.patterns.length
   }
@@ -612,7 +623,7 @@ const Patterns = (() => {
     patternWidth, entryRow, emptyPattern, uid,
     instantiate, jumpOk, targetOf,
     spawnSection, pin, getPinned,
-    exportAll, exportCode, patternToCode, importData, applyImport,
+    exportPatterns, exportCode, patternToCode, importData, applyImport,
     lanStatus, lanOnChange
   }
 })()

@@ -23,7 +23,7 @@ index.html              ← page hôte (charge les scripts)
 presentation.html       ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu
 server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev)
 data/pool.json          ← pool partagé du LAN (créé par server.mjs, ignoré par git)
-editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs (autonome)
+editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs + couleurs du slime (autonome)
 css/style.css           ← styles de la page
 js/game.js              ← moteur du jeu (rendu, physique, enchaînement des patterns)
 js/physics.js           ← constantes + config physique réglable + simulation de saut partagée (jeu, éditeur, outils)
@@ -31,7 +31,8 @@ js/patterns.js          ← pool de patterns, poids par difficulté, stockage, e
 js/patterns-defaults.js ← pool par défaut GÉNÉRÉ (20 sections validées) — ne pas éditer
 js/music.js             ← musique chiptune procédurale (module Music)
 js/crypto.js            ← signature HMAC des scores (module Crypto)
-js/sprites.js           ← chargement et dessin des sprites du slime
+js/sprites.js           ← chargement et dessin des sprites du slime (recoloration runtime des variantes)
+js/slime-colors.js      ← paliers score → couleur (module SlimeColors, partagé jeu + settings)
 vendor/                 ← litecanvas embarqué (fallback CDN inclus)
 ASSETS/                 ← direction artistique + sprites
 tools/                  ← générateur de pool (gen_defaults.mjs, gen-core.js, gen_default_pool.html) + extraction des sprites (Python : extract_v2.py / extract_v3.py, make_v2_sprites.py / make_v3_sprites.py)
@@ -41,7 +42,7 @@ docs/                   ← spécifications de design + aperçus (docs/previews/
 
 ### Rendu et sprites
 
-Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites des feuilles fournies (`ASSETS/sprites/game/`) : idle animé, saut et chute **en version miroir selon la direction**, atterrissage, blessure, **séquence de mort en 4 frames** (splat → gouttes → bulles → particules), **ledge catch** (remontée en 3 frames : drapé sur le coin, traction, assis — variantes orange/rouge), **double saut** (boule + lignes de vitesse, anneau d'impulsion) et **bullet time** (slime teal à tourbillons) ; fallback procédural si les images manquent. Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures de bedrock (texture `void`) et la **jauge de vitesse compacte « VITESSE »** (cadran pré-rendu en 4 états — lent/moyen/rapide/très rapide, barre en escalier de secours) reprennent la direction artistique. La vie se lit sur 3 têtes de slime en bas à gauche.
+Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (zoom ×2) : style « gros pixels » dans les formes, texte et HTML nets. Le slime utilise les sprites des feuilles fournies (`ASSETS/sprites/game/`) : idle animé, saut et chute **en version miroir selon la direction**, atterrissage, blessure, **séquence de mort en 4 frames** (splat → gouttes → bulles → particules), **ledge catch** (remontée en 3 frames : drapé sur le coin, traction, assis), **double saut** (boule + lignes de vitesse, anneau d'impulsion) et **bullet time** (slime teal à tourbillons) ; fallback procédural si les images manquent. Les variantes de couleur sont **recolorées à l'exécution** (`js/slime-colors.js` : teinte des pixels verts avec préservation des ombrages — un seul jeu de PNG pour toutes les teintes, paliers éditables dans l'onglet COULEURS de l'éditeur). Le fond bleu à panneaux, les tuiles cerclées de noir, les bordures de bedrock (texture `void`) et la **jauge de vitesse compacte « VITESSE »** (cadran pré-rendu en 4 états — lent/moyen/rapide/très rapide, barre en escalier de secours) reprennent la direction artistique. La vie se lit sur 3 têtes de slime en bas à gauche.
 
 ### Contrôles (PC & mobile)
 
@@ -54,7 +55,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 - **Coyote time** : un appui juste après avoir glissé d'une plateforme saute quand même (fenêtre réglable, 0.08 s par défaut)
 - **M** ou l'icône son (coin haut-gauche) : couper/réactiver le son
 - **Plein écran** : icône coins (haut-droite) — API native sur Android/desktop ; sur iPhone (Safari), le canvas est diffusé dans une vidéo plein écran (contournement de l'API restreinte d'iOS, entrées relais avec conversion letterbox). Si le jeu est ajouté à l'écran d'accueil (standalone), l'icône disparaît : le jeu est déjà plein écran
-- La **couleur du slime = ta vie** : vert → orange → rouge à chaque coup des pics, à rouge fatigué un dernier coup et c'est fini
+- La **couleur du slime = ton score** : il change de teinte en direct à chaque palier franchi (score toujours caché — la couleur est un indice, pas un chiffre). Paliers réglables dans l'**onglet COULEURS de l'éditeur** : seuils, teintes, ajout/suppression, avec preview du slime en temps réel
 - **Plus de plafond** : le haut du monde est ouvert — les grands sauts passent au-dessus de l'écran (une flèche te repère quand tu es hors-champ)
 - Les piques de gauche et de droite font mal — ne tombe pas dans le vide
 - Les billes rapportent des points (score caché !), la **bille dorée vaut 50** — elle est toujours au bout d'un détour risqué
@@ -75,7 +76,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 ### Musique & record
 
 - Boucle chiptune de 8 mesures (128 pas, progression Am–F–C–G, refrain une octave plus haut) dont le tempo suit la vitesse de la caméra (112 → 150 BPM) — ~15 s par boucle
-- Meilleur score sauvegardé localement, affiché à l'écran titre ; un « NOUVEAU RECORD ! » (sans le chiffre) signale quand tu bats le mien
+- Meilleur score sauvegardé localement mais **jamais affiché en clair** ; à l'écran titre, le gros slime porte la **couleur du palier de ton record** (et « NOUVEAU RECORD ! » signale quand tu bats le mien, sans le chiffre)
 
 ## Éditeur & patterns (créateur de jeu)
 
@@ -156,10 +157,10 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 
 - Moteur : [Litecanvas](https://litecanvas.js.org) v0.302.0 via CDN jsDelivr (fallback unpkg)
 - Canvas plein écran adaptatif : le terrain reste en coordonnées 480×270 (zoom auto), les bords se prolongent en cadre de bedrock — aucune bande vide
-- Zoom de vue global réglable (onglet VUE), physique du jeu paramétrable (onglet PHYS), pouvoirs réglables (onglet POWER), sprites du slime fournis avec variantes de dégâts (vert/orange/rouge)
+- Zoom de vue global réglable (onglet VUE), physique du jeu paramétrable (onglet PHYS), pouvoirs réglables (onglet POWER), couleurs du slime par palier de score (onglet COULEURS, recoloration runtime des sprites verts)
 - Saut « visée » : la puissance suit la distance du clic/touch au slime, la direction suit l'angle — plus de temps de charge ; double saut avec bullet time (onglet POWER) et animations dédiées (boule de visée, impulsion anneau, time warp)
 - Séquence de mort en 4 frames composée par `tools/make_v3_sprites.py` (sources : feuille annotée extraite dans `ASSETS/sprites/sprite_*.png`)
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression : `node tools/smoke_test.mjs` (génération/validation), `node tools/game_sim.mjs` (partie simulée : saut, coyote, jump buffer, physique live) et `node tools/editor_dom_test.mjs` (onglet PHYS de l'éditeur)
+- Tests de régression : `node tools/smoke_test.mjs` (génération/validation), `node tools/game_sim.mjs` (partie simulée : saut, coyote, jump buffer, physique live), `node tools/editor_dom_test.mjs` (onglets PHYS et COULEURS de l'éditeur) et `node tools/sprites_test.mjs` (variantes canvas acceptées par les gardes de dessin)

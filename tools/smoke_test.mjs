@@ -55,6 +55,31 @@ const patCode = Patterns.patternToCode(defs[0])
 const res2 = Patterns.importData(patCode)
 check('export/import pattern unique', res2.ok && res2.data.patterns.length === 1 && res2.data.patterns[0].id === defs[0].id)
 
+// 3b. Import/export DÉDIÉ AUX PATTERNS : jamais de layout dans les échanges,
+// jamais de réglage écrasé par un import.
+Patterns.setPatternsRaw([JSON.parse(JSON.stringify(defs[0]))])
+const parsed = JSON.parse(Patterns.exportPatterns())
+check('export .json sans layout', parsed.format === Patterns.FORMAT && parsed.patterns.length === 1 && parsed.layout === undefined)
+const fullCode = Patterns.exportCode()
+const payload = JSON.parse(Buffer.from(fullCode.slice('SLIME1.'.length), 'base64').toString('utf8'))
+check('export code sans layout', payload.patterns.length === 1 && payload.layout === undefined)
+
+// Ancien export complet (avec layout) : accepté, mais le layout est ignoré
+Patterns.setLayout({ phys: { grav: 777 } })
+const oldExport = JSON.stringify({
+  format: Patterns.FORMAT,
+  patterns: [JSON.parse(JSON.stringify(defs[1]))],
+  layout: { phys: { grav: 999 }, walls: { left: 60, right: 60 } }
+})
+const resOld = Patterns.importData(oldExport)
+check('ancien export accepté, layout strippé', resOld.ok && resOld.data.patterns.length === 1 && resOld.data.layout === undefined)
+check('applyImport replace : pool remplacé', Patterns.applyImport(resOld, 'replace') === 1 && Patterns.getPatterns()[0].id === defs[1].id)
+check('réglages intacts après import (grav 777, murs défaut)', Patterns.getLayout().phys.grav === 777 && Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.right === 14)
+check('applyImport merge : pattern ajouté', Patterns.applyImport(Patterns.importData(Patterns.patternToCode(defs[2])), 'merge') === 1)
+check('installDefaults remplace par les 20 défauts', Patterns.installDefaults() === defs.length && Patterns.getPatterns().length === defs.length && Patterns.getPatterns()[0].id === defs[0].id)
+Patterns.setLayout(null)
+Patterns.setPatternsRaw([]) // retour à l'état initial (pool vide -> défauts)
+
 // 4. Import corrompu rejeté
 check('code corrompu rejeté', Patterns.importData('SLIME1.!!!').ok === false)
 check('json invalide rejeté', Patterns.importData('{oops').ok === false)
@@ -71,6 +96,18 @@ check('layout par défaut (murs latéraux, pas de plafond)', Patterns.getLayout(
 const phDef = Phys.phys()
 check('phys défauts (slime 14, grav 620)', phDef.slimeR === 14 && phDef.grav === 620 && phDef.vmax === 360)
 check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 14 && Patterns.getLayout().phys.aimMin === 24 && Patterns.getLayout().phys.aimMax === 140)
+
+// 6b''. Caméra : nouvelle base ×2 (80/240), migration de l'ancienne base (40/120)
+check('caméra : nouvelle base par défaut (80/240)', phDef.camBase === 80 && phDef.camMax === 240)
+Phys.setPhys({ camBase: 40, camMax: 120 })
+check('caméra : ancienne base migrée vers la nouvelle', Phys.phys().camBase === 80 && Phys.phys().camMax === 240)
+Phys.setPhys({ camBase: 200, camMax: 400 })
+check('caméra : bornes hautes accessibles (200/400)', Phys.phys().camBase === 200 && Phys.phys().camMax === 400)
+Phys.setPhys({ camBase: 300, camMax: 900 })
+check('caméra : hors bornes écrêté (200/400)', Phys.phys().camBase === 200 && Phys.phys().camMax === 400)
+Phys.setPhys(null)
+check('caméra : retour à la nouvelle base', Phys.phys().camBase === 80 && Phys.phys().camMax === 240)
+
 Phys.setPhys({ grav: 800, slimeR: 10 })
 check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 210)
 Phys.setPhys({ vmin: 400, vmax: 200, grav: 99999 })
@@ -109,6 +146,14 @@ Phys.setPhys(Patterns.getLayout().phys)
 check('simu utilise le layout', Phys.phys().slimeR === 16 && Phys.phys().grav === 700)
 Patterns.setLayout(null)
 check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 14)
+
+// 6d. Ancien save éditeur (layout persisté avec l'ancienne base caméra 40/120)
+// -> migré vers la nouvelle base au chargement : c'est le scénario « les saves
+// de l'éditeur appliquent l'ancienne vitesse » qui doit disparaître.
+storeStub[storeKey] = JSON.stringify({ format: Patterns.FORMAT, patterns: [], layout: { phys: { camBase: 40, camMax: 120 } } })
+Patterns.load()
+check('ancien save éditeur : caméra migrée (80/240)', Patterns.getLayout().phys.camBase === 80 && Patterns.getLayout().phys.camMax === 240)
+Patterns.setLayout(null)
 
 // 7. Pin mode test
 Patterns.pin(defs[3])

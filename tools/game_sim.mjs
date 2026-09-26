@@ -8,6 +8,7 @@ const files = [
   'js/crypto.js',
   'js/music.js',
   'js/physics.js',
+  'js/slime-colors.js',
   'js/sprites.js',
   'js/patterns-defaults.js',
   'js/patterns.js',

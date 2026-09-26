@@ -43,20 +43,46 @@ const Sprites = (() => {
     bgPanel4: 'bg_panel4',
     needleH: 'needle_h'
   }
-  for (const base of ['idle0', 'idle1', 'jump', 'fall', 'land']) {
-    for (const tier of ['orange', 'red']) {
-      defs[base + '_' + tier] = base + '_' + tier
-    }
-  }
+  // Frames déclinées en couleurs par recoloration runtime (un palier par
+  // entrée de SlimeColors, suffixe de clé _t<index> ; _t0 = PNG d'origine).
+  const VARIANT_BASES = ['idle0', 'idle1', 'jump', 'fall', 'land', 'ledge', 'ledgeUp', 'ledgeTop',
+    'djPump0', 'djPump1', 'splat', 'death1', 'death2', 'death3', 'big']
   const imgs = {}
   let loaded = 0
   let ready = false
+  let tiers = (typeof SlimeColors !== 'undefined') ? SlimeColors.load() : SlimeColors_DEFAULTS_FALLBACK()
+
+  function tierSuffix(i) { return i > 0 ? '_t' + i : '' }
+
+  function makeVariants(key, im) {
+    for (let i = 1; i < tiers.length; i++) {
+      try { imgs[key + tierSuffix(i)] = SlimeColors.recolor(im, tiers[i].hex) } catch (e) {}
+    }
+  }
+
+  // Nouvelle liste de paliers (settings.html) : purge des variantes _t* et
+  // régénération immédiate si les PNG de base sont déjà chargés.
+  function setTiers(list) {
+    tiers = list
+    for (const k of Object.keys(imgs)) if (/_t\d+$/.test(k)) delete imgs[k]
+    if (!ready) return
+    for (const base of VARIANT_BASES) {
+      const im = imgs[base]
+      if (im && im.width) makeVariants(base, im)
+    }
+  }
+
+  // Hors navigateur (simulations Node) : palier vert seul.
+  function SlimeColors_DEFAULTS_FALLBACK() { return [{ min: 0, hex: '#3ecb3e' }] }
 
   function load() {
     const keys = Object.keys(defs)
     for (const k of keys) {
       const im = new Image()
-      im.onload = () => { if (++loaded >= keys.length) ready = true }
+      im.onload = () => {
+        if (VARIANT_BASES.indexOf(k) >= 0) makeVariants(k, im)
+        if (++loaded >= keys.length) ready = true
+      }
       im.onerror = () => { loaded++ }
       im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20260926a'
       imgs[k] = im
@@ -65,7 +91,7 @@ const Sprites = (() => {
 
   function draw(key, cx, feetY, w, sx, sy) {
     const im = imgs[key]
-    if (!im || !im.width || !im.complete) return false
+    if (!im || !im.width || im.complete === false) return false
     const c = ctx()
     const sw = w
     const sh = im.height * (w / im.width)
@@ -78,7 +104,7 @@ const Sprites = (() => {
 
   function drawImage(key, x, y, w, h) {
     const im = imgs[key]
-    if (!im || !im.width || !im.complete) return false
+    if (!im || !im.width || im.complete === false) return false
     const c = ctx()
     c.save()
     c.imageSmoothingEnabled = false
@@ -89,7 +115,7 @@ const Sprites = (() => {
 
   function drawSrc(key, sx, sy, sw, sh, dx, dy, dw, dh) {
     const im = imgs[key]
-    if (!im || !im.width || !im.complete) return false
+    if (!im || !im.width || im.complete === false) return false
     const c = ctx()
     c.save()
     c.imageSmoothingEnabled = false
@@ -102,7 +128,7 @@ const Sprites = (() => {
   // miroir horizontal optionnel.
   function drawTL(key, x, y, w, flip) {
     const im = imgs[key]
-    if (!im || !im.width || !im.complete) return false
+    if (!im || !im.width || im.complete === false) return false
     const c = ctx()
     const h = im.height * (w / im.width)
     c.save()
@@ -120,7 +146,7 @@ const Sprites = (() => {
 
   function rotated(key, angle, px, py, ax, ay, scale) {
     const im = imgs[key]
-    if (!im || !im.width || !im.complete) return false
+    if (!im || !im.width || im.complete === false) return false
     const c = ctx()
     const w = im.width * (scale || 1)
     const h = im.height * (scale || 1)
@@ -149,6 +175,7 @@ const Sprites = (() => {
 
   return {
     load,
+    setTiers,
     draw,
     drawImage,
     drawSrc,

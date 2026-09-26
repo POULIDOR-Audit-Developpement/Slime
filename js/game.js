@@ -160,6 +160,38 @@ const C_BLUE = 33, C_BLUE_L = 34, C_BLUE_D = 35, C_BLUE_XD = 36, C_BLUE_HI = 37
 const C_FRAME = 38, C_FRAME_L = 39, C_LIFE_EMPTY = 40
 const C_S_HI = 41
 
+// ---------- Paliers score -> couleur (éditables dans settings.html) ----------
+// La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
+// d'origine (vert) ; les teintes suivantes sont recolorées au chargement.
+// Pour les fallbacks procéduraux, chaque palier pousse 3 entrées en fin de
+// palette (teinte / claire / sombre) installées par applyTiers() dans init().
+const TIERS = SlimeColors.load()
+let C_TIER = 0
+
+function applyTiers() {
+  if (C_TIER) COLORS.length = C_TIER
+  C_TIER = COLORS.length
+  for (const t of TIERS) COLORS.push(t.hex, SlimeColors.shade(t.hex, 0.62), SlimeColors.shade(t.hex, -0.45))
+  pal(COLORS, C_WHITE)
+}
+function tierCol(i) { return C_TIER + i * 3 }
+function tierColL(i) { return C_TIER + i * 3 + 1 }
+function tierColD(i) { return C_TIER + i * 3 + 2 }
+function tierSuffix(i) { return i > 0 ? '_t' + i : '' }
+function scoreTierIdx() { return SlimeColors.tierIndex(TIERS, currentScore()) }
+let deathTier = 0
+
+// Réglages modifiés dans un autre onglet (settings.html) : rechargement des
+// paliers, de la palette et des sprites recolorés, sans réinitialiser la partie.
+function refreshTiers() {
+  const nt = SlimeColors.load()
+  if (JSON.stringify(nt) === JSON.stringify(TIERS)) return
+  TIERS.length = 0
+  for (const t of nt) TIERS.push(t)
+  applyTiers()
+  Sprites.setTiers(nt)
+}
+
 const SFX_JUMP = [,,392,,.03,.12,1,3.6,,69,,,,,,,,.95,.1]
 const SFX_COIN = [,,1675,,.06,.24,1,1.82,,,837,.06]
 const SFX_HURT = [,,537,.02,.02,.22,1,1.59,-6.98,4.97]
@@ -176,7 +208,7 @@ const LETTERS = {
 
 let state = 'title'
 let runStarted = false
-let camX = 0, camSpd = 40, elapsed = 0
+let camX = 0, camSpd = 80, elapsed = 0 // pré-init : base caméra (PHYS_DEF.camBase)
 // Horloge du jeu ralentie par le slow-mo (oscillation des plateformes...) et
 // échelle de temps courante (1 = vitesse normale).
 let gameT = 0, ts = 1
@@ -288,7 +320,7 @@ function burst(x, y, color, n, pow) {
 function startGame() {
   elapsed = 0
   camX = 0
-  camSpd = 40
+  camSpd = PH().camBase
   gameT = 0
   ts = 1
   slowmoT = 0
@@ -303,6 +335,7 @@ function startGame() {
   newRecord = false
   scoreCode = null
   deathT = 0
+  deathTier = 0
   copiedT = 0
   shakeT = 0
   testSecT = 0
@@ -331,7 +364,7 @@ function damage() {
   slime.invuln = PH().invuln
   shakeT = 0.25
   sfx(SFX_HURT)
-  burst(slime.x, slime.y, C_SLIME, 8, 120)
+  burst(slime.x, slime.y, tierCol(scoreTierIdx()), 8, 120)
   if (slime.size < 1) die()
 }
 
@@ -344,6 +377,7 @@ function die() {
   slowmoT = 0
   slime.pull = null
   const s = currentScore()
+  deathTier = scoreTierIdx()
   newRecord = s > best && s > 0
   if (newRecord) {
     best = s
@@ -352,8 +386,8 @@ function die() {
   scoreCode = Crypto.makeCode(s, elapsed)
   shakeT = 0.4
   sfx(SFX_DIE)
-  burst(slime.x, slime.y, C_SLIME, 24, 220)
-  burst(slime.x, slime.y, C_SLIME_L, 12, 160)
+  burst(slime.x, slime.y, tierCol(deathTier), 24, 220)
+  burst(slime.x, slime.y, tierColL(deathTier), 12, 160)
 }
 
 // Exécute le saut visé : puissance = distance du point visé au slime (bornée
@@ -670,7 +704,12 @@ function update(dt) {
   }
   elapsed += dts
   const P = PH()
-  camSpd = testMode ? 55 : Math.min(P.camBase + Math.floor(elapsed / P.camRampT) * 5, P.camMax)
+  // Caméra : paliers tous les camRampT s, pas calibré sur (camMax - camBase)
+  // pour atteindre le plafond en ~2 min (durée de référence d'une partie),
+  // quelle que soit la base choisie dans l'éditeur. Le playtest n'est plus
+  // figé : il part de la vitesse de base réglée (P.camBase).
+  const camStep = Math.max(1, Math.round((P.camMax - P.camBase) * P.camRampT / 120))
+  camSpd = testMode ? P.camBase : Math.min(P.camBase + Math.floor(elapsed / P.camRampT) * camStep, P.camMax)
   camX += camSpd * dts
   if (testMode) testSecT += dts
   if (shakeT > 0) shakeT -= dts
@@ -869,9 +908,11 @@ function drawTitle() {
     circfill(0, 0, 24, C_BLACK)
     pop()
     alpha(1)
-    Sprites.draw('big', VW / 2, 152 + bob, 48)
+    // Le slime du titre porte la couleur du high score (record masqué).
+    if (!Sprites.draw('big' + tierSuffix(SlimeColors.tierIndex(TIERS, best)), VW / 2, 152 + bob, 48)) Sprites.draw('big', VW / 2, 152 + bob, 48)
   } else {
-    drawBlob(VW / 2, 128 + bob, 20, 1, 1, false)
+    const bt = SlimeColors.tierIndex(TIERS, best)
+    drawBlob(VW / 2, 128 + bob, 20, 1, 1, false, tierCol(bt), tierColD(bt))
   }
   textalign('center', 'top')
   textsize(10)
@@ -894,10 +935,6 @@ function drawTitle() {
     text(VW / 2, 245, "Plein ecran : ajoute a l'ecran d'accueil", C_WHITE)
     alpha(1)
   }
-  if (best > 0) {
-    textsize(11)
-    text(VW / 2, 222, 'RECORD : ' + best, C_GOLD)
-  }
   textsize(8)
   text(VW - 24, VH - 12, 'v' + VERSION, C_GRAY)
   textalign('start', 'top')
@@ -913,14 +950,16 @@ function drawReadyHint() {
   textalign('start', 'top')
 }
 
-function drawBlob(x, y, r, sx, sy, blink) {
+function drawBlob(x, y, r, sx, sy, blink, col, colD) {
   if (blink) return
+  col = col || C_SLIME
+  colD = colD || C_SLIME_D
   push(x, y, 0, sx, sy)
-  circfill(0, -r * 0.3, r * 0.92 + 2, C_SLIME_D)
-  rectfill(-r * 0.92 - 2, -r * 0.3, (r * 0.92 + 2) * 2, r * 1.3 + 2, C_SLIME_D)
-  circfill(0, -r * 0.3, r * 0.92, C_SLIME)
-  rectfill(-r * 0.92, -r * 0.3, r * 1.84, r * 1.3, C_SLIME)
-  rectfill(-r * 0.92, r * 0.86, r * 1.84, r * 0.14, C_SLIME_D)
+  circfill(0, -r * 0.3, r * 0.92 + 2, colD)
+  rectfill(-r * 0.92 - 2, -r * 0.3, (r * 0.92 + 2) * 2, r * 1.3 + 2, colD)
+  circfill(0, -r * 0.3, r * 0.92, col)
+  rectfill(-r * 0.92, -r * 0.3, r * 1.84, r * 1.3, col)
+  rectfill(-r * 0.92, r * 0.86, r * 1.84, r * 0.14, colD)
   circfill(-r * 0.3, -r * 0.35, r * 0.18, C_WHITE)
   circfill(r * 0.22, -r * 0.35, r * 0.18, C_WHITE)
   circfill(-r * 0.24, -r * 0.33, r * 0.09, C_BLACK)
@@ -1142,7 +1181,7 @@ function drawSlime() {
   // Bas du sprite ancré 1 px sous le plan de collision (slime.y + r) :
   // contact visuel garanti avec la plateforme, couture d'AA masquée.
   const feet = slime.y + slime.r + 1
-  const suffix = slime.size >= 3 ? '' : slime.size === 2 ? '_orange' : '_red'
+  const suffix = tierSuffix(scoreTierIdx())
   if (Sprites.ready) {
     // Ledge catch : remontée en 3 frames calées sur le canevas LEDGE_* (haut
     // du bloc = sommet plateforme, face du bloc = bord de la plateforme) :
@@ -1210,14 +1249,15 @@ function drawSlime() {
     // « invert too » : saut/chute vers la gauche = sprites en miroir.
     if (!slime.grounded && key !== 'land' + suffix && slime.face < 0) sx = -1
     if (slime.invuln > 0) alpha(Math.floor(T * 14) % 2 === 0 ? 1 : 0.45)
-    Sprites.draw(key, slime.x, feet, slimeDrawW(), sx, sy)
+    // Variante de couleur absente -> repli sur le sprite de base (jamais invisible).
+    if (!Sprites.draw(key, slime.x, feet, slimeDrawW(), sx, sy)) Sprites.draw(key.replace(/_t\d+$/, ''), slime.x, feet, slimeDrawW(), sx, sy)
     alpha(1)
     // Bullet time (time warp) : tourbillons autour du slime en plein ralenti.
     if (ts < 0.9 && !slime.pull) drawTimeWarp()
     return
   }
   const blink = slime.invuln > 0 && Math.floor(T * 18) % 2 === 0
-  const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
+  const col = tierCol(scoreTierIdx())
   let sx = 1, sy = 1
   if (slime.pull) {
     drawPullFallback(1 - Math.max(slime.pull.t, 0) / slime.pull.dur)
@@ -1256,7 +1296,7 @@ function drawSlime() {
 // Remontée sans asset : première moitié — corps pendant sous le bord, deux
 // bras sur le sommet ; seconde moitié — corps qui s'élève au-dessus du bord.
 function drawPullFallback(k) {
-  const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
+  const col = tierCol(scoreTierIdx())
   const p = slime.pull.plat
   const dir = slime.pull.side < 0 ? 1 : -1 // bord côté plateforme
   if (k < 0.5) {
@@ -1283,18 +1323,18 @@ function drawPullFallback(k) {
 // Double saut sans asset : boule comprimée cerclée de noir, arcs de vitesse
 // (visée) ou anneau d'impulsion (relâcher).
 function drawPumpFallback(ring) {
-  const col = slime.size >= 3 ? C_SLIME : slime.size === 2 ? C_ORANGE : C_RED
+  const col = tierCol(scoreTierIdx())
   const rr = slime.r * 0.78
   circfill(slime.x, slime.y, rr + 2, C_BLACK)
   circfill(slime.x, slime.y, rr, col)
   circfill(slime.x - rr * 0.3, slime.y - rr * 0.3, rr * 0.22, C_WHITE)
   alpha(0.8)
   if (ring) {
-    circ(slime.x, slime.y, rr + 5 + Math.sin(T * 20) * 1.5, C_SLIME_L)
+    circ(slime.x, slime.y, rr + 5 + Math.sin(T * 20) * 1.5, tierColL(scoreTierIdx()))
   } else {
     for (let i = -1; i <= 1; i++) {
       const a = T * 14 + i * 0.9
-      line(slime.x + Math.cos(a) * (rr + 3), slime.y + Math.sin(a) * (rr + 3), slime.x + Math.cos(a) * (rr + 7), slime.y + Math.sin(a) * (rr + 7), C_SLIME_L)
+      line(slime.x + Math.cos(a) * (rr + 3), slime.y + Math.sin(a) * (rr + 3), slime.x + Math.cos(a) * (rr + 7), slime.y + Math.sin(a) * (rr + 7), tierColL(scoreTierIdx()))
     }
   }
   alpha(1)
@@ -1332,17 +1372,18 @@ function drawTimeWarp() {
 function drawDeath() {
   if (!Sprites.ready) return
   const feet = slime.y + slime.r + 1
+  const suffix = tierSuffix(deathTier)
   const f = Math.floor(deathT / 0.12)
   if (f >= 1 && f <= 3) {
-    const im = Sprites.get('death' + f)
+    const im = Sprites.get('death' + f + suffix) || Sprites.get('death' + f)
     if (im && im.width) {
       alpha(clamp(1.7 - deathT * 1.4, 0.3, 1))
-      Sprites.draw('death' + f, slime.x, feet, slimeDrawW() * 1.9)
+      Sprites.draw('death' + f + suffix, slime.x, feet, slimeDrawW() * 1.9) || Sprites.draw('death' + f, slime.x, feet, slimeDrawW() * 1.9)
       alpha(1)
       return
     }
   }
-  if (deathT < 0.5) Sprites.draw('splat', slime.x, feet, slimeDrawW() * 1.5)
+  if (deathT < 0.5) Sprites.draw('splat' + suffix, slime.x, feet, slimeDrawW() * 1.5) || Sprites.draw('splat', slime.x, feet, slimeDrawW() * 1.5)
 }
 
 function drawParticles() {
@@ -1902,7 +1943,7 @@ function setupTestMode() {
 }
 
 function init() {
-  pal(COLORS, C_WHITE)
+  applyTiers()
   textsize(9)
   // Simulation 240 Hz (dt-correct : toute la physique est basée sur dt) et
   // rendu quasi à chaque rAF : supprime le judder sur écrans 120/144 Hz.
@@ -1924,9 +1965,11 @@ function init() {
   // Sync LAN : un autre appareil a poussé le pool (server.mjs) -> pareil.
   try {
     window.addEventListener('storage', e => {
-      if (!e || !e.key || e.key === 'slime_patterns_v1' || e.key === 'slime_patterns_v1_bak') refreshLayout()
+      if (!e || !e.key) return
+      if (e.key === SlimeColors.KEY) refreshTiers()
+      else if (e.key === 'slime_patterns_v1' || e.key === 'slime_patterns_v1_bak') refreshLayout()
     })
-    window.addEventListener('focus', refreshLayout)
+    window.addEventListener('focus', () => { refreshLayout(); refreshTiers() })
     if (Patterns.lanOnChange) Patterns.lanOnChange(refreshLayout)
   } catch (e) {}
 }

@@ -671,7 +671,7 @@ const Ed = (() => {
   function draw() {
     const dpr = window.devicePixelRatio || 1
     const cw = cv.clientWidth, chh = cv.clientHeight
-    if (mode === 'phys' || mode === 'power') {
+    if (mode === 'phys' || mode === 'power' || mode === 'colors') {
       // Vue réglages pleine page : pas de canvas, on garde juste la décroissance du flash.
     } else {
       if (cv.width !== cw * dpr || cv.height !== chh * dpr) {
@@ -695,6 +695,7 @@ const Ed = (() => {
     if (mode === 'layout') return renderPropsLayout()
     if (mode === 'phys') return renderPropsPhys()
     if (mode === 'power') return renderPropsPower()
+    if (mode === 'colors') return renderPropsColors()
     const pat = selPattern()
     if (!pat) {
       propsEl.innerHTML = `<div class="empty">Crée un pattern avec « + Nouveau »,<br>ou copie le pool par défaut pour l'éditer.<br><br>• molette : défiler<br>• clic : placer / sélectionner<br>• Ctrl+clic / Ctrl+glisser : multi-sélection<br>• Ctrl+C / Ctrl+V : copier / coller<br>• Suppr : effacer la sélection</div>`
@@ -978,8 +979,8 @@ const Ed = (() => {
       ['hurtRecoil', 'Recul', 0.5, 2, 0.05, v => '×' + (+v).toFixed(2)]
     ]],
     ['Caméra', [
-      ['camBase', 'Vitesse base', 20, 100, 5, v => Math.round(v)],
-      ['camMax', 'Vitesse max', 60, 200, 5, v => Math.round(v)],
+      ['camBase', 'Vitesse base', 20, 200, 5, v => Math.round(v)],
+      ['camMax', 'Vitesse max', 60, 400, 5, v => Math.round(v)],
       ['camRampT', 'Palier', 4, 30, 1, v => Math.round(v) + ' s']
     ]],
     ['Game feel', [
@@ -1004,7 +1005,7 @@ const Ed = (() => {
     let html = `<div class="physHead">
       <div>
         <h3>Physique du jeu</h3>
-        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Inclus dans l'export .json et le code compact.</div>
+        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Réglages sauvegardés sur l'appareil et partagés en LAN — jamais inclus dans l'export des patterns (patterns seuls).</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="physDirtyNote" style="display:none">● modifications non appliquées</span>
@@ -1148,6 +1149,131 @@ const Ed = (() => {
     markApplyDirty('btnApplyPow', 'powDirtyNote', false)
   }
 
+  // ---------- onglet COULEURS ----------
+  // Paliers score -> couleur (SlimeColors, localStorage slime_tiers). Le
+  // brouillon vit dans `draft` (muté par les inputs) ; « ✓ Appliquer au jeu »
+  // l'écrit dans le stockage — le jeu ouvert le relit au focus / stockage et
+  // régénère ses sprites. Preview : recoloration réelle des frames idle
+  // (même algorithme que le jeu), animée idle0/idle1.
+  let colorsAlt = false
+  let colorsFrames = null
+
+  function colorsFramesLoad() {
+    if (colorsFrames) return colorsFrames
+    colorsFrames = ['idle0', 'idle1'].map(n => {
+      const im = new Image()
+      im.onload = () => { if (mode === 'colors') repaintTierPreviews() }
+      im.src = 'ASSETS/sprites/game/' + n + '.png?v=20260926a'
+      return im
+    })
+    return colorsFrames
+  }
+
+  function paintTierPreview(cv, hex) {
+    const c = cv.getContext('2d')
+    if (!c) return
+    c.imageSmoothingEnabled = false
+    c.clearRect(0, 0, cv.width, cv.height)
+    const im = colorsFramesLoad()[colorsAlt ? 1 : 0]
+    if (!im.complete || !im.naturalWidth) return
+    try { c.drawImage(SlimeColors.recolor(im, hex), 0, 0, cv.width, cv.height) } catch (e) {}
+  }
+
+  function repaintTierPreviews() {
+    propsEl.querySelectorAll('.tierRow').forEach(r => {
+      const cv = r.querySelector('canvas')
+      if (cv) paintTierPreview(cv, r.dataset.hex)
+    })
+  }
+
+  function tierRangeText(draft, i) {
+    if (i === 0) return 'art d\'origine (sprites verts), non recoloré'
+    const next = draft[i + 1]
+    return 'jusqu\'à ' + (next ? (next.min - 1) + ' pts' : 'l\'infini')
+  }
+
+  function renderPropsColors(draft) {
+    // Brouillon : passé en argument par les handlers structurels (ajout /
+    // suppression) pour préserver leurs mutations — sinon relu du stockage.
+    draft = draft || SlimeColors.load()
+    const saved = () => JSON.stringify(SlimeColors.load())
+    const isDirty = () => JSON.stringify(draft) !== saved()
+    let html = `<div class="physHead">
+      <div>
+        <h3>Couleurs du slime</h3>
+        <div class="note">La couleur du slime dépend du <b>score</b> : il change de teinte en direct dès qu'un palier est franchi (le score n'est jamais affiché — la couleur est un indice, pas un chiffre). La preview applique la <b>même recoloration que le jeu</b> aux sprites idle. Le palier 0 est l'art d'origine : sa teinte est verrouillée. « Appliquer » écrit le stockage local — le jeu ouvert se met à jour dès qu'on revient sur son onglet.</div>
+      </div>
+      <div class="applyCol">
+        <span class="dirtyNote" id="colDirtyNote" style="display:none">● modifications non appliquées</span>
+        <div class="btnRow">
+          <button id="btnAddTier">+ Ajouter un palier</button>
+          <button id="btnApplyColors" class="applyBtn">✓ Appliquer au jeu</button>
+          <button id="btnResetColors">Réinitialiser</button>
+        </div>
+      </div>
+    </div>
+    <div class="tierGrid">`
+    draft.forEach((t, i) => {
+      html += `<div class="tierRow" data-i="${i}" data-hex="${t.hex}">
+        <canvas width="96" height="96"></canvas>
+        <div class="col"><span>dès</span><input type="number" min="0" step="10" value="${t.min}" id="tc_min_${i}" ${i === 0 ? 'disabled' : ''}/></div>
+        <input type="color" value="${t.hex}" id="tc_hex_${i}" ${i === 0 ? 'disabled' : ''} title="${t.hex}"/>
+        <span class="range" id="tc_range_${i}">${tierRangeText(draft, i)}</span>
+        ${i > 0 ? `<button class="del" id="tc_del_${i}" title="Supprimer ce palier">✕</button>` : ''}
+      </div>`
+    })
+    html += `</div>`
+    propsEl.innerHTML = html
+
+    const mark = () => markApplyDirty('btnApplyColors', 'colDirtyNote', isDirty())
+    const refreshRanges = () => {
+      draft.forEach((t, i) => {
+        const el = document.getElementById('tc_range_' + i)
+        if (el) el.textContent = tierRangeText(draft, i)
+      })
+    }
+    draft.forEach((t, i) => {
+      const minEl = document.getElementById('tc_min_' + i)
+      const hexEl = document.getElementById('tc_hex_' + i)
+      if (minEl) minEl.addEventListener('input', () => {
+        draft[i].min = Math.max(0, Math.floor(+minEl.value || 0))
+        refreshRanges(); mark()
+      })
+      if (hexEl) hexEl.addEventListener('input', () => {
+        draft[i].hex = hexEl.value
+        const row = propsEl.querySelector(`.tierRow[data-i="${i}"]`)
+        if (row) { row.dataset.hex = hexEl.value; paintTierPreview(row.querySelector('canvas'), hexEl.value) }
+        mark()
+      })
+      const del = document.getElementById('tc_del_' + i)
+      if (del) del.addEventListener('click', () => {
+        draft.splice(i, 1)
+        renderPropsColors(draft); mark()
+      })
+    })
+    const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn) }
+    on('btnAddTier', 'click', () => {
+      const last = draft[draft.length - 1]
+      draft.push({ min: (last ? last.min : 0) + 250, hex: '#f4f4f4' })
+      const n = SlimeColors.normalize(draft)
+      draft.length = 0
+      for (const t of n) draft.push(t)
+      renderPropsColors(draft); mark()
+    })
+    on('btnApplyColors', 'click', () => {
+      if (!SlimeColors.save(draft)) { flash('Erreur : paliers invalides (seuil ou teinte)'); return }
+      renderProps()
+      flash('Couleurs appliquées au jeu')
+    })
+    on('btnResetColors', 'click', () => {
+      SlimeColors.clear()
+      renderProps(); flash('Couleurs réinitialisées')
+    })
+    // Rendu frais : jamais dirty (cohérent avec PHYS/POWER).
+    markApplyDirty('btnApplyColors', 'colDirtyNote', false)
+    repaintTierPreviews()
+  }
+
   // ---------- liste ----------
   function refreshList(rerenderProps) {
     if (rerenderProps !== false) renderProps()
@@ -1160,7 +1286,7 @@ const Ed = (() => {
       ? 'Jeu : pool PAR DÉFAUT (' + Patterns.defaults().length + ' sections) — tes patterns remplaceront le pool dès qu\'il en contient.'
       : 'Jeu : TON pool (' + patterns.length + ' sections)') + storeNote + lanNote
     if (!patterns.length) {
-      listEl.innerHTML = `<div class="hint">Aucun pattern personnel.<br><br>Le jeu tourne avec le <b>pool par défaut</b> (20 sections validées).<br><br>« + Nouveau » pour créer, ou « Pool par défaut » pour copier les 20 sections et les éditer.</div>`
+      listEl.innerHTML = `<div class="hint">Aucun pattern personnel.<br><br>Le jeu tourne avec le <b>pool par défaut</b> (20 sections validées).<br><br>« + Nouveau » pour créer, ou « Restaurer défauts » pour copier les 20 sections dans ta liste et les éditer.</div>`
       return
     }
     listEl.innerHTML = patterns.map((p, i) => {
@@ -1221,15 +1347,15 @@ const Ed = (() => {
   }
 
   function installDefaults() {
-    if (patterns.length && !confirm('Ajouter les 20 sections du pool par défaut à ta liste ?')) return
+    if (patterns.length && !confirm('Remplacer ta liste actuelle (' + patterns.length + ' pattern(s)) par les 20 sections du pool par défaut ?\nLes patterns actuels seront perdus.')) return
     const n = Patterns.installDefaults()
     patterns = Patterns.getPatterns()
     refreshList()
-    flash(n + ' sections du pool par défaut copiées')
+    flash('Pool par défaut restauré : ' + n + ' sections')
   }
 
   function exportJson() {
-    const data = Patterns.exportAll()
+    const data = Patterns.exportPatterns()
     const blob = new Blob([data], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -1243,10 +1369,7 @@ const Ed = (() => {
     const res = Patterns.importData(text)
     if (!res.ok) { flash('Import impossible : ' + res.error, true); return }
     const n = res.data.patterns.length
-    const layoutNote = res.data.layout && patterns.length
-      ? '\n\n⚠ L\'import contient un réglage de vue (murs, physique, décor) qui REMPLACERA l\'actuel en cas de remplacement.'
-      : ''
-    const mode = patterns.length && confirm('OK pour ' + n + ' pattern(s) trouvé(s) dans « ' + sourceName + ' ».\n\nRemplacer ta liste actuelle ?\n• OK = Remplacer\n• Annuler = Fusionner (ajouter les nouveaux)' + layoutNote) ? 'replace' : 'merge'
+    const mode = patterns.length && confirm('OK pour ' + n + ' pattern(s) trouvé(s) dans « ' + sourceName + ' ».\n\nRemplacer ta liste actuelle ?\n• OK = Remplacer\n• Annuler = Fusionner (ajouter les nouveaux)') ? 'replace' : 'merge'
     Patterns.applyImport(res, mode)
     patterns = Patterns.getPatterns()
     refreshList()
@@ -1487,7 +1610,8 @@ const Ed = (() => {
     }
     document.getElementById('tbHint').textContent = mode === 'layout' ? 'Glisse les poignées dorées pour ajuster les murs'
       : mode === 'phys' ? 'Brouillon : valide tes réglages avec « ✓ Appliquer au jeu »'
-      : mode === 'power' ? 'Brouillon : valide tes pouvoirs avec « ✓ Appliquer au jeu »' : hints[t]
+      : mode === 'power' ? 'Brouillon : valide tes pouvoirs avec « ✓ Appliquer au jeu »'
+      : mode === 'colors' ? 'Brouillon : valide tes couleurs avec « ✓ Appliquer au jeu »' : hints[t]
     cv.style.cursor = t === 'select' ? 'default' : 'crosshair'
   }
 
@@ -1530,13 +1654,15 @@ const Ed = (() => {
     document.getElementById('tabLayout').classList.toggle('on', m === 'layout')
     document.getElementById('tabPhys').classList.toggle('on', m === 'phys')
     document.getElementById('tabPower').classList.toggle('on', m === 'power')
-    // VUE : plein cadre (liste + toolbar masquées) ; PHYS/POWER : réglages pleine page.
+    document.getElementById('tabColors').classList.toggle('on', m === 'colors')
+    // VUE : plein cadre (liste + toolbar masquées) ; PHYS/POWER/COULEURS : réglages pleine page.
     const mainEl = document.querySelector('main')
     mainEl.classList.toggle('layout', m === 'layout')
     mainEl.classList.toggle('phys', m === 'phys')
     mainEl.classList.toggle('power', m === 'power')
+    mainEl.classList.toggle('colors', m === 'colors')
     if (m === 'layout') setLTool('select')
-    applyPropsW(m === 'phys' || m === 'power')
+    applyPropsW(m === 'phys' || m === 'power' || m === 'colors')
     clearSel()
     setTool(mode === 'patterns' ? tool : 'select')
     renderProps()
@@ -1595,7 +1721,7 @@ const Ed = (() => {
   function onDown(e) {
     const { sx, sy } = canvasPos(e)
     if (mode === 'layout') return onDownLayout(sx, sy)
-    if (mode === 'phys' || mode === 'power') return // aperçu lecture / pleine page
+    if (mode === 'phys' || mode === 'power' || mode === 'colors') return // aperçu lecture / pleine page
     const pat = selPattern()
     const wx = s2wX(sx), wy = s2wY(sy)
     if (!pat) return
@@ -1914,6 +2040,14 @@ const Ed = (() => {
     document.getElementById('tabLayout').addEventListener('click', () => setMode('layout'))
     document.getElementById('tabPhys').addEventListener('click', () => setMode('phys'))
     document.getElementById('tabPower').addEventListener('click', () => setMode('power'))
+    document.getElementById('tabColors').addEventListener('click', () => setMode('colors'))
+    // Animation des previews de l'onglet COULEURS (bascule idle0/idle1).
+    // unref : ne bloque pas la sortie des simulations Node.
+    const colorsAnim = setInterval(() => {
+      colorsAlt = !colorsAlt
+      if (mode === 'colors') repaintTierPreviews()
+    }, 450)
+    if (colorsAnim && typeof colorsAnim.unref === 'function') colorsAnim.unref()
     document.getElementById('btnNew').addEventListener('click', newPattern)
     document.getElementById('btnDefaults').addEventListener('click', installDefaults)
     document.getElementById('btnExport').addEventListener('click', exportJson)
@@ -1985,7 +2119,7 @@ const Ed = (() => {
   function lanRemote(reason) {
     patterns = Patterns.getPatterns()
     if (selId && !patterns.find(p => p.id === selId)) selId = patterns.length ? patterns[0].id : null
-    if (mode === 'phys' || mode === 'power') {
+    if (mode === 'phys' || mode === 'power' || mode === 'colors') {
       if (reason !== 'start') flash('Sync LAN : pool mis à jour depuis un autre appareil')
       return
     }

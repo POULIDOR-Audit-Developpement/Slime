@@ -2,8 +2,10 @@
 // puis charge le vrai js/patterns.js dans un sandbox avec fetch branché sur
 // ce serveur : adoption, poussée à save(), notification onChange, polling.
 // Usage : node tools/lan_sync_test.mjs
-import { readFileSync } from 'fs'
+import { readFileSync, mkdtempSync, rmSync } from 'fs'
 import { spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import vm from 'node:vm'
 import assert from 'node:assert'
 
@@ -14,7 +16,15 @@ const BASE = 'http://127.0.0.1:' + PORT
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // ---- 1) serveur ----
-const srv = spawn(process.execPath, ['server.mjs', '--port', String(PORT)], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+// Data dir isolé : le test ne doit JAMAIS écrire dans <ROOT>/data/pool.json.
+const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'slime-lan-test-'))
+const REAL_POOL = path.join(ROOT, 'data', 'pool.json')
+const realPoolBefore = readFileSync(REAL_POOL, 'utf8')
+const srv = spawn(process.execPath, ['server.mjs', '--port', String(PORT)], {
+  cwd: ROOT,
+  env: { ...process.env, SLIME_DATA_DIR: DATA_DIR },
+  stdio: ['ignore', 'pipe', 'pipe']
+})
 srv.stderr.on('data', d => process.stderr.write('[serveur] ' + d))
 let up = false
 for (let i = 0; i < 50 && !up; i++) {
@@ -118,6 +128,17 @@ try {
   assert.ok(events.includes('remote'), 'onChange(remote) notifié')
   assert.deepStrictEqual(P.getPatterns().map(p => p.id), ['t1'], 'pool distant re-adopté')
 
+  // garde anti-perte : un état distant VIDE (serveur neuf/réinitialisé)
+  // n'efface JAMAIS un pool local non vide
+  const emptyState = JSON.parse(JSON.stringify(st2.state))
+  emptyState.patterns = []
+  await fetch(BASE + '/api/state', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: emptyState })
+  })
+  await lanPoll()
+  assert.deepStrictEqual(P.getPatterns().map(p => p.id), ['t1'], 'pool distant vide : pool local intact')
+
   // écho de notre propre poussée : PAS de re-pull (pas de boucle)
   P.setPatternsRaw([store.patterns[0], p2])
   const revMine = (await (await fetch(BASE + '/api/rev')).json()).rev
@@ -128,5 +149,8 @@ try {
   console.log('TOUS LES TESTS PASSENT')
 } finally {
   srv.kill('SIGKILL')
+  // Garde anti-pollution : le vrai pool LAN ne doit pas avoir bougé.
+  assert.strictEqual(readFileSync(REAL_POOL, 'utf8'), realPoolBefore, 'data/pool.json intact')
+  rmSync(DATA_DIR, { recursive: true, force: true })
 }
 process.exit(0)

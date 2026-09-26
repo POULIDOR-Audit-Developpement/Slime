@@ -1,10 +1,11 @@
 // Test DOM Node : exécute editor.js avec un mini-DOM et vérifie l'onglet PHYS
-// (vue pleine page, sliders rendus, application au layout/Phys, reset) et le
-// redimensionnement du panneau propriétés (poignée + persistance).
+// (vue pleine page, sliders rendus, application au layout/Phys, reset), le
+// redimensionnement du panneau propriétés (poignée + persistance) et l'onglet
+// COULEURS (création/suppression de paliers, application au stockage).
 // Usage : node tools/editor_dom_test.mjs
 import { readFileSync } from 'fs'
 const root = new URL('../', import.meta.url).pathname
-const src = ['js/physics.js','js/sprites.js','js/patterns-defaults.js','js/patterns.js','js/editor.js']
+const src = ['js/physics.js','js/slime-colors.js','js/sprites.js','js/patterns-defaults.js','js/patterns.js','js/editor.js']
   .map(f => readFileSync(root + f, 'utf8')).join('\n')
 
 // --- mini DOM ---
@@ -288,10 +289,53 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('re-rendu PHYS avec valeur courante', els.props.innerHTML.includes('value="777"'))
   check('localStorage persiste layout.phys', (localStorage.getItem('slime_patterns_v1') || '').includes('"phys"'))
   check('note de stockage (origine) dans le footer', els.storeInfo.textContent.includes('stockage :'))
+
+  // --- onglet COULEURS : création/suppression de paliers + application ---
+  // Régression : « + Ajouter » mutait le brouillon PUIS relançait un rendu
+  // qui relisait le stockage -> la mutation était perdue (palier jamais créé).
+  Ed.setMode('colors')
+  check('classe colors sur <main>', main.classList.contains('colors'))
+  const ch = els.props.innerHTML
+  check('vue pleine page COULEURS : titre + boutons', ch.includes('Couleurs du slime') && ch.includes('btnAddTier') && ch.includes('btnApplyColors') && ch.includes('btnResetColors'))
+  check('6 paliers par défaut rendus', (ch.match(/tierRow/g) || []).length === 6)
+  check('palier 0 verrouillé (inputs disabled)', ch.includes('id="tc_hex_0"') && /id="tc_min_0"[^>]*disabled/.test(ch))
+  check('les autres paliers sont éditables', !/id="tc_min_1"[^>]*disabled/.test(ch))
+  // AJOUT : le 7e palier doit apparaître immédiatement
+  els.btnAddTier.handlers.click()
+  const ch1 = els.props.innerHTML
+  check('+ Ajouter : 7e palier rendu', (ch1.match(/tierRow/g) || []).length === 7)
+  check('+ Ajouter : input du 7e palier présent', ch1.includes('id="tc_min_6"') && ch1.includes('id="tc_del_6"'))
+  // édition du seuil : brouillon dirty, stockage intact
+  els['tc_min_6'].value = '1000'
+  els['tc_min_6'].handlers.input()
+  check('seuil édité -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
+  check('seuil édité -> stockage inchangé', localStorage.getItem('slime_tiers') === null)
+  // APPLIQUER -> 7 paliers persistés
+  els.btnApplyColors.handlers.click()
+  const saved7 = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
+  check('appliquer -> 7 paliers en stockage', saved7.length === 7)
+  check('appliquer -> seuil 1000 persisté', saved7.some(t => t.min === 1000))
+  check('appliquer -> bouton plus dirty', !els.btnApplyColors.classList.contains('dirty'))
+  check('appliquer -> message succès', els.status.textContent === 'Couleurs appliquées au jeu')
+  // re-rendu depuis le stockage : les 7 paliers sont bien là
+  Ed.setMode('colors')
+  check('re-rendu : 7 paliers depuis le stockage', (els.props.innerHTML.match(/tierRow/g) || []).length === 7)
+  // SUPPRESSION du 7e palier puis application
+  els['tc_del_6'].handlers.click()
+  check('suppression : 6 paliers rendus', (els.props.innerHTML.match(/tierRow/g) || []).length === 6)
+  els.btnApplyColors.handlers.click()
+  check('suppression appliquée : 6 paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === 6)
+  // RESET -> défauts, clé retirée du stockage
+  els.btnResetColors.handlers.click()
+  check('reset : clé slime_tiers retirée', localStorage.getItem('slime_tiers') === null)
+  check('reset : 6 paliers par défaut', (els.props.innerHTML.match(/tierRow/g) || []).length === 6)
+  check('reset : message', els.status.textContent === 'Couleurs réinitialisées')
+  Ed.setMode('patterns')
+  check('retour patterns : classe colors retirée', !main.classList.contains('colors'))
 })()
 `)
 const store = {}
 fn(documentStub, windowStub, { getItem: k => ls[k] ?? null, setItem: (k, v) => { ls[k] = String(v) }, removeItem: k => { delete ls[k] } }, () => false, class { set src(v) {} }, () => 0, els, check, windowStub)
 
 if (failed) { console.error(failed + ' ÉCHEC(S)'); process.exit(1) }
-console.log('\nDOM OK — panneau PHYS pleine page fonctionnel')
+console.log('\nDOM OK — panneaux PHYS et COULEURS fonctionnels')

@@ -1,6 +1,8 @@
 // SLIME — serveur LAN : fichiers statiques + API de synchronisation du pool.
 // Zéro dépendance : node server.mjs [--port 8471]
 //
+// SLIME_DATA_DIR=<chemin> : place data/pool.json ailleurs (tests, multi-instances).
+//
 // API :
 //   GET  /api/rev    -> { rev }
 //   GET  /api/state  -> { rev, state }           (state = { format, patterns, layout } | null)
@@ -14,7 +16,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(ROOT, 'data')
+const DATA_DIR = process.env.SLIME_DATA_DIR
+  ? path.resolve(process.env.SLIME_DATA_DIR)
+  : path.join(ROOT, 'data')
 const POOL_FILE = path.join(DATA_DIR, 'pool.json')
 const FORMAT = 'slime-patterns@1'
 
