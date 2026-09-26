@@ -74,6 +74,9 @@ const Patterns = (() => {
     v.showTrajectory = v.showTrajectory !== false
     v.shake = v.shake !== false
     out.view = v
+    // Vérification des sauts au spawn : optionnelle et non infaillible (le
+    // simulateur peut rejeter à tort) — l'admin décide. Activée par défaut.
+    out.checkJumps = out.checkJumps !== false
     if (!Array.isArray(out.decor)) out.decor = []
     return out
   }
@@ -345,6 +348,9 @@ const Patterns = (() => {
     const ws = weights(pool, elapsed)
     const total = ws.reduce((a, b) => a + b, 0)
     if (total <= 0) return safety(last)
+    // Filtre optionnel (layout.checkJumps, décidé par l'admin dans l'éditeur) :
+    // coupé, le premier pattern tiré est joué tel quel.
+    const strict = !layout || layout.checkJumps !== false
     for (let attempt = 0; attempt < 12; attempt++) {
       let r = Math.random() * total, pick = null
       for (let i = 0; i < pool.length; i++) {
@@ -353,7 +359,7 @@ const Patterns = (() => {
       }
       if (!pick) pick = pool[pool.length - 1]
       const inst = instantiate(pick, last)
-      if (validateInstance(last, inst)) {
+      if (strict || validateInstance(last, inst)) {
         lastId = pick.id
         return inst
       }

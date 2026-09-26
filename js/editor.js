@@ -878,6 +878,9 @@ const Ed = (() => {
     <div class="chk"><input type="checkbox" id="vTraj" ${v.showTrajectory ? 'checked' : ''}/> afficher la trajectoire de saut</div>
     <div class="chk"><input type="checkbox" id="vShake" ${v.shake ? 'checked' : ''}/> secousse d'écran (dégâts, mort)</div>
     <div class="note">Zoom global de la vue en jeu, centré sur le slime (fixe pendant la partie). ×1 = cadrage complet 480×270. Utile pour bien voir un slime réduit (onglet PHYS, taille 9). L'aperçu au centre de la vue montre la fenêtre visible.</div>
+    <h3>Vérification des sauts</h3>
+    <div class="chk"><input type="checkbox" id="vChkJumps" ${L.checkJumps !== false ? 'checked' : ''}/> écarter les sections injoignables au spawn</div>
+    <div class="note">Optionnelle et non infaillible : le simulateur peut se tromper dans les deux sens. Coché, un pattern jugé injoignable depuis la plateforme précédente est retiré du tirage (repli : plateforme de sécurité). Décoché, tout le pool est joué tel quel. Les badges ✓/✗ de l'onglet PATTERNS restent un simple indicateur.</div>
     <h3>Plateformes (global)</h3>
     <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="8" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
     <div class="row"><label>Dyn. vie</label><input type="range" id="pDynLife" min="10" max="70" step="5" value="${Math.round(L.plat.dynLife * 10)}"/><span class="val" id="pDynLifeV">${L.plat.dynLife.toFixed(1)} s</span></div>
@@ -924,6 +927,11 @@ const Ed = (() => {
       persistSilent()
     }
     on('vZoom', 'input', viewUpd); on('vTraj', 'change', viewUpd); on('vShake', 'change', viewUpd)
+    on('vChkJumps', 'change', e => {
+      L.checkJumps = e.target.checked
+      Patterns.setLayout(L)
+      persistSilent()
+    })
     const platUpd = () => {
       L.plat.crumbleT = parseInt(document.getElementById('pCrumb').value, 10) / 10
       L.plat.dynLife = parseInt(document.getElementById('pDynLife').value, 10) / 10

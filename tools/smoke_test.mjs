@@ -189,6 +189,23 @@ const murBloque = {
 }
 check('mur-bloquant : détecté impossible', Patterns.validatePatternJumps(murBloque).ok === false)
 
+// 8b'. Vérification des sauts OPTIONNELLE : l'admin décide (layout.checkJumps).
+// Le simulateur n'est pas infaillible — coupé, un pattern "impossible" est
+// joué tel quel ; actif (défaut), il est remplacé par la plateforme de repli.
+const anchorKo = { x: -128, row: 2, y: rowY(2), baseY: rowY(2), w: 128, type: 'basic', amp: 0, spd: 0, ph: 0 }
+Patterns.pin(murBloque)
+Patterns.setLayout({ checkJumps: true })
+check('vérif active (défaut) : repli sécurité', Patterns.spawnSection(anchorKo, 0).platforms.some(p => p.safety))
+Patterns.setLayout({ checkJumps: false })
+const secKo = Patterns.spawnSection(anchorKo, 0)
+check('vérif coupée : pattern injoignable joué tel quel',
+  secKo.platforms.length === Patterns.instantiate(murBloque, anchorKo).platforms.length &&
+  !secKo.platforms.some(p => p.safety))
+check('vérif coupée : réglage persisté', JSON.parse(localStorage.getItem('slime_patterns_v1')).layout.checkJumps === false)
+Patterns.setLayout(null)
+check('vérif : défaut réactivé après reset', Patterns.getLayout().checkJumps === true)
+Patterns.pin(null)
+
 // 8c. stalactite bloquant un passage bas -> invalide
 const murCeil = {
   id: 't-mur-ceil', name: 'stalactite bloquante', difficulty: 4, entry: { row: 2 },
