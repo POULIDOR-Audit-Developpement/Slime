@@ -25,6 +25,8 @@ const I18N = (() => {
       atelier: 'ATELIER',
       // T7 — atelier.html : bouton retour
       back: 'RETOUR',
+      // T8 — atelier.html : livre hors ligne
+      offline: "L'atelier se remplit en ligne",
       // page de présentation
       tagline: 'La camera accelere sans pitie. Vise, saute, accroche-toi.',
       play: 'JOUER',
@@ -89,6 +91,8 @@ const I18N = (() => {
       atelier: 'ATELIER',
       // T7 — atelier.html : back button
       back: 'BACK',
+      // T8 — atelier.html : offline book message
+      offline: 'The workshop fills up online',
       tagline: 'The camera never slows down. Aim, jump, hang on.',
       play: 'PLAY',
       editor: 'EDITOR',
