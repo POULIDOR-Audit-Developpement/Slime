@@ -418,7 +418,7 @@ function driverFn() {
     Patterns.setLayout({ view: { zoom: 2 } })
     applyLayout()
     updateCam(); draw() // visée + trajectoire sous zoom
-    state = 'over'; deathT = 2; scoreCode = 'TEST'; draw() // écran PERDU
+    state = 'over'; deathT = 3; scoreCode = 'TEST'; draw() // écran PERDU (panneau + boutons fondus)
     state = 'playing'
     check('draw() sans exception dans tous les états (titre, visée+zoom, over)', true)
   } catch (e) {

@@ -762,7 +762,7 @@ function tap(px, py, touchId) {
   if (fsCanEnter() && !fsStandalone() && vx > VW - 34 && vy < 26) { toggleFullscreen(); return }
   if (state === 'title') startGame() // pas de return : ce même appui vise le 1er saut
   if (state === 'over') {
-    if (deathT < 0.7) return
+    if (deathT < OVER_DELAY + 0.7) return // boutons pas encore affichés
     if (hitBtn(vx, vy, BTN_COPY)) { copyCode(); return }
     if (hitBtn(vx, vy, BTN_REPLAY)) { startGame(); return }
     return
@@ -1623,6 +1623,10 @@ function drawPowerHud() {
   alpha(1)
 }
 
+// Écran game over : délai (s) avant l'assombrissement, pour laisser voir
+// l'animation du slime (splat -> gouttes -> bulles -> particules) en plein
+// cadre, puis fondu de OVER_FADE s de l'overlay + du panneau.
+const OVER_DELAY = 1.5, OVER_FADE = 0.4
 const BTN_COPY = { x: 62, y: 180, w: 156, h: 34 }
 const BTN_REPLAY = { x: 262, y: 180, w: 156, h: 34 }
 
@@ -1665,13 +1669,18 @@ function drawBtn(b, label, col, hot, accent) {
 }
 
 function drawOver() {
+  // Avant OVER_DELAY : rien par-dessus le monde, le splash reste visible.
+  const k = clamp((deathT - OVER_DELAY) / OVER_FADE, 0, 1)
+  if (k <= 0) return
   const c = ctx()
   c.save()
   c.setTransform(1, 0, 0, 1, 0, 0)
-  alpha(0.66)
+  alpha(0.66 * k)
   rectfill(0, 0, W, H, C_BLACK)
   alpha(1)
   c.restore()
+  // Tout le panneau fond avec k (les textes sans alpha() explicite héritent).
+  alpha(k)
   // Panneau central, style « présentation ».
   rectfill(VW / 2 - 3, 30, 406, 226, C_BLACK, 12)
   rectfill(VW / 2 - 200, 24, 400, 226, C_FRAME, 12)
@@ -1683,10 +1692,10 @@ function drawOver() {
   text(VW / 2, 46, I18N.t('over'), C_BLACK, '900')
   text(VW / 2, 42, I18N.t('over'), C_RED, '900')
   if (newRecord) {
-    alpha(0.55 + 0.45 * Math.sin(T * 6))
+    alpha(k * (0.55 + 0.45 * Math.sin(T * 6)))
     textsize(13)
     text(VW / 2, 80, I18N.t('record'), C_GOLD, 'bold')
-    alpha(1)
+    alpha(k)
   }
   textsize(9)
   text(VW / 2, 102, I18N.t('code'), C_GRAY)
@@ -1698,11 +1707,12 @@ function drawOver() {
   text(VW / 2, 148, I18N.t('codehint'), C_GRAY)
   textsize(9)
   text(VW / 2, 164, I18N.t('time') + ' ' + fmtTime(elapsed), C_WHITE)
-  if (deathT > 0.7) {
+  if (deathT > OVER_DELAY + 0.7) {
     const copied = copiedT > 0
-    alpha(clamp((deathT - 0.7) * 3, 0, 1))
+    const kb = clamp((deathT - OVER_DELAY - 0.7) * 3, 0, 1)
+    alpha(kb)
     drawBtn(BTN_COPY, copied ? I18N.t('copied') : I18N.t('copy'), copied ? C_SLIME_L : C_GOLD, copied)
-    alpha(clamp((deathT - 0.7) * 3, 0, 1) * (0.6 + 0.4 * Math.sin(T * 4)))
+    alpha(kb * (0.6 + 0.4 * Math.sin(T * 4)))
     drawBtn(BTN_REPLAY, I18N.t('replay'), C_BLACK, false, C_GREEN)
     alpha(1)
   }
