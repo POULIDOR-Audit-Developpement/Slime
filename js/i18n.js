@@ -21,6 +21,8 @@ const I18N = (() => {
       rotate: 'Paysage !',
       addhome: "Ajoute a l'ecran d'accueil",
       speed: 'VITESSE',
+      // T6 — bouton écran de fin -> atelier.html
+      atelier: 'ATELIER',
       // page de présentation
       tagline: 'La camera accelere sans pitie. Vise, saute, accroche-toi.',
       play: 'JOUER',
@@ -81,6 +83,8 @@ const I18N = (() => {
       rotate: 'Landscape!',
       addhome: 'Add to Home Screen',
       speed: 'SPEED',
+      // T6 — end-screen button -> atelier.html
+      atelier: 'ATELIER',
       tagline: 'The camera never slows down. Aim, jump, hang on.',
       play: 'PLAY',
       editor: 'EDITOR',
