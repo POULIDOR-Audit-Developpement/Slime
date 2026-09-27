@@ -23,6 +23,8 @@ const I18N = (() => {
       speed: 'VITESSE',
       // T6 — bouton écran de fin -> atelier.html
       atelier: 'ATELIER',
+      // T7 — atelier.html : bouton retour
+      back: 'RETOUR',
       // page de présentation
       tagline: 'La camera accelere sans pitie. Vise, saute, accroche-toi.',
       play: 'JOUER',
@@ -85,6 +87,8 @@ const I18N = (() => {
       speed: 'SPEED',
       // T6 — end-screen button -> atelier.html
       atelier: 'ATELIER',
+      // T7 — atelier.html : back button
+      back: 'BACK',
       tagline: 'The camera never slows down. Aim, jump, hang on.',
       play: 'PLAY',
       editor: 'EDITOR',
