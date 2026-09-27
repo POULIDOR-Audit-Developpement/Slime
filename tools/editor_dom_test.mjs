@@ -34,7 +34,8 @@ const documentStub = {
   getElementById: id => els[id] || (els[id] = makeEl(id)),
   querySelector: sel => sel === 'main' ? mainEl : makeEl(sel),
   createElement: tag => makeEl(tag),
-  documentElement: {}
+  documentElement: {},
+  getComputedStyle: () => ({ fontSize: '13px' })
 }
 const ls = {}
 const winHandlers = {}
@@ -120,23 +121,24 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   Ed.setMode('patterns')
   check('retour patterns : classe power retirée', !main.classList.contains('power'))
 
-  // --- redimensionnement du panneau propriétés (poignée) ---
+  // --- redimensionnement du panneau propriétés (poignée, largeur en rem) ---
+  // Stub : 1rem = 13px -> la largeur de départ (272px) vaut 272/13 ≈ 20.92rem.
   check('panneau : largeur par défaut 272px, pas de style inline', els.props.getBoundingClientRect().width === 272 && !els.props.style.width)
   els.propsResize.handlers.pointerdown({ clientX: 700, preventDefault() {} })
   check('poignée active pendant le glisser', els.propsResize.classList.contains('on'))
   win.fire('pointermove', { clientX: 600 })
-  check('glisser à gauche élargit -> 372px', els.props.style.width === '372px')
+  check('glisser à gauche élargit -> 28.62rem (≈372px)', els.props.style.width === '28.62rem')
   win.fire('pointermove', { clientX: 60 })
-  check('borne max 560px', els.props.style.width === '560px')
+  check('borne max 43.08rem (≈560px)', els.props.style.width === '43.08rem')
   win.fire('pointermove', { clientX: 1200 })
-  check('borne min 200px', els.props.style.width === '200px')
+  check('borne min 15.38rem (≈200px)', els.props.style.width === '15.38rem')
   win.fire('pointerup', {})
   check('poignée relâchée', !els.propsResize.classList.contains('on'))
-  check('largeur persistée en localStorage', localStorage.getItem('slime_props_w') === '200')
+  check('largeur persistée en localStorage (rem)', localStorage.getItem('slime_props_w_rem') === '15.38')
   Ed.setMode('phys')
   check('mode PHYS : largeur inline effacée (pleine page)', els.props.style.width === '')
   Ed.setMode('patterns')
-  check('retour patterns : largeur restaurée depuis le save', els.props.style.width === '200px')
+  check('retour patterns : largeur restaurée depuis le save', els.props.style.width === '15.38rem')
 
   // --- zoom patterns : mini 10 % (paliers 10 % sous 50 %, 25 % au-dessus) ---
   check('zoom initial affiché 100 %', els.tZoomV.textContent === '100%' || els.tZoomV.textContent === '')

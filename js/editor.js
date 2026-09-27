@@ -717,27 +717,27 @@ const Ed = (() => {
         <select id="pEntry">${[0, 1, 2, 3, 4].map(r => `<option value="${r}" ${Patterns.entryRow(pat) === r ? 'selected' : ''}>ligne ${r}</option>`).join('')}</select>
       </div>
       <div class="row">${valBadge}
-      <span style="color:var(--dim);font-size:11px">${pat.platforms.length} plat. · ${(pat.walls || []).length} mur(s) · ${pat.balls.length} billes · ${Patterns.patternWidth(pat)}px</span></div>
+      <span style="color:var(--dim);font-size:.85rem">${pat.platforms.length} plat. · ${(pat.walls || []).length} mur(s) · ${pat.balls.length} billes · largeur ${Patterns.patternWidth(pat)}</span></div>
       <h3>Objet sélectionné</h3>`
     if (selMulti.length > 1) {
-      html += `<div class="note" style="margin:0 0 6px;padding:4px 6px;background:var(--panel2);border:1px solid var(--line)"><b style="color:var(--gold)">${selMulti.length} objets sélectionnés</b> — propriétés du dernier cliqué. Suppr / flèches / Ctrl+C s'appliquent à tous.</div>`
+      html += `<div class="note" style="margin:0 0 .46rem;padding:.31rem .46rem;background:var(--panel2);border:1px solid var(--line)"><b style="color:var(--gold)">${selMulti.length} objets sélectionnés</b> — propriétés du dernier cliqué. Suppr / flèches / Ctrl+C s'appliquent à tous.</div>`
     }
     if (selKind === 'wall' && pat.walls && pat.walls[selIdx]) {
       const wl = pat.walls[selIdx]
       html += `<div class="row"><label>Type</label>
         <select id="oWKind"><option value="ground" ${wl.kind === 'ground' ? 'selected' : ''}>Colonne (sol → pointe)</option><option value="ceil" ${wl.kind === 'ceil' ? 'selected' : ''}>Stalactite (plafond → pointe)</option></select></div>
-        <div class="row"><label>Largeur</label><input type="number" id="oWCells" min="1" max="3" value="${wl.cells}"/><span class="val">${wl.cells * CELL}px</span></div>
+        <div class="row"><label>Largeur</label><input type="number" id="oWCells" min="1" max="3" value="${wl.cells}"/><span class="val">${wl.cells * CELL}</span></div>
         <div class="row"><label>Pointe r</label><select id="oWRow">${[0, 1, 2, 3, 4].map(r => `<option value="${r}" ${wl.row === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
-        <div class="row"><label>X</label><input type="number" id="oWX" step="${CELL}" value="${wl.x}"/><span class="val">px</span></div>
+        <div class="row"><label>X</label><input type="number" id="oWX" step="${CELL}" value="${wl.x}"/></div>
         <div class="chk"><input type="checkbox" id="oWSpiked" ${wl.spiked ? 'checked' : ''}/> flancs piqués (mortels)</div>
         <div class="note">Sommet ${wl.kind === 'ground' ? 'aterrissable' : 'bloquant'} — les sauts qui traversent le corps du mur sont marqués ✗.</div>`
     } else if (selKind === 'plat' && pat.platforms[selIdx]) {
       const p = pat.platforms[selIdx]
       html += `<div class="row"><label>Type</label>
         <select id="oType">${Patterns.TYPES.map(t => `<option value="${t}" ${p.type === t ? 'selected' : ''}>${TYPE_LABEL[t]}</option>`).join('')}</select></div>
-        <div class="row"><label>Largeur</label><input type="number" id="oCells" min="1" max="12" value="${p.cells}"/><span class="val">${p.cells * CELL}px</span></div>
+        <div class="row"><label>Largeur</label><input type="number" id="oCells" min="1" max="12" value="${p.cells}"/><span class="val">${p.cells * CELL}</span></div>
         <div class="row"><label>Ligne</label><select id="oRow">${[0, 1, 2, 3, 4].map(r => `<option value="${r}" ${p.row === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
-        <div class="row"><label>X</label><input type="number" id="oX" step="${CELL}" value="${p.x}"/><span class="val">px</span></div>`
+        <div class="row"><label>X</label><input type="number" id="oX" step="${CELL}" value="${p.x}"/></div>`
       if (p.type === 'dynamic') {
         html += `<div class="row"><label>Ampleur</label><input type="range" id="oAmp" min="0" max="40" value="${p.amp || 0}"/><span class="val" id="oAmpV">${p.amp || 0}</span></div>
         <div class="row"><label>Vitesse</label><input type="range" id="oSpd" min="5" max="30" value="${Math.round((p.spd || 1.5) * 10)}"/><span class="val" id="oSpdV">${(p.spd || 1.5).toFixed(1)}</span></div>
@@ -968,14 +968,14 @@ const Ed = (() => {
   // est le milieu exact du slider.
   const PHYS_SLIDERS = [
     ['Slime', [
-      ['slimeR', 'Taille', 9, 19, 1, v => Math.round(v) + ' px']
+      ['slimeR', 'Taille', 9, 19, 1, v => Math.round(v)]
     ]],
     ['Saut & visée', [
       ['grav', 'Gravité', 270, 970, 10, v => Math.round(v)],
       ['vmin', 'Saut min', 60, 360, 5, v => Math.round(v)],
       ['vmax', 'Saut max', 160, 560, 5, v => Math.round(v)],
-      ['aimMin', 'Portée min', 0, 48, 1, v => Math.round(v) + ' px'],
-      ['aimMax', 'Portée max', 50, 230, 5, v => Math.round(v) + ' px'],
+      ['aimMin', 'Portée min', 0, 48, 1, v => Math.round(v)],
+      ['aimMax', 'Portée max', 50, 230, 5, v => Math.round(v)],
       ['fallMax', 'Chute max', 220, 820, 10, v => Math.round(v)],
       ['dragAir', 'Traînée air', 0.2, 1, 0.05, v => (+v).toFixed(2)]
     ]],
@@ -1015,7 +1015,7 @@ const Ed = (() => {
     let html = `<div class="physHead">
       <div>
         <h3>Physique du jeu</h3>
-        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Réglages sauvegardés sur l'appareil et partagés en LAN — jamais inclus dans l'export des patterns (patterns seuls).</div>
+        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Les distances (Taille, Portées) sont en unités du monde virtuel 480×270 — indépendantes de la résolution de l'écran. Réglages sauvegardés sur l'appareil et partagés en LAN — jamais inclus dans l'export des patterns (patterns seuls).</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="physDirtyNote" style="display:none">● modifications non appliquées</span>
@@ -1082,7 +1082,7 @@ const Ed = (() => {
     ['ledge', 'Ledge catch (remontée)', [
       ['enabled', 'Activé'],
       ['pullT', 'Durée de la remontée', 0.3, 0.9, 0.1, v => (+v).toFixed(1) + ' s'],
-      ['window', 'Fenêtre', 4, 12, 1, v => Math.round(v) + ' px']
+      ['window', 'Fenêtre', 4, 12, 1, v => Math.round(v)]
     ]]
   ]
   const powerDef = (grp, key) => {
@@ -1099,7 +1099,7 @@ const Ed = (() => {
     let html = `<div class="physHead">
       <div>
         <h3>Pouvoirs du slime</h3>
-        <div class="note"><b>Double saut</b> : en l'air, appui = visée en temps ralenti (si slow-mo activé), relâcher = double saut à pleine vitesse dans la direction et la puissance visées. Recharge : délai avant de pouvoir réutiliser. Charges : sauts aériens par atterrissage. <b>Slow-mo</b> : échelle du temps (×0.35 = 3× plus lent) et durée maximale du ralenti pendant la visée. <b>Ledge catch</b> : un bord manqué de justesse (dans la fenêtre réglable) est agrippé in-extremis — le slime se hisse immédiatement sur la plateforme (durée de la remontée réglable), un appui pendant qu'il se tire vers le haut permet de viser un saut. Inclus dans l'export (.json / code compact).</div>
+        <div class="note"><b>Double saut</b> : en l'air, appui = visée en temps ralenti (si slow-mo activé), relâcher = double saut à pleine vitesse dans la direction et la puissance visées. Recharge : délai avant de pouvoir réutiliser. Charges : sauts aériens par atterrissage. <b>Slow-mo</b> : échelle du temps (×0.35 = 3× plus lent) et durée maximale du ralenti pendant la visée. <b>Ledge catch</b> : un bord manqué de justesse (dans la fenêtre réglable) est agrippé in-extremis — le slime se hisse immédiatement sur la plateforme (durée de la remontée réglable), un appui pendant qu'il se tire vers le haut permet de viser un saut. La fenêtre Ledge est en unités du monde virtuel 480×270 — indépendante de la résolution de l'écran. Inclus dans l'export (.json / code compact).</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="powDirtyNote" style="display:none">● modifications non appliquées</span>
@@ -1311,7 +1311,7 @@ const Ed = (() => {
           : '✓'
       return `<div class="item ${p.id === selId ? 'sel' : ''}" data-i="${i}">
         <div class="tier" style="background:${TIER_COLORS[t - 1]}">${t}</div>
-        <div class="nm"><b>${esc(p.name || 'Sans nom')}</b><span>${p.platforms.length} plat · ${Patterns.patternWidth(p)}px ${bad || pwr ? '· ' + state : ' · ✓'}</span></div>
+        <div class="nm"><b>${esc(p.name || 'Sans nom')}</b><span>${p.platforms.length} plat · largeur ${Patterns.patternWidth(p)} ${bad || pwr ? '· ' + state : ' · ✓'}</span></div>
         <div class="mini"><button data-act="dup" data-i="${i}" title="Dupliquer">⧉</button><button data-act="del" data-i="${i}" class="danger" title="Supprimer">✕</button></div>
       </div>`
     }).join('')
@@ -1569,21 +1569,21 @@ const Ed = (() => {
       <div class="grp">${tools.map(t => `<button class="tool" data-tool="${t[0]}" title="${t[2]}">${t[1]}</button>`).join('')}</div>
       <div class="grp" id="grpType">
         <select id="tType">${Patterns.TYPES.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('')}</select>
-        <button id="tCellsM" title="Moins large">−</button><span id="tCellsV" style="min-width:46px;text-align:center;font-size:12px">3 cases</span><button id="tCellsP" title="Plus large">+</button>
+        <button id="tCellsM" title="Moins large">−</button><span id="tCellsV" style="min-width:3.54rem;text-align:center;font-size:.92rem">3 cases</span><button id="tCellsP" title="Plus large">+</button>
       </div>
       <div class="grp" id="grpWall">
         <select id="tWallKind"><option value="ground">Colonne (sol)</option><option value="ceil">Stalactite (plafond)</option></select>
-        <button id="tWallM" title="Moins large">−</button><span id="tWallV" style="min-width:36px;text-align:center;font-size:12px">1 case</span><button id="tWallP" title="Plus large">+</button>
+        <button id="tWallM" title="Moins large">−</button><span id="tWallV" style="min-width:2.77rem;text-align:center;font-size:.92rem">1 case</span><button id="tWallP" title="Plus large">+</button>
       </div>
       <div class="grp" id="grpDecor">
         <select id="tSprite">${DECOR_SPRITES.map(k => `<option value="${k}">${k}</option>`).join('')}</select>
       </div>
       <div class="grp">
-        <button id="tZoomM">−</button><span id="tZoomV" style="min-width:44px;text-align:center;font-size:12px">100%</span><button id="tZoomP">+</button>
+        <button id="tZoomM">−</button><span id="tZoomV" style="min-width:3.38rem;text-align:center;font-size:.92rem">100%</span><button id="tZoomP">+</button>
         <button id="tFit" title="Recentrer sur le début">Recadrer</button>
       </div>
       <div class="grp" style="border:none">
-        <span style="color:var(--dim);font-size:11px" id="tbHint"></span>
+        <span style="color:var(--dim);font-size:.85rem" id="tbHint"></span>
       </div>`
     toolbarEl.querySelectorAll('[data-tool]').forEach(b => {
       b.addEventListener('click', () => setTool(b.dataset.tool))
@@ -1691,13 +1691,18 @@ const Ed = (() => {
   }
 
   // ---------- largeur du panneau propriétés (poignée + persistance) ----------
-  const PROPS_W = { min: 200, max: 560, key: 'slime_props_w' }
+  // Largeur mémorisée et appliquée en rem : elle suit l'échelle de l'UI et
+  // reste proportionnée sur un écran de plus faible résolution.
+  const PROPS_W = { min: 15.38, max: 43.08, key: 'slime_props_w_rem' } // bornes en rem
+  const remPx = () => {
+    try { return parseFloat(getComputedStyle(document.documentElement).fontSize) || 13 } catch (e) { return 13 }
+  }
   function applyPropsW(clear) {
     if (!propsEl) return
     if (clear) { propsEl.style.width = ''; return }
     try {
-      const w = parseInt(localStorage.getItem(PROPS_W.key) || '0', 10)
-      propsEl.style.width = w >= PROPS_W.min && w <= PROPS_W.max ? w + 'px' : ''
+      const w = parseFloat(localStorage.getItem(PROPS_W.key) || '0')
+      propsEl.style.width = w >= PROPS_W.min && w <= PROPS_W.max ? w + 'rem' : ''
     } catch (e) {}
   }
 
@@ -1707,17 +1712,18 @@ const Ed = (() => {
     handle.addEventListener('pointerdown', e => {
       e.preventDefault()
       const startX = e.clientX
-      const startW = propsEl.getBoundingClientRect().width
+      const rem = remPx()
+      const startW = propsEl.getBoundingClientRect().width / rem
       handle.classList.add('on')
       const move = ev => {
-        const w = Math.round(Math.max(PROPS_W.min, Math.min(PROPS_W.max, startW + startX - ev.clientX)))
-        propsEl.style.width = w + 'px'
+        const w = Math.round(Math.max(PROPS_W.min, Math.min(PROPS_W.max, startW + (startX - ev.clientX) / rem)) * 100) / 100
+        propsEl.style.width = w + 'rem'
       }
       const up = () => {
         handle.classList.remove('on')
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', up)
-        try { localStorage.setItem(PROPS_W.key, String(parseInt(propsEl.style.width, 10) || 0)) } catch (e2) {}
+        try { localStorage.setItem(PROPS_W.key, String(parseFloat(propsEl.style.width) || 0)) } catch (e2) {}
       }
       window.addEventListener('pointermove', move)
       window.addEventListener('pointerup', up)
