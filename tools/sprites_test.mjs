@@ -76,6 +76,26 @@ Sprites.setTiers(SlimeColors.load())
 check('setTiers : anciennes variantes purgées', !Sprites.get('idle0_t5') && !Sprites.get('idle0_t2'))
 check('setTiers : nouvelle variante générée et dessinée', !!Sprites.get('idle0_t1') && Sprites.draw('idle0_t1', 0, 0, 10) === true)
 
+// tickAnimated : régénération LIMITÉE aux variantes animées réellement
+// dessinées (régression perf mobile : l'ancien code refaisait les 15 sprites
+// de base à ~10 Hz -> 15-45 ms de pixels par tick = saccades).
+SlimeColors.save([{ min: 0, hex: '#3ecb3e' }, { min: 10, type: 'rainbow', speed: 0.3 }])
+Sprites.setTiers(SlimeColors.load())
+let rc = 0
+const origRecolor = SlimeColors.recolor
+SlimeColors.recolor = function (...a) { rc++; return origRecolor.apply(this, a) }
+Sprites.tickAnimated(1.0)
+check('tick sans variante dessinée : 0 recolor', rc === 0)
+Sprites.draw('idle0_t1', 0, 0, 10) // la variante animée est affichée en jeu
+rc = 0
+Sprites.tickAnimated(1.2)
+check('tick : seule la variante dessinée est refaite (1 recolor, pas 15)', rc === 1)
+rc = 0
+Sprites.tickAnimated(1.4)
+check('tick sans nouveau dessin : 0 recolor', rc === 0)
+check('la variante animée reste dessinable', Sprites.draw('idle0_t1', 0, 0, 10) === true)
+SlimeColors.recolor = origRecolor
+
 // ---------- effets spéciaux : pixel-fns ----------
 const EF = SlimeColors.EFFECTS
 check('isAnimated : rainbow/oui, flat/non', SlimeColors.isAnimated({ type: 'rainbow', speed: 0.2 }) && !SlimeColors.isAnimated({ type: 'flat', hex: '#3ecb3e' }))
@@ -153,11 +173,13 @@ SlimeColors.save([
 Sprites.setTiers(SlimeColors.load())
 const beforeTick = Sprites.get('idle0_t1')
 check('tickAnimated : variante animée présente', !!beforeTick)
+Sprites.draw('idle0_t1', 0, 0, 10) // affichée -> éligible au rafraîchissement
 Sprites.tickAnimated(1.0)
 const afterTick = Sprites.get('idle0_t1')
 check('tickAnimated : canvas régénéré (référence neuve)', !!afterTick && afterTick !== beforeTick)
 Sprites.tickAnimated(1.05)
 check('tickAnimated : throttle < 100 ms', Sprites.get('idle0_t1') === afterTick)
+Sprites.draw('idle0_t1', 0, 0, 10)
 Sprites.tickAnimated(1.5)
 check('tickAnimated : nouveau tick après 100 ms', Sprites.get('idle0_t1') !== afterTick)
 

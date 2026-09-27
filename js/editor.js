@@ -991,7 +991,7 @@ const Ed = (() => {
     ['Caméra', [
       ['camBase', 'Vitesse base', 20, 140, 5, v => Math.round(v)],
       ['camMax', 'Vitesse max', 80, 400, 5, v => Math.round(v)],
-      ['camRampT', 'Palier', 0, 20, 1, v => Math.round(v) + ' s']
+      ['camRampDur', "Temps jusqu'au max", 60, 1020, 30, v => (v % 60 ? (v / 60).toFixed(1) : v / 60) + ' min']
     ]],
     ['Game feel', [
       ['coyote', 'Coyote', 0, 0.16, 0.01, v => (+v).toFixed(2) + ' s']
@@ -1015,7 +1015,7 @@ const Ed = (() => {
     let html = `<div class="physHead">
       <div>
         <h3>Physique du jeu</h3>
-        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Les distances (Taille, Portées) sont en unités du monde virtuel 480×270 — indépendantes de la résolution de l'écran. Réglages sauvegardés sur l'appareil et partagés en LAN — jamais inclus dans l'export des patterns (patterns seuls).</div>
+        <div class="note">La validation ✓/✗ des sauts et le playtest utilisent les valeurs <b>appliquées</b>. Saut : la puissance suit la distance du clic au slime entre Portée min (saut faible) et Portée max (saut maximal). Coyote : sauter juste après avoir quitté une plateforme. Caméra : la vitesse part de « Vitesse base » et monte par paliers automatiques (toutes les 10 s) jusqu'à « Vitesse max », atteint après « Temps jusqu'au max » (défaut 9 min = 3 musiques de 3 min). Les distances (Taille, Portées) sont en unités du monde virtuel 480×270 — indépendantes de la résolution de l'écran. Réglages sauvegardés sur l'appareil et partagés en LAN — jamais inclus dans l'export des patterns (patterns seuls).</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="physDirtyNote" style="display:none">● modifications non appliquées</span>

@@ -5,6 +5,10 @@ litecanvas({
 let VSC = 1, VOX = 0, VOY = 0
 let framePattern = null
 let voidPattern = null
+// Diagnostic perf (?fps ?sim=N ?prof) : compteurs incrémentés dans update()/draw().
+let diagFps = false, diagSimTxt = '', diagUps = 0, diagDrs = 0, diagT0 = 0, diagShown = ''
+let diagProf = false, diagUpMs = 0, diagDnMs = 0, diagGapMs = 0, diagGapMax = 0, diagLastDraw = 0
+let diagSecAn = 0, diagSecOf = 0, diagSecBg = 0, diagSecSc = 0, diagSecRe = 0
 
 function calcView() {
   VSC = Math.min(W / VW, H / VH)
@@ -233,6 +237,9 @@ let aim = { on: false, x: 0, y: 0, id: -1, air: false }
 // couvrir la cible) et le réticule suit son déplacement (delta × AIM_SENS).
 // `aimPad` = position écran du doigt pendant la visée (null = souris, absolu).
 const AIM_SENS = 1.1
+// Caméra : intervalle fixe entre paliers (s). La taille du pas se déduit de
+// camRampDur (PHYS : durée pour atteindre camMax) — voir update().
+const CAM_PALIER_S = 10
 let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
 let best = 0, newRecord = false
@@ -380,6 +387,7 @@ function damage() {
 function die() {
   if (state === 'over') return
   state = 'over'
+  Music.stop()
   deathT = 0
   aim.on = false
   aimPad = null
@@ -436,6 +444,7 @@ function execJump() {
   aimPad = null
   slowmoT = 0 // le ralenti ne concerne que la visée : le saut part à pleine vitesse
   runStarted = true
+  Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
 }
 
 function land(p) {
@@ -688,7 +697,16 @@ function updParticles(dt) {
   particles = particles.filter(p => p.life > 0)
 }
 
+// Shim de mesure : ?prof chronomètre update() (tous early-returns inclus).
 function update(dt) {
+  if (!diagProf) { update_(dt); return }
+  const t0 = performance.now()
+  update_(dt)
+  diagUpMs += performance.now() - t0
+}
+
+function update_(dt) {
+  if (diagFps || diagProf) diagUps++
   if (dt > 1) dt /= 1000
   if (iskeypressed('m')) Music.toggle()
   // Slow-mo : la durée décroit en temps réel ; l'échelle de temps du jeu
@@ -713,12 +731,13 @@ function update(dt) {
   }
   elapsed += dts
   const P = PH()
-  // Caméra : paliers tous les camRampT s, pas calibré sur (camMax - camBase)
-  // pour atteindre le plafond en ~2 min (durée de référence d'une partie),
-  // quelle que soit la base choisie dans l'éditeur. Le playtest n'est plus
-  // figé : il part de la vitesse de base réglée (P.camBase).
-  const camStep = Math.max(1, Math.round((P.camMax - P.camBase) * P.camRampT / 120))
-  camSpd = testMode ? P.camBase : Math.min(P.camBase + Math.floor(elapsed / P.camRampT) * camStep, P.camMax)
+  // Caméra : paliers tous les CAM_PALIER_S s ; le pas est déduit de camRampDur
+  // (réglage éditeur « Temps jusqu'au max ») pour atteindre le plafond en
+  // camRampDur secondes de jeu, quelle que soit la base/max choisies.
+  // Défauts (80→240, 9 min) : +3 px/s toutes les 10 s — calé sur 3 BGM de 3 min.
+  // Le playtest n'est pas figé : il part de la vitesse de base réglée (P.camBase).
+  const camStep = Math.max(1, Math.round((P.camMax - P.camBase) * CAM_PALIER_S / P.camRampDur))
+  camSpd = testMode ? P.camBase : Math.min(P.camBase + Math.floor(elapsed / CAM_PALIER_S) * camStep, P.camMax)
   camX += camSpd * dts
   if (testMode) testSecT += dts
   if (shakeT > 0) shakeT -= dts
@@ -749,7 +768,6 @@ function update(dt) {
   if (aim.on && !aim.air && !slime.grounded && !slime.pull && slime.coyote <= 0) { aim.on = false; aimPad = null }
   updBalls()
   updParticles(dts)
-  Music.tick(dt, camRatio())
   if (slime.x + slime.r < camX) die()
   if (slime.y - slime.r > VH + 30) die()
 }
@@ -1975,13 +1993,32 @@ function drawSlowmoOverlay() {
   alpha(1)
 }
 
+// Shim de mesure : ?prof chronomètre draw() et l'écart entre frames (rAF).
 function draw() {
+  if (!diagProf) { draw_(); return }
+  const now = performance.now()
+  if (diagLastDraw) {
+    const g = now - diagLastDraw
+    diagGapMs += g
+    if (g > diagGapMax) diagGapMax = g
+  }
+  diagLastDraw = now
+  const t0 = now
+  draw_()
+  diagDnMs += performance.now() - t0
+}
+
+function draw_() {
+  if (diagFps || diagProf) diagDrs++
+  const q0 = diagProf ? performance.now() : 0
   // Effets de couleur animés (rainbow/brillant/étoilé) : ~10 fps, coût nul
   // si aucun palier animé. Le temps de jeu T les ralentit en bullet-time.
   Sprites.tickAnimated(T)
+  const q05 = diagProf ? performance.now() : 0
   calcView()
   ensureVoidPattern()
   drawOuterFrame()
+  const q1 = diagProf ? performance.now() : 0
   const c = ctx()
   c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
   updateCam()
@@ -1990,6 +2027,7 @@ function draw() {
   c.rect(0, 0, VW, VH)
   c.clip()
   drawBG()
+  const q2 = diagProf ? performance.now() : 0
   if (state !== 'title') {
     const shx = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
     const shy = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
@@ -2011,6 +2049,7 @@ function draw() {
     }
     drawDamageWalls()
     c.restore()
+    const q3 = diagProf ? performance.now() : 0
     drawOffscreen()
     drawSlowmoOverlay()
     drawFrameEdges()
@@ -2026,6 +2065,32 @@ function draw() {
   drawVignette()
   c.restore()
   rect(-1, -1, VW + 2, VH + 2, C_BLACK)
+  if (diagFps || diagProf) {
+    const now = performance.now()
+    if (diagProf) {
+      const q4 = now
+      diagSecAn += q05 - q0
+      diagSecOf += q1 - q05; diagSecBg += q2 - q1; diagSecSc += q3 - q2; diagSecRe += q4 - q3
+    }
+    if (now - diagT0 >= 1000) {
+      if (diagProf) {
+        const avg = (total, n) => (n ? (total / n).toFixed(1) : '?')
+        diagShown = diagDrs + 'f u' + avg(diagUpMs, diagUps) + ' d' + avg(diagDnMs, diagDrs) +
+          ' g' + Math.round(diagGapMs / Math.max(1, diagDrs)) + '/' + Math.round(diagGapMax) +
+          ' [an' + Math.round(diagSecAn / Math.max(1, diagDrs)) +
+          ' of' + Math.round(diagSecOf / Math.max(1, diagDrs)) +
+          ' bg' + Math.round(diagSecBg / Math.max(1, diagDrs)) +
+          ' sc' + Math.round(diagSecSc / Math.max(1, diagDrs)) +
+          ' r' + Math.round(diagSecRe / Math.max(1, diagDrs)) + ']' +
+          ' ' + W + 'x' + H + diagSimTxt
+      } else {
+        diagShown = diagDrs + ' fps / ' + diagUps + ' maj' + diagSimTxt
+      }
+      diagDrs = 0; diagUps = 0; diagUpMs = 0; diagDnMs = 0; diagGapMs = 0; diagGapMax = 0
+      diagSecAn = 0; diagSecOf = 0; diagSecBg = 0; diagSecSc = 0; diagSecRe = 0; diagT0 = now
+    }
+    if (diagShown) text(4, 4, diagShown, C_WHITE)
+  }
 }
 
 function setupTestMode() {
@@ -2050,6 +2115,20 @@ function init() {
   // rendu quasi à chaque rAF : supprime le judder sur écrans 120/144 Hz.
   // Garde : le stub litecanvas de tools/game_sim.mjs n'a pas cette API.
   if (typeof framerate === 'function') framerate(240)
+  // ---- Instrumentation diagnostic (?sim=N, ?fps — aucun effet sinon) ----
+  // ?sim=N : force la cadence de simulation (ex. ?sim=60 — test « sur écran
+  //          60 Hz, la sim 240 Hz = 4 pas de physique par frame »).
+  // ?fps   : compteur live en haut à gauche (images/s rendues, maj/s simulées).
+  // Modèle setupTestMode : window.location dans un try (game_sim n'a pas window).
+  try {
+    const q = new URLSearchParams(window.location.search)
+    const sim = +q.get('sim')
+    if (sim >= 30 && sim <= 240 && typeof framerate === 'function') framerate(sim)
+    diagSimTxt = q.has('sim') ? ' sim=' + sim : ''
+    diagFps = q.has('fps')
+    diagProf = q.has('prof')
+    diagT0 = performance.now()
+  } catch (e) {}
   try {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
   } catch (e) {}

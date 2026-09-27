@@ -111,12 +111,19 @@ check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR ===
 
 // 6b''. Caméra : nouvelle base ×2 (80/240), migration de l'ancienne base (40/120)
 check('caméra : nouvelle base par défaut (80/240)', phDef.camBase === 80 && phDef.camMax === 240)
+check('caméra : durée jusqu\'au max par défaut (540 s = 9 min)', phDef.camRampDur === 540)
 Phys.setPhys({ camBase: 40, camMax: 120 })
 check('caméra : ancienne base migrée vers la nouvelle', Phys.phys().camBase === 80 && Phys.phys().camMax === 240)
 Phys.setPhys({ camBase: 200, camMax: 400 })
 check('caméra : bornes hautes accessibles (200/400)', Phys.phys().camBase === 200 && Phys.phys().camMax === 400)
 Phys.setPhys({ camBase: 300, camMax: 900 })
 check('caméra : hors bornes écrêté (200/400)', Phys.phys().camBase === 200 && Phys.phys().camMax === 400)
+Phys.setPhys({ camRampDur: 9999 })
+check('caméra : durée jusqu\'au max écrêtée (1020 s)', Phys.phys().camRampDur === 1020)
+Phys.setPhys({ camRampDur: 5 })
+check('caméra : durée jusqu\'au max plancher (60 s)', Phys.phys().camRampDur === 60)
+Phys.setPhys({ camRampT: 12 })
+check('caméra : ancien camRampT abandonné -> défaut camRampDur', Phys.phys().camRampDur === 540 && !('camRampT' in Phys.phys()))
 Phys.setPhys(null)
 check('caméra : retour à la nouvelle base', Phys.phys().camBase === 80 && Phys.phys().camMax === 240)
 
@@ -159,12 +166,14 @@ check('simu utilise le layout', Phys.phys().slimeR === 16 && Phys.phys().grav ==
 Patterns.setLayout(null)
 check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 14)
 
-// 6d. Ancien save éditeur (layout persisté avec l'ancienne base caméra 40/120)
-// -> migré vers la nouvelle base au chargement : c'est le scénario « les saves
-// de l'éditeur appliquent l'ancienne vitesse » qui doit disparaître.
-storeStub[storeKey] = JSON.stringify({ format: Patterns.FORMAT, patterns: [], layout: { phys: { camBase: 40, camMax: 120 } } })
+// 6d. Ancien save éditeur (layout persisté avec l'ancienne base caméra 40/120
+// et l'ancien réglage camRampT) -> migré vers la nouvelle base au chargement,
+// camRampT abandonné (défaut camRampDur appliqué) : c'est le scénario « les
+// saves de l'éditeur appliquent l'ancienne vitesse » qui doit disparaître.
+storeStub[storeKey] = JSON.stringify({ format: Patterns.FORMAT, patterns: [], layout: { phys: { camBase: 40, camMax: 120, camRampT: 10 } } })
 Patterns.load()
 check('ancien save éditeur : caméra migrée (80/240)', Patterns.getLayout().phys.camBase === 80 && Patterns.getLayout().phys.camMax === 240)
+check('ancien save éditeur : camRampT abandonné (camRampDur 540)', !('camRampT' in Patterns.getLayout().phys) && Patterns.getLayout().phys.camRampDur === 540)
 Patterns.setLayout(null)
 
 // 7. Pin mode test

@@ -1,0 +1,10 @@
+BGM du jeu — 3 fichiers .mp3 attendus dans ce dossier :
+
+  bgm1.mp3  (~3 min, ambiance calme)      — joué de 0 à 3 min
+  bgm2.mp3  (~3 min, intensité moyenne)   — joué de 3 à 6 min
+  bgm3.mp3  (~3 min, intensité maximale)  — joué de 6 à 9 min, puis en boucle
+
+Le jeu joue ces pistes en séquence pendant une partie (démarrage au 1er saut,
+arrêt à la mort, « Rejouer » repart de bgm1). BPM libre : le tempo ne suit plus
+la vitesse de la caméra. Un fichier absent = silence pour cette piste (le jeu
+passe à la suite, aucune erreur bloquante).

@@ -36,7 +36,7 @@ js/game.js              ← moteur du jeu (rendu, physique, enchaînement des pa
 js/physics.js           ← constantes + config physique réglable + simulation de saut partagée (jeu, éditeur, outils)
 js/patterns.js          ← pool de patterns, poids par difficulté, stockage, export/import
 js/patterns-defaults.js ← pool par défaut GÉNÉRÉ (20 sections validées) — ne pas éditer
-js/music.js             ← musique chiptune procédurale (module Music)
+js/music.js             ← BGM : playlist .mp3 à BPM fixe (module Music)
 js/crypto.js            ← signature HMAC des scores (module Crypto)
 js/sprites.js           ← chargement et dessin des sprites du slime (recoloration runtime des variantes)
 js/slime-colors.js      ← paliers score → couleur (module SlimeColors, partagé jeu + settings)
@@ -82,7 +82,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 
 ### Musique & record
 
-- Boucle chiptune de 8 mesures (128 pas, progression Am–F–C–G, refrain une octave plus haut) dont le tempo suit la vitesse de la caméra (112 → 150 BPM) — ~15 s par boucle
+- BGM : 3 fichiers `ASSETS/music/bgm1..3.mp3` (~3 min, BPM fixe) joués en séquence pendant la partie — démarrage au 1er saut, arrêt à la mort, « Rejouer » repart de la piste 1 ; la 3e boucle si tu survies au-delà de 9 min. Touche 'm' ou coin haut-gauche : mute (coupe aussi les SFX, préférence persistée). Fichier absent = silence, jamais bloquant
 - Meilleur score sauvegardé localement mais **jamais affiché en clair** ; à l'écran titre, le gros slime porte la **couleur du palier de ton record** (et « NOUVEAU RECORD ! » signale quand tu bats le mien, sans le chiffre)
 
 ## Éditeur & patterns (créateur de jeu)
@@ -131,7 +131,7 @@ Physique du jeu réglable pour de **micro-ajustements** du game feel — même m
 | Saut & visée | gravité (620), vitesse min/max (210/360), portée de visée min/max (24/140 px), chute max (520), traînée aérienne (0.6) |
 | Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×0.8) |
 | Dégâts | invincibilité après un coup (1.3 s), échelle des reculs infligés (×1) |
-| Caméra | vitesse de base (40), vitesse max (120), secondes entre chaque palier de +5 (10 s) |
+| Caméra | vitesse de base (80), vitesse max (240), temps jusqu'au max en min (9 min = 3 musiques de 3 min ; paliers automatiques de +3 toutes les 10 s) |
 | Game feel | coyote time (0.08 s) — 0 = désactivé |
 
 - La validation ✓/✗ des patterns et le playtest utilisent les valeurs **appliquées** (aucun décalage éditeur/jeu)
@@ -139,7 +139,7 @@ Physique du jeu réglable pour de **micro-ajustements** du game feel — même m
 - Si tu augmentes la taille du slime au-delà du défaut, revalide tes patterns : quelques sauts du pool par défaut pourraient devenir serrés
 
 ### Difficulté & pool
-- Le jeu pioche dans le pool selon une **courbe de poids** : T1 domine au début, les tiers durs prennent le dessus vers 120 s ; anti-répétition immédiate ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
+- Le jeu pioche dans le pool selon une **courbe de poids** : T1 domine au début, les tiers durs prennent le dessus vers 9 min (calé sur la caméra : 3 BGM de 3 min) ; anti-répétition immédiate ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
 - **Ton pool remplace le pool par défaut dès qu'il contient au moins 1 pattern** (sinon le jeu joue les 20 sections embarquées) ; bouton « Pool par défaut » pour les copier et les éditer
 
 ### Portabilité (autre machine)
@@ -171,4 +171,5 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression : `node tools/smoke_test.mjs` (génération/validation), `node tools/game_sim.mjs` (partie simulée : saut, coyote, jump buffer, physique live), `node tools/editor_dom_test.mjs` (onglets PHYS et COULEURS de l'éditeur) et `node tools/sprites_test.mjs` (variantes canvas acceptées par les gardes de dessin)
+- Tests de régression : `node tools/smoke_test.mjs` (génération/validation), `node tools/game_sim.mjs` (partie simulée : saut, coyote, jump buffer, physique live), `node tools/editor_dom_test.mjs` (onglets PHYS et COULEURS de l'éditeur), `node tools/music_test.mjs` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes) et `node tools/sprites_test.mjs` (variantes canvas acceptées par les gardes de dessin)
+- Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame
