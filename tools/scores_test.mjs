@@ -212,5 +212,32 @@ check(
   }
 }
 
+// ---- T4 : anti-dérive client/serveur (lecture des SOURCES, pas d'import) ----
+// Le serveur duplique LITTÉRALEMENT deux constantes du client : le SECRET des
+// codes signés (js/crypto.js) et les seuils des paliers par défaut
+// (js/slime-colors.js). Ces checks lisent le source des deux côtés et
+// échouent le jour où l'un drifte silencieusement (sinon : soumissions
+// rejetées d'un côté, classement faux de l'autre).
+{
+  const srcOf = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8')
+  const srcCrypto = srcOf('js/crypto.js')
+  const srcColors = srcOf('js/slime-colors.js')
+  const srcServer = srcOf('server.mjs')
+  const mSecret = srcCrypto.match(/SECRET\s*=\s*'([^']*)'/)
+  const mScoreSecret = srcServer.match(/SCORE_SECRET\s*=\s*'([^']*)'/)
+  check(
+    'anti-dérive : SCORE_SECRET (server.mjs) == SECRET (js/crypto.js)',
+    !!mSecret && !!mScoreSecret && mScoreSecret[1] === mSecret[1] && !!mSecret[1]
+  )
+  const minsOf = src => (src.match(/\{[^}]*\bmin:\s*(\d+)[^}]*\}/g) || [])
+    .map(m => parseInt(m.match(/min:\s*(\d+)/)[1], 10))
+  const minsColors = minsOf((srcColors.match(/const DEFAULTS = \[[\s\S]*?\]/) || [''])[0])
+  const minsServer = minsOf((srcServer.match(/const DEFAULT_TIERS = \[[\s\S]*?\]/) || [''])[0])
+  check(
+    'anti-dérive : DEFAULT_TIERS (server.mjs) == mins de DEFAULTS (js/slime-colors.js)',
+    minsColors.length === 6 && JSON.stringify(minsServer) === JSON.stringify(minsColors)
+  )
+}
+
 console.log(fail === 0 ? '\nSCORES OK — tous les checks passent' : `\n${fail} CHECK(S) EN ÉCHEC`)
 process.exit(fail === 0 ? 0 : 1)

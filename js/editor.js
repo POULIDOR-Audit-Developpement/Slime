@@ -671,7 +671,7 @@ const Ed = (() => {
   function draw() {
     const dpr = window.devicePixelRatio || 1
     const cw = cv.clientWidth, chh = cv.clientHeight
-    if (mode === 'phys' || mode === 'power' || mode === 'colors') {
+    if (mode === 'phys' || mode === 'power' || mode === 'colors' || mode === 'atelier') {
       // Vue réglages pleine page : pas de canvas, on garde juste la décroissance du flash.
     } else {
       if (cv.width !== cw * dpr || cv.height !== chh * dpr) {
@@ -696,6 +696,7 @@ const Ed = (() => {
     if (mode === 'phys') return renderPropsPhys()
     if (mode === 'power') return renderPropsPower()
     if (mode === 'colors') return renderPropsColors()
+    if (mode === 'atelier') return renderPropsAtelier()
     const pat = selPattern()
     if (!pat) {
       propsEl.innerHTML = `<div class="empty">Crée un pattern avec « + Nouveau »,<br>ou copie le pool par défaut pour l'éditer.<br><br>• molette : défiler<br>• clic : placer / sélectionner<br>• Ctrl+clic / Ctrl+glisser : multi-sélection<br>• Ctrl+C / Ctrl+V : copier / coller<br>• Suppr : effacer la sélection</div>`
@@ -1340,16 +1341,176 @@ const Ed = (() => {
     })
     on('btnApplyColors', 'click', () => {
       if (!SlimeColors.save(draft)) { flash('Erreur : paliers invalides (seuil ou teinte)'); return }
+      admTiersSync() // T9 — la config rejoint le layout partagé (recalcul serveur + couleurs atelier)
       renderProps()
       flash('Couleurs appliquées au jeu')
     })
     on('btnResetColors', 'click', () => {
       SlimeColors.clear()
+      admTiersSync() // idem : même les défauts doivent être poussés au layout partagé
       renderProps(); flash('Couleurs réinitialisées')
     })
     // Rendu frais : jamais dirty (cohérent avec PHYS/POWER).
     markApplyDirty('btnApplyColors', 'colDirtyNote', false)
     repaintTierPreviews()
+  }
+
+  // ---------- onglet ATELIER (modération, T9) ----------
+  // Panneau d'admin de « L'Atelier des bocaux », derrière le même mot de passe
+  // que le reste de l'éditeur (l'en-tête X-Slime-Key porte la clé mémorisée
+  // au déverrouillage — même mécanique que le PUT /api/state de patterns.js).
+  // Sans serveur (fetch /api/rev en échec) : simple note « en ligne ».
+  // Avec serveur : file d'attente (GET /api/admin/pending — l'admin voit le
+  // score, contrairement au public) + vue par palier ouvert (GET /api/scores)
+  // d'où un tricheur peut être supprimé.
+  let admSeq = 0 // garde anti-course : un rendu plus récent invalide les réponses en vol
+
+  const admT = k => (typeof I18N !== 'undefined' && I18N.t) ? I18N.t(k) : k
+
+  // Clé de l'éditeur déverrouillé (pose par le portail de editor.html).
+  function admKey() {
+    try { return localStorage.getItem('slime_key') || '' } catch (e) { return '' }
+  }
+
+  async function admFetch(pathname, opts) {
+    const headers = Object.assign({}, opts && opts.headers)
+    const key = admKey()
+    if (key) headers['X-Slime-Key'] = key
+    const res = await fetch(pathname, Object.assign({}, opts, { headers }))
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    return res.json()
+  }
+
+  // m:ss — même format que l'atelier (js/atelier.js fmtTime).
+  function admTime(sec) {
+    const s = Math.max(0, Math.floor(+sec || 0))
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
+  }
+
+  // Couleur de badge du palier i (config COULEURS locale), verte par défaut.
+  function admTierColor(i) {
+    try {
+      const t = SlimeColors.load()[i]
+      return (t && SlimeColors.primary(t)) || '#3ecb3e'
+    } catch (e) { return '#3ecb3e' }
+  }
+
+  function renderPropsAtelier() {
+    const T = admT
+    propsEl.innerHTML = `<div class="physHead">
+      <div>
+        <h3>${T('admTitle')}</h3>
+        <div class="note">Les soumissions des joueurs arrivent <b>en attente</b> : personne ne les voit tant qu'elles ne sont pas validées. Valider une entrée ouvre son palier (et rend visibles tous les joueurs qui l'atteignaient déjà) ; supprimer le dernier pilier d'un palier le referme. Le score n'est montré <b>qu'ici</b> — l'atelier public n'affiche que des noms et des temps.</div>
+      </div>
+      <div class="applyCol">
+        <div class="btnRow"><button id="admReload">↻ Recharger</button></div>
+      </div>
+    </div>
+    <div id="admBody"><div class="empty">…</div></div>`
+    document.getElementById('admReload').addEventListener('click', () => { admLoad() })
+    admLoad()
+  }
+
+  // Charge l'état de modération et remplit #admBody. `seq` fige le rendu
+  // courant : une réponse d'un onglet quitté/re-rendu est ignorée.
+  async function admLoad() {
+    const seq = ++admSeq
+    const body = document.getElementById('admBody')
+    if (!body) return
+    const T = admT
+    const offline = () => {
+      const el = document.getElementById('admBody')
+      if (el && seq === admSeq) el.innerHTML = `<div class="empty">${T('admOffline')}<br><span style="font-size:.85rem">node server.mjs — puis rouvre cet onglet</span></div>`
+    }
+    if (typeof fetch !== 'function') return offline()
+    let pending, view
+    try {
+      await admFetch('/api/rev') // détection serveur : échec -> mode hors ligne
+      pending = await admFetch('/api/admin/pending')
+      view = await admFetch('/api/scores')
+    } catch (e) { return offline() }
+    if (seq !== admSeq) return
+    const host = document.getElementById('admBody')
+    if (!host) return
+    const list = (pending && Array.isArray(pending.pending)) ? pending.pending : []
+    let html = `<h3>${esc(T('admPending'))} — ${list.length}</h3>`
+    if (!list.length) html += `<div class="empty">Rien à modérer : toute soumission validée est déjà visible.</div>`
+    for (const e of list) {
+      const times = (Array.isArray(e.times) ? e.times : [])
+        .map(p => 'T' + ((p[0] | 0) + 1) + ' ' + admTime(p[1])).join(' · ')
+      html += `<div class="admRow">
+        <span class="tier" style="background:${admTierColor(e.tier)}">${(e.tier | 0) + 1}</span>
+        <span class="nm"><b>${esc(e.name)}</b><span>${e.score} pts${times ? ' · ' + times : ''}</span></span>
+        <button id="adm_ok_${e.id}" title="${esc(T('admValidate'))}">✅</button>
+        <button id="adm_del_${e.id}" class="danger" title="${esc(T('admDelete'))}">🗑</button>
+      </div>`
+    }
+    const tiers = (view && Array.isArray(view.tiers)) ? view.tiers : []
+    html += `<h3>${esc(T('admTiers'))}</h3>`
+    let shown = 0
+    for (const t of tiers) {
+      if (!t || t.open !== true) continue
+      shown++
+      const top = Array.isArray(t.top) ? t.top : []
+      const names = top.length
+        ? `<span class="admNames">` + top.map(x =>
+            `<em>${esc(x.name)}<button id="adm_tdel_${x.id}" class="danger" title="${esc(T('admDelete'))}">🗑</button></em>`
+          ).join('') + `</span>`
+        : '<span>—</span>'
+      html += `<div class="admRow">
+        <span class="tier" style="background:${admTierColor(t.index)}">${(t.index | 0) + 1}</span>
+        <span class="nm"><b>${t.total | 0} joueur(s) — temps rapides</b>${names}</span>
+      </div>`
+    }
+    if (!shown) html += `<div class="empty">Aucun palier ouvert : valide une première entrée ci-dessus.</div>`
+    host.innerHTML = html
+    // Boutons : une fois le HTML posé, brancher chaque action par id.
+    for (const e of list) {
+      const ok = document.getElementById('adm_ok_' + e.id)
+      if (ok) ok.addEventListener('click', () => { admAct('validate', e.id) })
+      const del = document.getElementById('adm_del_' + e.id)
+      if (del) del.addEventListener('click', () => { admAct('delete', e.id) })
+    }
+    for (const t of tiers) {
+      if (!t || t.open !== true) continue
+      for (const x of (Array.isArray(t.top) ? t.top : [])) {
+        const del = document.getElementById('adm_tdel_' + x.id)
+        if (del) del.addEventListener('click', () => { admAct('delete', x.id) })
+      }
+    }
+  }
+
+  // Valide/supprime une entrée puis RECHARGE la liste (le serveur redérive
+  // les paliers ouverts à chaque mutation).
+  async function admAct(action, id) {
+    try {
+      await admFetch('/api/admin/' + action, { method: 'POST', body: JSON.stringify({ id }) })
+      flash(action === 'validate' ? 'Entrée validée — paliers recalculés' : 'Entrée supprimée — paliers recalculés')
+    } catch (e) {
+      flash('Modération impossible : ' + String((e && e.message) || e), true)
+      return
+    }
+    admLoad()
+  }
+
+  // ---------- sync des paliers vers le layout partagé (T9) ----------
+  // La config de l'onglet COULEURS (localStorage slime_tiers) est embarquée
+  // dans le layout poussé à PUT /api/state (state.layout.tiers) : c'est ce qui
+  // alimente le recalcul serveur des paliers de l'atelier et les couleurs de
+  // son livre. Appelée à chaque application/réinitialisation des couleurs, et
+  // à la 1re connexion LAN si le serveur n'est pas déjà au courant.
+  function admTiersSync() {
+    const L = Patterns.getLayout()
+    if (!L) return
+    L.tiers = SlimeColors.load()
+    Patterns.setLayout(L) // normalise (champ tiers conservé) + save/push LAN
+  }
+
+  function admTiersSyncIfDrifted() {
+    const L = Patterns.getLayout()
+    if (!L) return
+    if (JSON.stringify(L.tiers || null) === JSON.stringify(SlimeColors.load())) return // déjà synchro : pas de rev inutile
+    admTiersSync()
   }
 
   // ---------- liste ----------
@@ -1689,7 +1850,9 @@ const Ed = (() => {
     document.getElementById('tbHint').textContent = mode === 'layout' ? 'Glisse les poignées dorées pour ajuster les murs'
       : mode === 'phys' ? 'Brouillon : valide tes réglages avec « ✓ Appliquer au jeu »'
       : mode === 'power' ? 'Brouillon : valide tes pouvoirs avec « ✓ Appliquer au jeu »'
-      : mode === 'colors' ? 'Brouillon : valide tes couleurs avec « ✓ Appliquer au jeu »' : hints[t]
+      : mode === 'colors' ? 'Brouillon : valide tes couleurs avec « ✓ Appliquer au jeu »'
+      : mode === 'atelier' ? 'Modération : valide ou supprime les entrées — un palier fermé s\'ouvre à sa 1re validation'
+        : hints[t]
     cv.style.cursor = t === 'select' ? 'default' : 'crosshair'
   }
 
@@ -1733,14 +1896,16 @@ const Ed = (() => {
     document.getElementById('tabPhys').classList.toggle('on', m === 'phys')
     document.getElementById('tabPower').classList.toggle('on', m === 'power')
     document.getElementById('tabColors').classList.toggle('on', m === 'colors')
-    // VUE : plein cadre (liste + toolbar masquées) ; PHYS/POWER/COULEURS : réglages pleine page.
+    document.getElementById('tabAtelier').classList.toggle('on', m === 'atelier')
+    // VUE : plein cadre (liste + toolbar masquées) ; PHYS/POWER/COULEURS/ATELIER : réglages pleine page.
     const mainEl = document.querySelector('main')
     mainEl.classList.toggle('layout', m === 'layout')
     mainEl.classList.toggle('phys', m === 'phys')
     mainEl.classList.toggle('power', m === 'power')
     mainEl.classList.toggle('colors', m === 'colors')
+    mainEl.classList.toggle('atelier', m === 'atelier')
     if (m === 'layout') setLTool('select')
-    applyPropsW(m === 'phys' || m === 'power' || m === 'colors')
+    applyPropsW(m === 'phys' || m === 'power' || m === 'colors' || m === 'atelier')
     clearSel()
     setTool(mode === 'patterns' ? tool : 'select')
     renderProps()
@@ -1805,7 +1970,7 @@ const Ed = (() => {
   function onDown(e) {
     const { sx, sy } = canvasPos(e)
     if (mode === 'layout') return onDownLayout(sx, sy)
-    if (mode === 'phys' || mode === 'power' || mode === 'colors') return // aperçu lecture / pleine page
+    if (mode === 'phys' || mode === 'power' || mode === 'colors' || mode === 'atelier') return // aperçu lecture / pleine page
     const pat = selPattern()
     const wx = s2wX(sx), wy = s2wY(sy)
     if (!pat) return
@@ -2125,6 +2290,7 @@ const Ed = (() => {
     document.getElementById('tabPhys').addEventListener('click', () => setMode('phys'))
     document.getElementById('tabPower').addEventListener('click', () => setMode('power'))
     document.getElementById('tabColors').addEventListener('click', () => setMode('colors'))
+    document.getElementById('tabAtelier').addEventListener('click', () => setMode('atelier'))
     // Animation des previews de l'onglet COULEURS : repaint ~8 fps (temps
     // partagé des effets animés), bascule idle0/idle1 toutes les 4 tick.
     // unref : ne bloque pas la sortie des simulations Node.
@@ -2209,7 +2375,11 @@ const Ed = (() => {
     patterns = Patterns.getPatterns()
     if (selId && !patterns.find(p => p.id === selId)) selId = patterns.length ? patterns[0].id : null
     const rev = Patterns.lanStatus ? Patterns.lanStatus().rev : '?'
-    if (mode === 'phys' || mode === 'power' || mode === 'colors') {
+    // 1re connexion au serveur (état distant tiré) : la config COULEURS locale
+    // rejoint le layout partagé si le serveur ne l'a pas déjà (T9 — c'est ce
+    // qui alimente le recalcul des paliers côté atelier).
+    if (reason === 'start') admTiersSyncIfDrifted()
+    if (mode === 'phys' || mode === 'power' || mode === 'colors' || mode === 'atelier') {
       if (reason === 'conflict') flash('Sync LAN : conflit résolu, fusion appliquée (rev ' + rev + ')')
       else if (reason !== 'start') flash('Sync LAN : pool mis à jour depuis un autre appareil')
       return

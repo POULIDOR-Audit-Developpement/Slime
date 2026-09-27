@@ -1,26 +1,33 @@
 # ASSETS/atelier/ — assets de « L'Atelier des bocaux »
 
-Assets attendus pour la scène de l'atelier. Spécification de référence :
-`docs/superpowers/specs/2026-09-27-atelier-bocaux-design.md` (§8).
+Assets réellement utilisés par la scène de l'atelier (`js/atelier.js`).
+Spécification de référence : `docs/superpowers/specs/2026-09-27-atelier-bocaux-design.md` (§8).
 
-## Fichiers attendus
+## Fichiers
 
 | Fichier | Rôle | Source |
 |---|---|---|
-| `bg.png` (ou `bg.jpg`) | Fond de scène : **l'atelier complet** (meuble + livre), utilisé tel quel, sans découpe | `ASSETS/atbg.jpeg` (conversion directe) |
-| `jar_full.png` | Bocal en verre (verre transparent, contour visible) — un par palier, rempli des slimes recolorés des joueurs (top 8) | Découpe de `ASSETS/atsprite.jpeg` |
-| `jar_empty.png` | Le même bocal **vide et neutre** — ni couleur, ni seuil visible — pour les paliers fermés ; ne doit pas trahir la couleur à venir | Découpe de `ASSETS/atsprite.jpeg` |
-| `plate.png` | Petite plaque d'étiquette sous chaque slime (**optionnel**) | Découpe de `ASSETS/atsprite.jpeg` |
+| `jar_full.png` | Bocal en verre (contenu visible, contour net) — un par palier ouvert, rempli des slimes recolorés des joueurs (top 8) | Découpe de `ASSETS/atsprite.jpeg` par `tools/extract_atelier.py` |
+| `jar_empty.png` | Le même bocal **vide et neutre** — ni couleur, ni seuil visible — pour les paliers fermés ; ne doit pas trahir la couleur à venir | Découpe de `tools/extract_atelier.py` (contenu vert du même crop neutralisé en verre vide) |
+
+- **Pas de `bg.png`** : le fond de scène est `ASSETS/atbg.jpeg` (mockup de
+  l'atelier complet : meuble + livre), chargé **directement** par `js/atelier.js`
+  sans conversion ni découpe.
+- **Pas de `plate.png`** : aucune plaque individuelle exploitable sur la planche
+  source — la plaque d'étiquette sous chaque étagère est **dessinée
+  vectoriellement** par `js/atelier.js` (`drawPlaque` : nom du 1er du palier
+  tronqué à 12 + « +N »).
 
 ## Sources
 
 - `ASSETS/atbg.jpeg` — mockup de la scène d'atelier complète (fond direct).
-- `ASSETS/atsprite.jpeg` — planche d'éléments (bocaux, étagère, livre) à découper.
+- `ASSETS/atsprite.jpeg` — planche d'éléments (grille de bocaux) d'où sont
+  extraits les deux PNG.
 
-La découpe est faite par `tools/extract_atelier.py`, en suivant la convention des
-`tools/extract_v*.py` : régions repérées sur la planche, détourage du fond, PNG
-**transparents** écrits ici. Les éléments d'étagère et de livre découpés servent de
-secours/zoom (le livre fermé est déjà présent dans le fond `bg`).
+La découpe suit la convention des `tools/extract_v*.py` : région repérée sur la
+planche, chroma-key du fond gris uniforme (le verre garde son « intérieur vu par
+transparence »), effilage de 1 px contre la frange JPEG, PNG **transparent**
+écrit ici.
 
 ## Règles
 

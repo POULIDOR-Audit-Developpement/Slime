@@ -27,6 +27,13 @@ const I18N = (() => {
       back: 'RETOUR',
       // T8 — atelier.html : livre hors ligne
       offline: "L'atelier se remplit en ligne",
+      // T9 — onglet ATELIER de l'éditeur (modération admin)
+      admTitle: "Modération de l'atelier",
+      admPending: 'EN ATTENTE',
+      admTiers: 'PAR PALIER',
+      admOffline: 'Atelier disponible en ligne',
+      admValidate: 'Valider',
+      admDelete: 'Supprimer',
       // page de présentation
       tagline: 'La camera accelere sans pitie. Vise, saute, accroche-toi.',
       play: 'JOUER',
@@ -93,6 +100,13 @@ const I18N = (() => {
       back: 'BACK',
       // T8 — atelier.html : offline book message
       offline: 'The workshop fills up online',
+      // T9 — editor ATELIER tab (admin moderation)
+      admTitle: 'Workshop moderation',
+      admPending: 'PENDING',
+      admTiers: 'BY TIER',
+      admOffline: 'Workshop available online',
+      admValidate: 'Validate',
+      admDelete: 'Delete',
       tagline: 'The camera never slows down. Aim, jump, hang on.',
       play: 'PLAY',
       editor: 'EDITOR',

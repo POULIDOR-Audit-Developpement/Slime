@@ -423,6 +423,7 @@ function die() {
 // part au onDone (null = « jouer sans nom » -> rien). Sans module Player
 // (harnais Node) : pas d'envoi. L'écran de fin s'affiche dans tous les cas.
 function submitScore(s) {
+  if (testMode) return // ruling T6 — un playtest (caméra gelée, pattern en boucle) ne remplit JAMAIS l'atelier
   if (!SCORES) return
   const payload = name => ({
     v: 1, name, score: s, playtime: Math.round(elapsed), times: tierTimes, code: scoreCode
