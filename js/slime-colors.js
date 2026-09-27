@@ -87,27 +87,38 @@ const SlimeColors = (() => {
     shine: {
       label: 'Brillant', animated: true,
       primary: p => p.hex,
+      // Large bande diagonale (28 % du balayage) à 90 % de blanc : visible
+      // même en preview réduite ; écho discret en queue pour l'éclat.
       pixel: (p, xn, yn, px, py, t) => {
-        const f = ((xn + yn) * 0.9 - t * p.speed) % 1
-        const band = Math.max(0, f >= 0 && f < 0.12 ? 1 - Math.abs(f - 0.06) / 0.06 : 0)
-        return mix(hex2rgb(p.hex), WHITE, band * 0.8)
+        const f = ((xn + yn) * 0.85 - t * p.speed) % 1
+        let band = 0
+        if (f >= 0 && f < 0.28) band = 1 - Math.abs(f - 0.14) / 0.14
+        else if (f >= 0.34 && f < 0.44) band = (1 - Math.abs(f - 0.39) / 0.05) * 0.3
+        return mix(hex2rgb(p.hex), WHITE, band * 0.9)
       }
     },
     star: {
       label: 'Étoilé', animated: true,
       primary: p => p.hex,
+      // Étoiles à 4 branches (croix + halo) : cellules de 8 px, 45 % des
+      // cellules occupées, scintillement allumé ~75 % du cycle.
       pixel: (p, xn, yn, px, py, t) => {
         const base = hex2rgb(p.hex)
-        const gx = Math.floor(px / 7), gy = Math.floor(py / 7)
+        const gx = Math.floor(px / 8), gy = Math.floor(py / 8)
         const h = hash2(gx, gy)
-        if (h < 0.82) return base
-        const cx = gx * 7 + 1 + h * 5, cy = gy * 7 + 1 + hash2(gx + 91, gy + 17) * 5
-        const dx = px - cx, dy = py - cy
-        const d2 = dx * dx + dy * dy
-        if (d2 > 2.2) return base
-        const tw = 0.5 + 0.5 * Math.sin(t * 6.283 * (0.5 + h) + h * 40)
-        if (tw < 0.35) return base
-        return mix(base, WHITE, Math.min(1, (1 - d2 / 2.2) * tw))
+        if (h < 0.55) return base
+        const cx = gx * 8 + 1.5 + h * 5, cy = gy * 8 + 1.5 + hash2(gx + 91, gy + 17) * 5
+        const ax = Math.abs(px - cx), ay = Math.abs(py - cy)
+        const cross = Math.max(ax, ay) <= 2.6 && Math.min(ax, ay) <= 0.9
+        const d2 = ax * ax + ay * ay
+        const glow = !cross && d2 <= 3.6
+        if (!cross && !glow) return base
+        const tw = 0.5 + 0.5 * Math.sin(t * 6.283 * (0.6 + h) + h * 40)
+        const twk = (tw - 0.25) / 0.75
+        if (twk <= 0) return base
+        let inten = 1
+        if (!cross) inten = (1 - Math.sqrt(d2) / 1.9) * 0.5
+        return mix(base, WHITE, Math.min(1, inten * twk))
       }
     }
   }
@@ -117,7 +128,7 @@ const SlimeColors = (() => {
     gradient: { hexes: ['#ff5f6d', '#ffc371'] },
     multi: { hexes: ['#e53935', '#8e24aa', '#3949ab'] },
     rainbow: { speed: 0.15 },
-    shine: { hex: '#3a7bd5', speed: 0.4 },
+    shine: { hex: '#3a7bd5', speed: 0.3 },
     star: { hex: '#2b5876' }
   }
 

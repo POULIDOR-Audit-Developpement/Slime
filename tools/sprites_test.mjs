@@ -94,6 +94,18 @@ check('rainbow : change avec le temps', JSON.stringify(EF.rainbow.pixel(rt, 0.5,
 const st = { type: 'shine', hex: '#3a7bd5', speed: 0.5 }
 const s0 = JSON.stringify(EF.shine.pixel(st, 0.5, 0.5, 40, 30, 0))
 check('shine : reflet balaie le corps', [0.3, 0.6, 0.9, 1.2, 1.5, 1.7, 2.0, 2.3, 2.6].some(t => JSON.stringify(EF.shine.pixel(st, 0.5, 0.5, 40, 30, t)) !== s0))
+// Visibilité : bande large (nombreux pixels éclairés) et pic très lumineux.
+{
+  let lit = 0, peak = 0
+  for (let k = 0; k <= 20; k++) {
+    const c = EF.shine.pixel(st, k / 20, 0.05, k * 4, 3, 0)
+    const boost = (c[0] - 58) + (c[1] - 123) + (c[2] - 213)
+    if (boost > 30) lit++
+    peak = Math.max(peak, boost)
+  }
+  check('shine : bande large visible (>= 5/21 px le long de la diagonale)', lit >= 5)
+  check('shine : pic très lumineux (proche du blanc)', peak > 300)
+}
 
 const kt = { type: 'star', hex: '#2b5876' }
 check('star : déterministe', JSON.stringify(EF.star.pixel(kt, 0, 0, 40, 30, 0)) === JSON.stringify(EF.star.pixel(kt, 0, 0, 40, 30, 0)))
@@ -103,6 +115,20 @@ for (let px = 0; px < 105 && !starMoves; px += 3) for (let py = 0; py < 105 && !
   for (let t = 0.2; t <= 3 && !starMoves; t += 0.25) if (JSON.stringify(EF.star.pixel(kt, 0, 0, px, py, t)) !== a) starMoves = true
 }
 check('star : scintillement détecté', starMoves)
+// Visibilité : densité d'étoiles — au meilleur instant, beaucoup de pixels
+// diffèrent de la base sur une zone 48x48 (~36 cellules, ~45 % occupées).
+{
+  let best = 0
+  for (let t = 0; t <= 2; t += 0.1) {
+    let n = 0
+    for (let px = 0; px < 48; px++) for (let py = 0; py < 48; py++) {
+      const c = EF.star.pixel(kt, 0, 0, px, py, t)
+      if (c[0] !== 43 || c[1] !== 88 || c[2] !== 118) n++
+    }
+    best = Math.max(best, n)
+  }
+  check('star : densité visible (>= 60 px differents au pic)', best >= 60)
+}
 
 // ---------- sanitize / normalize par entrée ----------
 check('upgrade legacy {min,hex} -> flat', (() => {
@@ -114,7 +140,7 @@ check('hexes < 2 supprimé', SlimeColors.normalize([{ min: 0, type: 'flat', hex:
 check('hexes > MAX tronqué', SlimeColors.normalize([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'multi', hexes: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffffff'] }])[1].hexes.length === SlimeColors.MAX_STOPS)
 check('speed clampée / NaN -> défaut', (() => {
   const n = SlimeColors.normalize([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'rainbow', speed: 7 }, { min: 20, type: 'shine', hex: '#3a7bd5' }])
-  return n[1].speed === 1 && n[2].speed === 0.4
+  return n[1].speed === 1 && n[2].speed === 0.3
 })())
 check('normalize null si pas un tableau', SlimeColors.normalize('oops') === null)
 
