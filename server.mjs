@@ -10,13 +10,23 @@
 //   GET  /api/rev    -> { rev }
 //   GET  /api/state  -> { rev, state }           (state = { format, patterns, layout } | null)
 //   PUT  /api/state  -> { baseRev?, state } -> { ok, rev } (format slime-patterns@1
-//        requis ; baseRev fourni != rev courante -> 409, rien n'est écrit)
+//        requis ; baseRev fourni != rev courante -> 409, rien n'est écrit ;
+//        state.layout.tiers optionnel, stocké/retourné tel quel — c'est la
+//        config des paliers de l'atelier poussée par l'onglet COULEURS)
+//   GET  /api/scores -> classement public de l'atelier (noms/temps, AUCUN score)
+//   POST /api/scores {v:1,name,score,playtime,times,code} -> 200 {ok,accepted}
+//        | 400 {error} (payload ou code signé invalide/incohérent)
+//        | 429 {error} (1 soumission valide par IP par fenêtre de 30 s)
+//   GET  /api/admin/pending  (X-Slime-Key) -> {pending:[{id,name,score,tier,times,createdAt}]}
+//   POST /api/admin/validate {id} (X-Slime-Key) -> {ok:true} | 404
+//   POST /api/admin/delete   {id} (X-Slime-Key) -> {ok:true} | 404
 //
 // Le pool partagé vit dans data/pool.json (écriture atomique tmp+rename).
 // Les scores de l'atelier vivent dans data/scores.json (même pattern) ; tout le
 // classement est calculé par le module `Scores` ci-dessous, PUR (aucune I/O).
 
 import http from 'node:http'
+import { createHmac } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -35,6 +45,14 @@ if (ai > 0 && process.argv[ai + 1]) argPort = parseInt(process.argv[ai + 1], 10)
 const PORT = process.env.PORT ? (parseInt(process.env.PORT, 10) || argPort) : argPort
 // Cle d'ecriture du pool (mot de passe de l'editeur). SLIME_KEY pour changer.
 const WRITE_KEY = process.env.SLIME_KEY || 'slime'
+
+// Secret des codes de score : copie LITTÉRALE du SECRET de js/crypto.js — le
+// client signe ses codes avec, le serveur vérifie (jamais transmis sur le fil).
+const SCORE_SECRET = 'S1!m3~Vault#K7-2026'
+// Anti-spam des soumissions : 1 POST valide par IP par fenêtre glissante de
+// 30 s. Les 400 (payload invalide) et les 429 (refus) ne consomment JAMAIS le
+// quota — un refus ne décale pas non plus la fenêtre.
+const RATE_WINDOW = 30000
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -77,6 +95,18 @@ export const RATE_MARGE = 60    // marge de départ (billes dorées, résiduel d
 export const MAX_SCORE = 100000 // borne absolue du score
 export const PAGE = 10          // joueurs par page du livre / par liste top
 export const JAR = 8            // slots de slime par bocal (le client dérive « +N »)
+
+// Paliers par défaut : copie de SlimeColors.DEFAULTS (js/slime-colors.js).
+// Utilisés tant qu'aucun layout.tiers exploitable n'a été poussé via
+// PUT /api/state — seuls les champs `min` servent au classement serveur.
+const DEFAULT_TIERS = [
+  { min: 0, type: 'flat', hex: '#3ecb3e' },
+  { min: 100, type: 'flat', hex: '#35d0c5' },
+  { min: 200, type: 'flat', hex: '#4a5ed7' },
+  { min: 350, type: 'flat', hex: '#a04fd8' },
+  { min: 500, type: 'flat', hex: '#ef5fa7' },
+  { min: 750, type: 'flat', hex: '#ffd23f' }
+]
 
 function newStore() {
   return { seq: 0, entries: [] }
@@ -257,17 +287,47 @@ export const Scores = {
   ingest, approve, remove, publicView
 }
 
+// Vérifie un code de score (format js/crypto.js) contre la soumission POSTée :
+// HMAC du body, puis re-décodage b64url -> payload "score.elapsed.date". Le
+// score décodé doit être IDENTIQUE au score annoncé, et l'elapsed cohérent avec
+// le playtime déclaré (tolérance ±2 s — horloge du client seule source pour
+// les deux, mais un code rejoué d'une autre partie ne doit pas passer).
+// Renvoie null si tout concorde, sinon le message d'erreur (-> 400).
+function verifyScoreCode(code, score, playtime) {
+  if (typeof code !== 'string') return 'code invalide'
+  const idx = code.lastIndexOf('.')
+  if (idx < 1) return 'code invalide'
+  const body = code.slice(0, idx)
+  const sig = code.slice(idx + 1).trim()
+  const want = createHmac('sha256', SCORE_SECRET).update(body).digest('hex').slice(0, 32)
+  if (sig !== want) return 'code invalide'
+  let payload = ''
+  try {
+    payload = Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+  } catch (e) { return 'code invalide' }
+  const m = payload.match(/^(\d+)\.(\d+)\.\d+$/) // score.elapsed.date, tous entiers
+  if (!m) return 'code invalide'
+  if (parseInt(m[1], 10) !== score) return 'code incoherent'
+  if (Math.abs(parseInt(m[2], 10) - playtime) > 2) return 'code incoherent'
+  return null
+}
+
 
 // Handler HTTP exportable : toute la logique (API + statique) passe par là.
 // pool / loadPool / savePool sont des closures — chaque createHandler a son
 // propre pool dans son dataDir, sans état partagé au niveau du module.
+// `now` (optionnel, tests uniquement) : horloge injectée — rate-limit et
+// createdAt suivent cette horloge au lieu de Date.now.
 // Résout le pool avant de renvoyer le handler ; ne démarre aucune écoute.
-export async function createHandler({ dataDir, writeKey }) {
+export async function createHandler({ dataDir, writeKey, now }) {
   dataDir = path.resolve(dataDir)
   const poolFile = path.join(dataDir, 'pool.json')
   const scoresFile = path.join(dataDir, 'scores.json')
+  const nowMs = typeof now === 'function' ? now : Date.now
   let pool = null // { rev, state }
   let scores = null // { seq, entries } — store du module Scores (atelier)
+  // Rate-limit des soumissions : IP -> timestamps des POST VALIDES uniquement.
+  const rateHits = new Map()
 
   async function loadPool() {
     try {
@@ -310,6 +370,37 @@ export async function createHandler({ dataDir, writeKey }) {
     await fs.rename(tmp, scoresFile)
   }
 
+  // Config des paliers courante : layout.tiers poussé par l'éditeur (PUT
+  // /api/state) s'il est exploitable, sinon les paliers par défaut du jeu.
+  // Assainie + triée par min croissant (mêmes sémantiques que le client).
+  function currentTiers() {
+    const raw = pool && pool.state && pool.state.layout && pool.state.layout.tiers
+    if (Array.isArray(raw) && raw.length) {
+      const clean = raw
+        .filter(t => t && typeof t === 'object' && Number.isFinite(+t.min))
+        .map(t => ({ min: Math.max(0, Math.floor(+t.min)) }))
+        .sort((a, b) => a.min - b.min)
+      if (clean.length) return clean
+    }
+    return DEFAULT_TIERS
+  }
+
+  // File de modération : entrées non-effectivement-visibles (pas pilier ET
+  // palier > maxOpen), TOUJOURS redérivées de la config courante — jamais lues
+  // depuis le statut stocké, qui ignore un changement de layout.tiers.
+  // Liste plate triée palier croissant puis score décroissant.
+  function pendingList() {
+    const tiers = currentTiers()
+    const t = e => (Number.isFinite(e.score) ? Scores.tierIndex(tiers, e.score) : (e.tier | 0))
+    let maxOpen = -1
+    for (const e of scores.entries) if (e.approved && t(e) > maxOpen) maxOpen = t(e)
+    return scores.entries
+      .filter(e => !e.approved && t(e) > maxOpen)
+      .map(e => ({ e, tier: t(e) }))
+      .sort((a, b) => a.tier - b.tier || b.e.score - a.e.score || a.e.id - b.e.id)
+      .map(x => ({ id: x.e.id, name: x.e.name, score: x.e.score, tier: x.tier, times: x.e.times, createdAt: x.e.createdAt }))
+  }
+
   await loadPool()
   await loadScores()
 
@@ -342,6 +433,50 @@ export async function createHandler({ dataDir, writeKey }) {
         await savePool()
         console.log('[pool] rev ' + pool.rev + ' — ' + state.patterns.length + ' patterns (' + req.socket.remoteAddress + ')')
         return send(res, 200, { ok: true, rev: pool.rev })
+      }
+      // ---- L'Atelier des bocaux : classement public + modération ----
+      if (u.pathname === '/api/scores') {
+        if (req.method === 'GET') return send(res, 200, Scores.publicView(scores, currentTiers()))
+        if (req.method === 'POST') {
+          // Rate-limit AVANT tout parse/validation : une IP qui vient de
+          // soumettre est refusée d'office. Seul un POST valide consomme le
+          // quota (plus bas) — un 400 n'écrit pas de timestamp, un 429 non
+          // plus : la fenêtre reste ancrée sur la dernière soumission valide.
+          const ip = req.socket.remoteAddress || '?'
+          const t = nowMs()
+          const hits = (rateHits.get(ip) || []).filter(x => t - x < RATE_WINDOW)
+          if (hits.length >= 1) return send(res, 429, { error: 'trop de soumissions, reessaie dans un instant' })
+          let body
+          try { body = JSON.parse(await readBody(req)) } catch (e) { return send(res, 400, { error: 'JSON invalide' }) }
+          const v = Scores.validateSubmission(body, t)
+          if (!v.ok) return send(res, 400, { error: v.error })
+          const err = verifyScoreCode(body && body.code, v.sub.score, v.sub.playtime)
+          if (err) return send(res, 400, { error: err })
+          const r = Scores.ingest(scores, v.sub, typeof body.code === 'string' ? body.code : '', currentTiers(), t)
+          rateHits.set(ip, hits.concat(t)) // soumission valide : consomme le quota
+          if (r.accepted) await saveScores() // mutation réussie -> persistance
+          return send(res, 200, { ok: true, accepted: r.accepted })
+        }
+      }
+      if (u.pathname.startsWith('/api/admin/')) {
+        // Modération réservée à la même clé que l'éditeur (X-Slime-Key).
+        if ((req.headers['x-slime-key'] || '') !== writeKey) {
+          return send(res, 401, { error: 'cle requise' })
+        }
+        if (u.pathname === '/api/admin/pending' && req.method === 'GET') {
+          return send(res, 200, { pending: pendingList() })
+        }
+        if ((u.pathname === '/api/admin/validate' || u.pathname === '/api/admin/delete') && req.method === 'POST') {
+          let body
+          try { body = JSON.parse(await readBody(req)) } catch (e) { return send(res, 400, { error: 'JSON invalide' }) }
+          if (!body || !Number.isInteger(body.id)) return send(res, 400, { error: 'id invalide' })
+          const done = u.pathname === '/api/admin/validate'
+            ? Scores.approve(scores, body.id, currentTiers())
+            : Scores.remove(scores, body.id, currentTiers())
+          if (!done) return send(res, 404, { error: 'entree inconnue' })
+          await saveScores() // mutation réussie -> persistance
+          return send(res, 200, { ok: true })
+        }
       }
       if (u.pathname.startsWith('/api/')) return send(res, 404, { error: 'endpoint inconnu' })
       serveStatic(req, res, u.pathname)
