@@ -59,7 +59,12 @@ const I18N = (() => {
       editCta: 'OUVRIR L\'EDITEUR',
       galTitle: 'Tout un slime d\'etats',
       galSub: 'Vert, orange, rouge selon ta vie.',
-      foot: 'SLIME — endless runner pixel-art.'
+      foot: 'SLIME — endless runner pixel-art.',
+      // pseudo joueur (js/player.js)
+      nameTitle: 'TON NOM',
+      nameAsk: 'Quel est ton nom ?',
+      nameSkip: 'Jouer sans nom',
+      yourName: 'TON NOM'
     },
     en: {
       aim: 'Drag to aim, release to jump',
@@ -113,7 +118,12 @@ const I18N = (() => {
       editCta: 'OPEN EDITOR',
       galTitle: 'A whole range of slime',
       galSub: 'Green, orange, red — your life.',
-      foot: 'SLIME — pixel-art endless runner.'
+      foot: 'SLIME — pixel-art endless runner.',
+      // player name (js/player.js)
+      nameTitle: 'YOUR NAME',
+      nameAsk: 'What is your name?',
+      nameSkip: 'Play without a name',
+      yourName: 'YOUR NAME'
     }
   }
   const listeners = []
