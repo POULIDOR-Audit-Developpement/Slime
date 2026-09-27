@@ -2,7 +2,7 @@
 
 **Date :** 2026-09-27
 **Statut :** Validé (implémentation en cours)
-**Version :** 1.1
+**Version :** 1.2
 **Contexte :** giveaway pour les followers (chaîne de nœuds brodés main). Les enfants jouent ;
 ce sont les parents qui « grindent » pour décrocher le 1er prix. Jeu hébergé en ligne,
 compétition asynchrone sur plusieurs jours.
@@ -62,18 +62,20 @@ où la couleur est obtenue ; c'est le seul temps affiché (format `m:ss`).
 (timeout court, échec silencieux hors ligne — le jeu reste 100 % fonctionnel sans serveur) :
 
 ```json
-{ "v": 1, "name": "PapaOurson", "score": 412, "tier": 3, "playtime": 517,
-  "tierTimes": [12, 47, 131], "code": "SLIME1.…" }
+{ "v": 1, "name": "PapaOurson", "score": 412, "playtime": 517,
+  "times": [[0, 12], [2, 47], [4, 131]], "code": "SLIME1.…" }
 ```
 
-`tierTimes` = instant d'obtention de chaque palier, en secondes depuis le **début du run**
-(croissants, dernier ≤ `playtime`) — c'est ce qui alimente le temps `m:ss` du livre.
+`times` = paires `[tierIdx, secondes]` : instant d'obtention de chaque palier,
+en secondes depuis le **début du run** — c'est ce qui alimente le temps `m:ss`
+du livre.
 
 Le module client (`js/scores.js`, nouveau) ne fait que POSTer ; **le serveur est
-autoritaire** : il recalcule lui-même le palier depuis le score (le `tier` envoyé n'est
-qu'indicatif) et revalide la signature HMAC.
+autoritaire** : il recalcule lui-même le palier depuis le score (aucun champ
+`tier` n'est envoyé) et revalide la signature HMAC.
 
-- Garde-fous supplémentaires : `tierTimes` croissant et ≤ `playtime` (valeur absente =
+- Garde-fous supplémentaires : `times` — indices de palier strictement
+  croissants, secondes croissantes et ≤ `playtime` (valeur absente =
   temps non affiché dans le livre pour ce run).
 - Le `score` n'est utilisé **que côté serveur** (recalcul du palier, classement de la
   page dorée, garde-fous de plausibilité) : il n'apparaît **jamais** dans les payloads
@@ -148,14 +150,14 @@ Stockage : `data/scores.json` (ignoré git, comme `pool.json`). Polling côté c
   joueurs ayant atteint ce palier. **Palier fermé** : `jar_empty`, étagère neutre — **ni
   couleur, ni seuil visible**. Palier ouvert : slimes colorés, liseré de l'étagère à la
   couleur du palier.
-- **Le livre** : posé sur le meuble (visible dans le fond) ; un clic l'ouvre en grand.
-  **Feuilletage** — une **double page par palier** (ordre de la config des paliers), puis
+- **Le livre** : posé sur le meuble et **dessiné ouvert en permanence** (pas
+  d'état fermé ni d'ouverture au clic) ; les boutons **‹ ›** feuillettent. **Feuilletage** — une **double page par palier** (ordre de la config des paliers), puis
   la **double page dorée** en fin de livre. Page de palier : jusqu'à **10 joueurs**
   (pseudo + temps d'obtention `m:ss`, tri **croissant**). Page dorée : **top 10 par
   score, pseudo seul**, mise en valeur dorée — le **1er de la page dorée est le grand
   gagnant** (aucun chiffre).
 - **Navigation** : molette/pince = zoom (0,5×–6×), glisser = pan, double-clic = vue
-  entière, clic sur le livre = feuilleter. Zoom centré sur le pointeur, échantillonnage
+  entière, boutons ‹ › du livre = feuilleter. Zoom centré sur le pointeur, échantillonnage
   pixelisé (`image-rendering`).
 - **Ton slime pulse** doucement (opacité 0,85→1, ~1 Hz) pour te retrouver — seule
   animation continue, un sprite, conforme aux règles perf (AGENTS.md).
@@ -165,8 +167,8 @@ Stockage : `data/scores.json` (ignoré git, comme `pool.json`). Polling côté c
 - **Entrées** : bouton « L'ATELIER » à l'écran titre (`index.html`) + « VOIR L'ATELIER »
   à l'écran de fin (`js/game.js`). Le bouton « COPIER LE CODE » de l'écran de fin est
   conservé (vérification hors ligne).
-- **Hors ligne** : la scène s'affiche bocaux vides, livre fermé + message « L'atelier se
-  remplit en ligne » (i18n).
+- **Hors ligne** : la scène s'affiche bocaux vides, livre ouvert portant le
+  message « L'atelier se remplit en ligne » (i18n).
 
 ## 9. Onglet admin ATELIER (`editor.html`)
 

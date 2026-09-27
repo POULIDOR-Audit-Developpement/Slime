@@ -4,7 +4,7 @@
 // Usage : node tools/server_test.mjs
 import http from 'node:http'
 import { promises as fs } from 'node:fs'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { once } from 'node:events'
@@ -17,7 +17,9 @@ const ROOT = new URL('..', import.meta.url).pathname
 const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'slime-server-test-'))
 const KEY = 'cle-de-test'
 const REAL_POOL = path.join(ROOT, 'data', 'pool.json')
-const realPoolBefore = readFileSync(REAL_POOL, 'utf8')
+// data/ est gitignoré : sur un clone frais le pool réel n'existe pas — la
+// garde anti-pollution est alors sautée (skip), jamais un crash de la suite.
+const realPoolBefore = existsSync(REAL_POOL) ? readFileSync(REAL_POOL, 'utf8') : null
 
 const server = http.createServer()
 try {
@@ -80,6 +82,11 @@ try {
   server.close()
   server.closeAllConnections()
   // Garde anti-pollution : le vrai pool LAN ne doit pas avoir bougé.
-  assert.strictEqual(readFileSync(REAL_POOL, 'utf8'), realPoolBefore, 'data/pool.json intact')
+  if (realPoolBefore !== null) {
+    assert.strictEqual(readFileSync(REAL_POOL, 'utf8'), realPoolBefore, 'data/pool.json intact')
+  } else {
+    assert.ok(!existsSync(REAL_POOL), 'data/pool.json toujours absent')
+    console.log('skip : data/pool.json absent')
+  }
   rmSync(DATA_DIR, { recursive: true, force: true })
 }

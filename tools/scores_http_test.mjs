@@ -21,7 +21,10 @@ const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'slime-scores-http-'))
 const KEY = 'cle-de-test'
 const REAL_POOL = path.join(ROOT, 'data', 'pool.json')
 const REAL_SCORES = path.join(ROOT, 'data', 'scores.json')
-const realPoolBefore = readFileSync(REAL_POOL, 'utf8')
+// data/ est gitignoré : sur un clone frais les fichiers réels peuvent
+// manquer — la garde anti-pollution correspondante est sautée (skip), jamais
+// un crash de la suite.
+const realPoolBefore = existsSync(REAL_POOL) ? readFileSync(REAL_POOL, 'utf8') : null
 const realScoresBefore = existsSync(REAL_SCORES) ? readFileSync(REAL_SCORES, 'utf8') : null
 
 // ---- fabrique de codes signés : réimplémentation du format de js/crypto.js
@@ -220,11 +223,17 @@ try {
   server.close()
   server.closeAllConnections()
   // Garde anti-pollution : le vrai data/ ne doit pas avoir bougé.
-  assert.strictEqual(readFileSync(REAL_POOL, 'utf8'), realPoolBefore, 'data/pool.json intact')
+  if (realPoolBefore !== null) {
+    assert.strictEqual(readFileSync(REAL_POOL, 'utf8'), realPoolBefore, 'data/pool.json intact')
+  } else {
+    assert.ok(!existsSync(REAL_POOL), 'data/pool.json toujours absent')
+    console.log('skip : data/pool.json absent')
+  }
   if (realScoresBefore !== null) {
     assert.strictEqual(readFileSync(REAL_SCORES, 'utf8'), realScoresBefore, 'data/scores.json intact')
   } else {
     assert.ok(!existsSync(REAL_SCORES), 'data/scores.json toujours absent')
+    console.log('skip : data/scores.json absent')
   }
   rmSync(DATA_DIR, { recursive: true, force: true })
 }

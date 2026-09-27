@@ -419,18 +419,21 @@ function die() {
 }
 
 // T6 — soumission du score à la mort (fire-and-forget) : nom connu -> envoi
-// immédiat ; sans nom et score > 0 -> la modal le demande et la soumission
-// part au onDone (null = « jouer sans nom » -> rien). Sans module Player
-// (harnais Node) : pas d'envoi. L'écran de fin s'affiche dans tous les cas.
+// immédiat ; sans nom -> la modal le demande et la soumission part au onDone
+// (null = « jouer sans nom » -> rien). Ruling revue finale : score nul -> RIEN
+// du tout (ni POST ni demande de nom — pas de bruit à modérer ; le code
+// copiable reste disponible). Sans module Player (harnais Node) : pas d'envoi.
+// L'écran de fin s'affiche dans tous les cas.
 function submitScore(s) {
   if (testMode) return // ruling T6 — un playtest (caméra gelée, pattern en boucle) ne remplit JAMAIS l'atelier
+  if (!(s > 0)) return // ruling revue finale — score 0 : pas de soumission, pas de modal nom
   if (!SCORES) return
   const payload = name => ({
     v: 1, name, score: s, playtime: Math.round(elapsed), times: tierTimes, code: scoreCode
   })
   const name = PLAYER ? PLAYER.get() : null
   if (name) { SCORES.submit(payload(name)); return }
-  if (s > 0 && PLAYER && PLAYER.ensureModal) {
+  if (PLAYER && PLAYER.ensureModal) {
     PLAYER.ensureModal({ onDone: n => { if (n) SCORES.submit(payload(n)) } })
   }
 }
@@ -2184,6 +2187,14 @@ function init() {
   else if (st === 'invalide' || st === 'corrompu') console.warn('SLIME : stockage illisible — réglages par défaut utilisés')
   applyLayout()
   setupTestMode()
+  // T5 — modal « 1re visite » (spec §3) : lancement de play.html sans pseudo
+  // posé (Player.get() null) -> on le demande tout de suite. Jamais en playtest
+  // (?pattern= : le testeur n'a pas de nom à donner) ni dans le harnais Node
+  // (PLAYER null, js/player.js n'y est pas chargé). Non bloquante : onDone
+  // vide, la modal se ferme au clic et le jeu reste jouable dessous.
+  if (!testMode && PLAYER && PLAYER.ensureModal && PLAYER.get() === null) {
+    PLAYER.ensureModal({ onDone: function() {} })
+  }
   Music.restore()
   Sprites.load()
   buildFramePattern()
