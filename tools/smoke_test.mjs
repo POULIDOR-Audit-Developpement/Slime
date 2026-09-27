@@ -77,6 +77,18 @@ check('applyImport replace : pool remplacé', Patterns.applyImport(resOld, 'repl
 check('réglages intacts après import (grav 777, murs défaut)', Patterns.getLayout().phys.grav === 777 && Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.right === 14)
 check('applyImport merge : pattern ajouté', Patterns.applyImport(Patterns.importData(Patterns.patternToCode(defs[2])), 'merge') === 1)
 check('installDefaults remplace par les 20 défauts', Patterns.installDefaults() === defs.length && Patterns.getPatterns().length === defs.length && Patterns.getPatterns()[0].id === defs[0].id)
+
+// 3c. Tri canonique : difficulté croissante puis nom (casse/accents ignorés).
+const shuffled = [
+  { id: 'x3', name: 'Zénith', difficulty: 3, entry: { row: 2 }, platforms: defs[0].platforms, balls: [], decor: [] },
+  { id: 'x1', name: 'beta', difficulty: 1, entry: { row: 2 }, platforms: defs[0].platforms, balls: [], decor: [] },
+  { id: 'x5', name: 'Âcme', difficulty: 1, entry: { row: 2 }, platforms: defs[0].platforms, balls: [], decor: [] },
+  { id: 'x2', name: 'alpha', difficulty: 5, entry: { row: 2 }, platforms: defs[0].platforms, balls: [], decor: [] },
+  { id: 'x4', name: 'Azur', difficulty: 1, entry: { row: 2 }, platforms: defs[0].platforms, balls: [], decor: [] }
+]
+Patterns.setPatternsRaw(JSON.parse(JSON.stringify(shuffled)))
+check('pool trié : difficulté puis alphabétique (Âcme < Azur < beta)',
+  JSON.stringify(Patterns.getPatterns().map(p => p.id)) === JSON.stringify(['x5', 'x4', 'x1', 'x3', 'x2']))
 Patterns.setLayout(null)
 Patterns.setPatternsRaw([]) // retour à l'état initial (pool vide -> défauts)
 

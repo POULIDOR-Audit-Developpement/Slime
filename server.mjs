@@ -6,7 +6,8 @@
 // API :
 //   GET  /api/rev    -> { rev }
 //   GET  /api/state  -> { rev, state }           (state = { format, patterns, layout } | null)
-//   PUT  /api/state  -> { state } -> { ok, rev } (format slime-patterns@1 requis)
+//   PUT  /api/state  -> { baseRev?, state } -> { ok, rev } (format slime-patterns@1
+//        requis ; baseRev fourni != rev courante -> 409, rien n'est écrit)
 //
 // Le pool partagé vit dans data/pool.json (écriture atomique tmp+rename).
 
@@ -123,6 +124,13 @@ const server = http.createServer(async (req, res) => {
       const state = body && typeof body === 'object' && body.state ? body.state : body
       if (!state || state.format !== FORMAT || !Array.isArray(state.patterns)) {
         return send(res, 400, { error: 'format attendu : ' + FORMAT })
+      }
+      // Concurrence optimiste : une poussée basée sur une révision périmée est
+      // refusée sans rien écrire — le client recharge l'état et fusionne.
+      // baseRev absent : dernier écrit gagne (compat anciens clients/outils).
+      const baseRev = body && typeof body === 'object' && Number.isFinite(body.baseRev) ? body.baseRev : null
+      if (baseRev !== null && baseRev !== pool.rev) {
+        return send(res, 409, { error: 'revision perimee', rev: pool.rev })
       }
       pool.rev++
       pool.state = { format: state.format, patterns: state.patterns, layout: state.layout || null }

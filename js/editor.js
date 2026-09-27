@@ -2202,18 +2202,21 @@ const Ed = (() => {
   // référence à jour. En pleine édition PHYS/POWER on ne touche pas aux
   // panneaux (les formulaires en cours priment) — la liste est rafraîchie
   // au retour sur les autres onglets. (« start » = simple connexion : pas
-  // de message, juste la note d'état dans le pied de page.)
+  // de message, juste la note d'état dans le pied de page. « conflict » =
+  // notre poussée a été refusée (révision périmée) et fusionnée : rien
+  // n'a été écrasé, l'utilisateur est prévenu.)
   function lanRemote(reason) {
     patterns = Patterns.getPatterns()
     if (selId && !patterns.find(p => p.id === selId)) selId = patterns.length ? patterns[0].id : null
+    const rev = Patterns.lanStatus ? Patterns.lanStatus().rev : '?'
     if (mode === 'phys' || mode === 'power' || mode === 'colors') {
-      if (reason !== 'start') flash('Sync LAN : pool mis à jour depuis un autre appareil')
+      if (reason === 'conflict') flash('Sync LAN : conflit résolu, fusion appliquée (rev ' + rev + ')')
+      else if (reason !== 'start') flash('Sync LAN : pool mis à jour depuis un autre appareil')
       return
     }
     refreshList()
-    if (reason !== 'start') {
-      flash('Sync LAN : pool synchronisé (rev ' + (Patterns.lanStatus ? Patterns.lanStatus().rev : '?') + ')')
-    }
+    if (reason === 'conflict') flash('Sync LAN : conflit résolu, fusion appliquée (rev ' + rev + ')')
+    else if (reason !== 'start') flash('Sync LAN : pool synchronisé (rev ' + rev + ')')
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init)

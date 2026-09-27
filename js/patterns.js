@@ -368,6 +368,15 @@ const Patterns = (() => {
   }
 
   // ---------- stockage ----------
+  // Tri canonique du pool, en place : difficulté croissante (T1 -> T5) puis
+  // nom alphabétique (casse et accents ignorés). Appliqué au chargement et à
+  // chaque écriture — liste de l'éditeur, exports et pool LAN restent rangés.
+  function sortPool(list) {
+    return list.sort((a, b) =>
+      ((a.difficulty | 0) - (b.difficulty | 0)) ||
+      String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' }))
+  }
+
   function defaults() {
     try {
       const arr = JSON.parse(DEFAULT_POOL_JSON)
@@ -389,7 +398,7 @@ const Patterns = (() => {
       if (!d || d.format !== FORMAT || !Array.isArray(d.patterns)) return 'invalide'
       store = {
         format: FORMAT,
-        patterns: d.patterns.filter(p => validatePattern(p).length === 0),
+        patterns: sortPool(d.patterns.filter(p => validatePattern(p).length === 0)),
         layout: d.layout || null
       }
       return 'ok'
@@ -412,6 +421,7 @@ const Patterns = (() => {
 
   function writeMain() {
     try {
+      sortPool(store.patterns) // rang canonique avant chaque persistance
       localStorage.setItem(STORE_KEY, JSON.stringify({ format: FORMAT, patterns: store.patterns, layout }))
     } catch (e) {}
   }
@@ -428,12 +438,14 @@ const Patterns = (() => {
 
   // ---------- sync LAN (serveur optionnel server.mjs) ----------
   // Même origine http(s) + server.mjs lancé : le pool est partagé entre tous
-  // les appareils du LAN. Adoption de l'état distant au démarrage (ou poussée
-  // du pool local si le serveur est vide), poussée à chaque save(), polling
-  // léger de /api/rev pour les changements venus d'ailleurs. Sans serveur :
-  // localStorage seul, exactement comme avant.
+  // les appareils du LAN. Poussée à chaque save() en concurrence optimiste :
+  // le PUT porte la révision de base (baseRev) et le serveur refuse (409) une
+  // poussée périmée — on recharge alors l'état distant et on FUSIONNE au lieu
+  // d'écraser (voir mergeRemoteUnion). Même fusion à l'adoption au démarrage
+  // et au polling léger de /api/rev. Sans serveur : localStorage seul,
+  // exactement comme avant.
   const LAN_POLL_MS = 2000
-  const lan = { on: false, rev: 0, lastPushed: 0, err: null, timer: null }
+  const lan = { on: false, rev: 0, lastPushed: 0, err: null, timer: null, pushing: false, queued: false }
   const lanListeners = []
 
   function lanLocation() {
@@ -454,14 +466,30 @@ const Patterns = (() => {
     return !!(s && s.format === FORMAT && Array.isArray(s.patterns))
   }
 
-  // Remplace le store local par l'état partagé (miroir localStorage conservé
-  // pour continuer à fonctionner si le serveur disparaît). Un pattern en
-  // cours d'édition n'est jamais filtré : aucune perte possible en sync.
-  function adoptRemote(state) {
-    store = { format: FORMAT, patterns: state.patterns, layout: state.layout || null }
+  // Installe un état partagé : store, layout normalisé, miroir localStorage
+  // conservé pour continuer à fonctionner si le serveur disparaît.
+  function installState(patterns, remoteLayout) {
+    store = { format: FORMAT, patterns, layout: remoteLayout || null }
     layout = normalizeLayout(store.layout)
     loadStatusVar = 'lan'
     writeMain()
+  }
+
+  // Fusion « rien n'est perdu » : patterns du distant + patterns locaux
+  // absents du distant (par id). Même id ou layout -> version distante (c'est
+  // la dernière validée par le serveur). Tradeoff assumé, sans tombstones :
+  // une suppression faite ailleurs peut ressortir d'un appareil pas encore
+  // synchronisé, mais une création locale n'est jamais effacée par une sync.
+  // Résultat trié canoniquement (difficulté puis nom) pour rester comparable.
+  function mergeRemoteUnion(state) {
+    const ids = {}
+    for (const p of state.patterns) ids[p.id] = true
+    const patterns = state.patterns.slice()
+    let added = 0
+    for (const p of (store && store.patterns) || []) {
+      if (p && p.id && !ids[p.id]) { patterns.push(p); added++ }
+    }
+    return { patterns: sortPool(patterns), added }
   }
 
   async function lanApi(pathname, opts) {
@@ -470,7 +498,7 @@ const Patterns = (() => {
     return res.json()
   }
 
-  // Récupère l'état complet ; true si un état valide a été adopté.
+  // Récupère l'état complet ; true si un état valide a été installé.
   // Garde anti-perte : un état distant VIDE n'efface jamais un pool local
   // non vide (serveur neuf, réinitialisé ou pollué par un test). Le pool
   // local sera poussé au serveur par le lanPush() de lanStart à la place.
@@ -478,12 +506,30 @@ const Patterns = (() => {
     const d = await lanApi('/api/state')
     lan.rev = d.rev
     if (!validRemoteState(d.state)) return false
-    if (!d.state.patterns.length && store.patterns.length) return false
-    adoptRemote(d.state)
+    if (!d.state.patterns.length && store && store.patterns.length) return false
+    installState(mergeRemoteUnion(d.state).patterns, d.state.layout)
     return true
   }
 
-  async function lanPush() {
+  // Le serveur a refusé notre poussée (409 : révision périmée) — une session
+  // plus à jour existe quelque part. On recharge l'état distant, on fusionne
+  // (mergeRemoteUnion) et on repousse s'il reste des patterns locaux à
+  // partager. Retourne le nombre de patterns locaux à (re)pousser.
+  async function resolveConflict() {
+    const d = await lanApi('/api/state')
+    lan.rev = d.rev
+    if (!validRemoteState(d.state)) return 0
+    if (!d.state.patterns.length) return (store && store.patterns.length) || 0
+    const u = mergeRemoteUnion(d.state)
+    const changed = JSON.stringify([u.patterns, normalizeLayout(d.state.layout)]) !== JSON.stringify([store.patterns, layout])
+    if (changed) {
+      installState(u.patterns, d.state.layout)
+      lanNotify('conflict')
+    }
+    return u.added
+  }
+
+  async function pushState(attempt) {
     try {
       // Clé de l'éditeur déverrouillé (server.mjs refuse les PUT sans elle).
       let key = null
@@ -493,12 +539,32 @@ const Patterns = (() => {
       const d = await lanApi('/api/state', {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ state: { format: FORMAT, patterns: store.patterns, layout } })
+        body: JSON.stringify({ baseRev: lan.rev, state: { format: FORMAT, patterns: store.patterns, layout } })
       })
       lan.rev = d.rev
       lan.lastPushed = d.rev
       lan.err = null
-    } catch (e) { lan.err = String((e && e.message) || e) }
+    } catch (e) {
+      const msg = String((e && e.message) || e)
+      if (msg.indexOf('409') >= 0 && attempt < 3) {
+        const n = await resolveConflict()
+        if (n > 0) return pushState(attempt + 1)
+        return
+      }
+      lan.err = msg
+    }
+  }
+
+  // Les saves sont fréquents (chaque interaction de l'éditeur) : au plus une
+  // poussée en cours + une en attente, toujours avec le store le plus récent.
+  async function lanPush() {
+    if (lan.pushing) { lan.queued = true; return }
+    lan.pushing = true
+    try { await pushState(0) }
+    finally {
+      lan.pushing = false
+      if (lan.queued) { lan.queued = false; lanPush() }
+    }
   }
 
   async function lanPollTick() {
@@ -630,7 +696,7 @@ const Patterns = (() => {
     load, save, loadStatus,
     getPatterns, setPatterns, setPatternsRaw, getLayout, setLayout,
     usingDefaults, installDefaults, resetUser,
-    defaults, validatePattern, validatePatternJumps,
+    defaults, sortPool, validatePattern, validatePatternJumps,
     patternWidth, entryRow, emptyPattern, uid,
     instantiate, jumpOk, targetOf,
     spawnSection, pin, getPinned,
