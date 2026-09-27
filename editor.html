@@ -162,6 +162,14 @@
   .tierRow input[type=color]:disabled, .tierRow input[type=number]:disabled { opacity: .45; cursor: not-allowed; }
   .tierRow .range { color: var(--dim); font-size: .85rem; flex: 1; }
   .tierRow .del { flex: 0 0 auto; }
+  .tierRow select { background: var(--bg); border: 1px solid var(--line); color: var(--txt); padding: .31rem; font: inherit; font-size: .85rem; }
+  .tierRow select:disabled { opacity: .45; cursor: not-allowed; }
+  .tierRow input[type=range] { width: 7.38rem; }
+  .tierRow .stops { display: flex; gap: .31rem; align-items: center; flex-wrap: wrap; }
+  .tierRow .spd { display: flex; gap: .46rem; align-items: center; }
+  .tierRow .val { min-width: 3.54rem; text-align: right; color: var(--gold); font-size: .85rem; }
+  .stopbtn { padding: .31rem .62rem; font-size: .85rem; line-height: 1; }
+  .stopbtn:disabled { opacity: .35; }
   .tierGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(25.38rem, 1fr)); gap: .77rem; margin-top: .77rem; }
   .tierGrid .tierRow { margin-top: 0; }
 </style>
@@ -212,8 +220,8 @@
   <button id="btnLock" title="Verrouiller l'editeur (oublier le mot de passe)">🔒</button>
 </footer>
 <script src="js/physics.js?v=20260926a"></script>
-<script src="js/slime-colors.js?v=20260926a"></script>
-<script src="js/sprites.js?v=20260926c"></script>
+<script src="js/slime-colors.js?v=20260927a"></script>
+<script src="js/sprites.js?v=20260927a"></script>
 <script src="js/patterns-defaults.js?v=20260925b"></script>
 <script src="js/patterns.js?v=20260926d"></script>
 <script src="js/crypto.js?v=20260926d"></script>
@@ -234,7 +242,7 @@
   }
   function loadEditor() {
     var s = document.createElement('script')
-    s.src = 'js/editor.js?v=20260927c'
+    s.src = 'js/editor.js?v=20260927d'
     document.body.appendChild(s)
   }
   function fail(msg) {

@@ -51,19 +51,48 @@ const Sprites = (() => {
   let loaded = 0
   let ready = false
   let tiers = (typeof SlimeColors !== 'undefined') ? SlimeColors.load() : SlimeColors_DEFAULTS_FALLBACK()
+  let animT = -1   // temps courant des effets animés (-1 : jamais tiqué)
+  let animIdx = 0  // round-robin parmi les paliers animés
 
   function tierSuffix(i) { return i > 0 ? '_t' + i : '' }
 
-  function makeVariants(key, im) {
-    for (let i = 1; i < tiers.length; i++) {
-      try { imgs[key + tierSuffix(i)] = SlimeColors.recolor(im, tiers[i].hex) } catch (e) {}
+  // ti défini : ne régénère que le palier i (tick d'animation) ; sinon tous.
+  function makeVariants(key, im, ti) {
+    const from = ti === undefined ? 1 : ti
+    const to = ti === undefined ? tiers.length : ti + 1
+    for (let i = from; i < to; i++) {
+      if (!tiers[i]) continue
+      try { imgs[key + tierSuffix(i)] = SlimeColors.recolor(im, tiers[i], animT < 0 ? 0 : animT) } catch (e) {}
     }
   }
 
-  // Nouvelle liste de paliers (settings.html) : purge des variantes _t* et
+  // Effets animés (rainbow/brillant/étoilé) : régénération des canvas à
+  // ~10 fps max, un palier animé par tick (round-robin) pour plafonner le
+  // coût — les plus gros sprites (ledge 400×420) coûtent ~2-3 ms chacun.
+  // Coût nul si aucun palier animé.
+  function tickAnimated(now) {
+    if (typeof SlimeColors === 'undefined' || !ready || animT === now) return
+    let hasAnim = false
+    for (let i = 1; i < tiers.length; i++) if (SlimeColors.isAnimated(tiers[i])) { hasAnim = true; break }
+    if (!hasAnim) return
+    if (animT >= 0 && now - animT < 0.1) return
+    animT = now
+    const animIdxs = []
+    for (let i = 1; i < tiers.length; i++) if (SlimeColors.isAnimated(tiers[i])) animIdxs.push(i)
+    if (!animIdxs.length) return
+    animIdx = (animIdx + 1) % animIdxs.length
+    const ti = animIdxs[animIdx]
+    for (const base of VARIANT_BASES) {
+      const im = imgs[base]
+      if (im && im.width) makeVariants(base, im, ti)
+    }
+  }
+
+  // Nouvelle liste de paliers (éditeur) : purge des variantes _t* et
   // régénération immédiate si les PNG de base sont déjà chargés.
   function setTiers(list) {
     tiers = list
+    animIdx = 0
     for (const k of Object.keys(imgs)) if (/_t\d+$/.test(k)) delete imgs[k]
     if (!ready) return
     for (const base of VARIANT_BASES) {
@@ -176,6 +205,7 @@ const Sprites = (() => {
   return {
     load,
     setTiers,
+    tickAnimated,
     draw,
     drawImage,
     drawSrc,

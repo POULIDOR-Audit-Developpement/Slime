@@ -76,5 +76,71 @@ Sprites.setTiers(SlimeColors.load())
 check('setTiers : anciennes variantes purgées', !Sprites.get('idle0_t5') && !Sprites.get('idle0_t2'))
 check('setTiers : nouvelle variante générée et dessinée', !!Sprites.get('idle0_t1') && Sprites.draw('idle0_t1', 0, 0, 10) === true)
 
+// ---------- effets spéciaux : pixel-fns ----------
+const EF = SlimeColors.EFFECTS
+check('isAnimated : rainbow/oui, flat/non', SlimeColors.isAnimated({ type: 'rainbow', speed: 0.2 }) && !SlimeColors.isAnimated({ type: 'flat', hex: '#3ecb3e' }))
+check('primary : 1re couleur / constante rainbow', SlimeColors.primary({ type: 'gradient', hexes: ['#ff0000', '#0000ff'] }) === '#ff0000' && SlimeColors.primary({ type: 'rainbow', speed: 0.2 }) === '#e05fbf')
+
+const gt = { type: 'gradient', hexes: ['#000000', '#ffffff'] }
+const g0 = EF.gradient.pixel(gt, 0, 0, 0, 0, 0), g1 = EF.gradient.pixel(gt, 0, 1, 0, 71, 0), gm = EF.gradient.pixel(gt, 0, 0.5, 0, 35, 0)
+check('gradient : fondu haut->bas monotone', g0[0] === 0 && g1[0] === 255 && Math.abs(gm[0] - 127.5) < 0.01)
+
+const mt = { type: 'multi', hexes: ['#ff0000', '#00ff00', '#0000ff'] }
+check('multi : bandes nettes distinctes', EF.multi.pixel(mt, 0.1, 0, 0, 0, 0)[0] === 255 && EF.multi.pixel(mt, 0.5, 0, 0, 0, 0)[1] === 255 && EF.multi.pixel(mt, 0.9, 0, 0, 0, 0)[2] === 255)
+
+const rt = { type: 'rainbow', speed: 0.5 }
+check('rainbow : change avec le temps', JSON.stringify(EF.rainbow.pixel(rt, 0.5, 0.5, 40, 30, 0)) !== JSON.stringify(EF.rainbow.pixel(rt, 0.5, 0.5, 40, 30, 0.6)))
+
+const st = { type: 'shine', hex: '#3a7bd5', speed: 0.5 }
+const s0 = JSON.stringify(EF.shine.pixel(st, 0.5, 0.5, 40, 30, 0))
+check('shine : reflet balaie le corps', [0.3, 0.6, 0.9, 1.2, 1.5, 1.7, 2.0, 2.3, 2.6].some(t => JSON.stringify(EF.shine.pixel(st, 0.5, 0.5, 40, 30, t)) !== s0))
+
+const kt = { type: 'star', hex: '#2b5876' }
+check('star : déterministe', JSON.stringify(EF.star.pixel(kt, 0, 0, 40, 30, 0)) === JSON.stringify(EF.star.pixel(kt, 0, 0, 40, 30, 0)))
+let starMoves = false
+for (let px = 0; px < 105 && !starMoves; px += 3) for (let py = 0; py < 105 && !starMoves; py += 3) {
+  const a = JSON.stringify(EF.star.pixel(kt, 0, 0, px, py, 0))
+  for (let t = 0.2; t <= 3 && !starMoves; t += 0.25) if (JSON.stringify(EF.star.pixel(kt, 0, 0, px, py, t)) !== a) starMoves = true
+}
+check('star : scintillement détecté', starMoves)
+
+// ---------- sanitize / normalize par entrée ----------
+check('upgrade legacy {min,hex} -> flat', (() => {
+  const n = SlimeColors.normalize([{ min: 0, hex: '#3ecb3e' }, { min: 50, hex: '#ABCDEF' }])
+  return n.length === 2 && n[1].type === 'flat' && n[1].hex === '#abcdef'
+})())
+check('type inconnu supprimé', SlimeColors.normalize([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'holographique' }]).length === 1)
+check('hexes < 2 supprimé', SlimeColors.normalize([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'gradient', hexes: ['#ff0000'] }]).length === 1)
+check('hexes > MAX tronqué', SlimeColors.normalize([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'multi', hexes: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffffff'] }])[1].hexes.length === SlimeColors.MAX_STOPS)
+check('speed clampée / NaN -> défaut', (() => {
+  const n = SlimeColors.normalize([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'rainbow', speed: 7 }, { min: 20, type: 'shine', hex: '#3a7bd5' }])
+  return n[1].speed === 1 && n[2].speed === 0.4
+})())
+check('normalize null si pas un tableau', SlimeColors.normalize('oops') === null)
+
+// ---------- tickAnimated : régénération + throttle ----------
+SlimeColors.save([
+  { min: 0, type: 'flat', hex: '#3ecb3e' },
+  { min: 10, type: 'rainbow', speed: 0.3 },
+  { min: 20, type: 'flat', hex: '#ff0000' }
+])
+Sprites.setTiers(SlimeColors.load())
+const beforeTick = Sprites.get('idle0_t1')
+check('tickAnimated : variante animée présente', !!beforeTick)
+Sprites.tickAnimated(1.0)
+const afterTick = Sprites.get('idle0_t1')
+check('tickAnimated : canvas régénéré (référence neuve)', !!afterTick && afterTick !== beforeTick)
+Sprites.tickAnimated(1.05)
+check('tickAnimated : throttle < 100 ms', Sprites.get('idle0_t1') === afterTick)
+Sprites.tickAnimated(1.5)
+check('tickAnimated : nouveau tick après 100 ms', Sprites.get('idle0_t1') !== afterTick)
+
+SlimeColors.save([{ min: 0, type: 'flat', hex: '#3ecb3e' }, { min: 10, type: 'flat', hex: '#00ff00' }])
+Sprites.setTiers(SlimeColors.load())
+const frozen = Sprites.get('idle0_t1')
+Sprites.tickAnimated(5.0)
+Sprites.tickAnimated(6.0)
+check('sans anim : variantes stables (coût nul)', Sprites.get('idle0_t1') === frozen)
+
 console.log(failed === 0 ? '\nSPRITES OK — les canvas passent les gardes de dessin' : `\n${failed} ÉCHEC(S)`)
 process.exit(failed ? 1 : 0)

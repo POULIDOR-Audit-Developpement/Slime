@@ -20,6 +20,7 @@ function makeEl(id) {
     addEventListener(ev, fn) { this.handlers[ev] = fn },
     getContext: () => new Proxy({}, { get: (t, k) => (t[k] ||= () => undefined), set: () => true }),
     querySelectorAll: () => [],
+    querySelector(sel) { return makeEl(sel) },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 272, height: 450 }),
     appendChild() {}
   }
@@ -340,6 +341,35 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('reset : clé slime_tiers retirée', localStorage.getItem('slime_tiers') === null)
   check('reset : 6 paliers par défaut', (els.props.innerHTML.match(/tierRow/g) || []).length === 6)
   check('reset : message', els.status.textContent === 'Couleurs réinitialisées')
+
+  // --- COULEURS : effets spéciaux (type, N couleurs, vitesse) ---
+  els.btnAddTier.handlers.click()
+  els['tc_type_6'].value = 'gradient'
+  els['tc_type_6'].handlers.change()
+  check('type dégradé : 2 pickers + boutons +/-', els.props.innerHTML.includes('id="tc_h_6_0"') && els.props.innerHTML.includes('id="tc_h_6_1"') && els.props.innerHTML.includes('id="tc_add_6"') && els.props.innerHTML.includes('id="tc_rm_6"'))
+  check('dégradé : bouton − désactivé à 2 couleurs', /id="tc_rm_6"[^>]*disabled/.test(els.props.innerHTML))
+  els['tc_add_6'].handlers.click()
+  check('dégradé : 3e couleur ajoutée', els.props.innerHTML.includes('id="tc_h_6_2"') && !/id="tc_rm_6"[^>]*disabled/.test(els.props.innerHTML))
+  els['tc_h_6_2'].value = '#00ff00'
+  els['tc_h_6_2'].handlers.input()
+  check('3e couleur éditée -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
+  els['tc_min_6'].value = '1000'
+  els['tc_min_6'].handlers.input()
+  els.btnApplyColors.handlers.click()
+  const sg = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
+  check('dégradé persisté (3 stops)', sg.some(t => t.type === 'gradient' && t.hexes.length === 3 && t.hexes[2] === '#00ff00'))
+  els['tc_type_6'].value = 'rainbow'
+  els['tc_type_6'].handlers.change()
+  check('type rainbow : slider de vitesse', els.props.innerHTML.includes('id="tc_spd_6"') && els.props.innerHTML.includes('id="tc_spd_6V"'))
+  els['tc_spd_6'].value = '0.3'
+  els['tc_spd_6'].handlers.input()
+  check('vitesse affichée à jour', els['tc_spd_6V'].textContent === '×0.30')
+  els.btnApplyColors.handlers.click()
+  check('rainbow persisté (speed 0.3)', JSON.parse(localStorage.getItem('slime_tiers') || '[]').some(t => t.type === 'rainbow' && t.speed === 0.3))
+  els['tc_del_6'].handlers.click()
+  els.btnApplyColors.handlers.click()
+  check('nettoyage : 6 paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === 6)
+
   Ed.setMode('patterns')
   check('retour patterns : classe colors retirée', !main.classList.contains('colors'))
 })()

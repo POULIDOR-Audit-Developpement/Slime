@@ -1162,13 +1162,15 @@ const Ed = (() => {
   }
 
   // ---------- onglet COULEURS ----------
-  // Paliers score -> couleur (SlimeColors, localStorage slime_tiers). Le
-  // brouillon vit dans `draft` (muté par les inputs) ; « ✓ Appliquer au jeu »
-  // l'écrit dans le stockage — le jeu ouvert le relit au focus / stockage et
-  // régénère ses sprites. Preview : recoloration réelle des frames idle
-  // (même algorithme que le jeu), animée idle0/idle1.
+  // Paliers score -> couleur/effet (SlimeColors, localStorage slime_tiers).
+  // Le brouillon vit dans `draft` (muté par les inputs, repassé aux re-rendus
+  // structurels) ; « ✓ Appliquer au jeu » l'écrit dans le stockage — le jeu
+  // ouvert le relit au focus / stockage et régénère ses sprites. Preview :
+  // recoloration réelle des frames idle (même moteur que le jeu), animée
+  // idle0/idle1 + temps partagé pour les effets animés.
   let colorsAlt = false
   let colorsFrames = null
+  let colorsDraft = null
 
   function colorsFramesLoad() {
     if (colorsFrames) return colorsFrames
@@ -1181,20 +1183,23 @@ const Ed = (() => {
     return colorsFrames
   }
 
-  function paintTierPreview(cv, hex) {
+  function paintTierPreview(cv, tier, t) {
     const c = cv.getContext('2d')
     if (!c) return
     c.imageSmoothingEnabled = false
     c.clearRect(0, 0, cv.width, cv.height)
     const im = colorsFramesLoad()[colorsAlt ? 1 : 0]
     if (!im.complete || !im.naturalWidth) return
-    try { c.drawImage(SlimeColors.recolor(im, hex), 0, 0, cv.width, cv.height) } catch (e) {}
+    try { c.drawImage(SlimeColors.recolor(im, tier, t), 0, 0, cv.width, cv.height) } catch (e) {}
   }
 
-  function repaintTierPreviews() {
+  function repaintTierPreviews(t) {
+    if (!colorsDraft) return
+    if (t === undefined) t = performance.now() / 1000
     propsEl.querySelectorAll('.tierRow').forEach(r => {
       const cv = r.querySelector('canvas')
-      if (cv) paintTierPreview(cv, r.dataset.hex)
+      const tier = colorsDraft[+r.dataset.i]
+      if (cv && tier) paintTierPreview(cv, tier, t)
     })
   }
 
@@ -1204,16 +1209,39 @@ const Ed = (() => {
     return 'jusqu\'à ' + (next ? (next.min - 1) + ' pts' : 'l\'infini')
   }
 
+  // Champs conditionnels selon l'effet du palier (tous désactivés au palier 0).
+  function tierEffectFields(t, i) {
+    const dis = i === 0 ? ' disabled' : ''
+    const typeOptions = SlimeColors.EFFECT_LIST.map(k =>
+      `<option value="${k}"${k === t.type ? ' selected' : ''}>${SlimeColors.EFFECTS[k].label}</option>`).join('')
+    let f = `<select id="tc_type_${i}"${dis} title="Type d'effet">${typeOptions}</select>`
+    if (t.type === 'flat' || t.type === 'shine' || t.type === 'star') {
+      f += `<input type="color" value="${t.hex}" id="tc_hex_${i}"${dis} title="${t.hex}"/>`
+    }
+    if (t.type === 'gradient' || t.type === 'multi') {
+      const stops = t.hexes.map((h, j) => `<input type="color" value="${h}" id="tc_h_${i}_${j}"${dis} title="${h}"/>`).join('')
+      f += `<span class="stops">${stops}` +
+        `<button class="stopbtn" id="tc_rm_${i}"${dis} ${t.hexes.length <= 2 ? 'disabled' : ''} title="Retirer la dernière couleur">−</button>` +
+        `<button class="stopbtn" id="tc_add_${i}"${dis} ${t.hexes.length >= SlimeColors.MAX_STOPS ? 'disabled' : ''} title="Ajouter une couleur (copie de la dernière)">+</button></span>`
+    }
+    if (t.type === 'rainbow' || t.type === 'shine') {
+      f += `<span class="spd"><input type="range" min="0" max="1" step="0.05" value="${t.speed}" id="tc_spd_${i}"${dis}/>` +
+        `<span class="val" id="tc_spd_${i}V">×${(+t.speed).toFixed(2)}</span></span>`
+    }
+    return f
+  }
+
   function renderPropsColors(draft) {
     // Brouillon : passé en argument par les handlers structurels (ajout /
     // suppression) pour préserver leurs mutations — sinon relu du stockage.
     draft = draft || SlimeColors.load()
+    colorsDraft = draft
     const saved = () => JSON.stringify(SlimeColors.load())
     const isDirty = () => JSON.stringify(draft) !== saved()
     let html = `<div class="physHead">
       <div>
         <h3>Couleurs du slime</h3>
-        <div class="note">La couleur du slime dépend du <b>score</b> : il change de teinte en direct dès qu'un palier est franchi (le score n'est jamais affiché — la couleur est un indice, pas un chiffre). La preview applique la <b>même recoloration que le jeu</b> aux sprites idle. Le palier 0 est l'art d'origine : sa teinte est verrouillée. « Appliquer » écrit le stockage local — le jeu ouvert se met à jour dès qu'on revient sur son onglet.</div>
+        <div class="note">La couleur du slime dépend du <b>score</b> : il change de teinte en direct dès qu'un palier est franchi (le score n'est jamais affiché — la couleur est un indice, pas un chiffre). La preview applique le <b>même moteur que le jeu</b> aux sprites idle. Effets : <b>Dégradé</b> (fondu haut→bas), <b>Multicolore</b> (bandes verticales, 2 à ${SlimeColors.MAX_STOPS} couleurs), <b>Arc-en-ciel / Brillant / Étoilé</b> (animés en jeu). Le palier 0 est l'art d'origine : verrouillé. « Appliquer » écrit le stockage local — le jeu ouvert se met à jour dès qu'on revient sur son onglet.</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="colDirtyNote" style="display:none">● modifications non appliquées</span>
@@ -1226,10 +1254,10 @@ const Ed = (() => {
     </div>
     <div class="tierGrid">`
     draft.forEach((t, i) => {
-      html += `<div class="tierRow" data-i="${i}" data-hex="${t.hex}">
+      html += `<div class="tierRow" data-i="${i}">
         <canvas width="96" height="96"></canvas>
         <div class="col"><span>dès</span><input type="number" min="0" step="10" value="${t.min}" id="tc_min_${i}" ${i === 0 ? 'disabled' : ''}/></div>
-        <input type="color" value="${t.hex}" id="tc_hex_${i}" ${i === 0 ? 'disabled' : ''} title="${t.hex}"/>
+        ${tierEffectFields(t, i)}
         <span class="range" id="tc_range_${i}">${tierRangeText(draft, i)}</span>
         ${i > 0 ? `<button class="del" id="tc_del_${i}" title="Supprimer ce palier">✕</button>` : ''}
       </div>`
@@ -1244,33 +1272,71 @@ const Ed = (() => {
         if (el) el.textContent = tierRangeText(draft, i)
       })
     }
+    const repaintRow = i => {
+      const row = propsEl.querySelector(`.tierRow[data-i="${i}"]`)
+      if (row) paintTierPreview(row.querySelector('canvas'), draft[i], performance.now() / 1000)
+    }
+    const struct = () => { renderPropsColors(draft); mark() }
     draft.forEach((t, i) => {
       const minEl = document.getElementById('tc_min_' + i)
-      const hexEl = document.getElementById('tc_hex_' + i)
       if (minEl) minEl.addEventListener('input', () => {
         draft[i].min = Math.max(0, Math.floor(+minEl.value || 0))
         refreshRanges(); mark()
       })
+      const typeEl = document.getElementById('tc_type_' + i)
+      if (typeEl) typeEl.addEventListener('change', () => {
+        draft[i] = Object.assign({ min: draft[i].min, type: typeEl.value }, SlimeColors.EFFECT_DEFAULTS[typeEl.value])
+        struct()
+      })
+      const hexEl = document.getElementById('tc_hex_' + i)
       if (hexEl) hexEl.addEventListener('input', () => {
         draft[i].hex = hexEl.value
-        const row = propsEl.querySelector(`.tierRow[data-i="${i}"]`)
-        if (row) { row.dataset.hex = hexEl.value; paintTierPreview(row.querySelector('canvas'), hexEl.value) }
-        mark()
+        repaintRow(i); mark()
       })
+      if (t.type === 'gradient' || t.type === 'multi') {
+        t.hexes.forEach((h, j) => {
+          const el = document.getElementById(`tc_h_${i}_${j}`)
+          if (el) el.addEventListener('input', () => {
+            draft[i].hexes[j] = el.value
+            repaintRow(i); mark()
+          })
+        })
+        const add = document.getElementById('tc_add_' + i)
+        if (add) add.addEventListener('click', () => {
+          if (draft[i].hexes.length >= SlimeColors.MAX_STOPS) return
+          draft[i].hexes.push(draft[i].hexes[draft[i].hexes.length - 1])
+          struct()
+        })
+        const rm = document.getElementById('tc_rm_' + i)
+        if (rm) rm.addEventListener('click', () => {
+          if (draft[i].hexes.length <= 2) return
+          draft[i].hexes.pop()
+          struct()
+        })
+      }
+      if (t.type === 'rainbow' || t.type === 'shine') {
+        const sp = document.getElementById('tc_spd_' + i)
+        if (sp) sp.addEventListener('input', () => {
+          draft[i].speed = Math.min(1, Math.max(0, parseFloat(sp.value) || 0))
+          const v = document.getElementById('tc_spd_' + i + 'V')
+          if (v) v.textContent = '×' + draft[i].speed.toFixed(2)
+          mark()
+        })
+      }
       const del = document.getElementById('tc_del_' + i)
       if (del) del.addEventListener('click', () => {
         draft.splice(i, 1)
-        renderPropsColors(draft); mark()
+        struct()
       })
     })
     const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn) }
     on('btnAddTier', 'click', () => {
       const last = draft[draft.length - 1]
-      draft.push({ min: (last ? last.min : 0) + 250, hex: '#f4f4f4' })
+      draft.push({ min: (last ? last.min : 0) + 250, type: 'flat', hex: '#f4f4f4' })
       const n = SlimeColors.normalize(draft)
       draft.length = 0
       for (const t of n) draft.push(t)
-      renderPropsColors(draft); mark()
+      struct()
     })
     on('btnApplyColors', 'click', () => {
       if (!SlimeColors.save(draft)) { flash('Erreur : paliers invalides (seuil ou teinte)'); return }
@@ -2059,12 +2125,15 @@ const Ed = (() => {
     document.getElementById('tabPhys').addEventListener('click', () => setMode('phys'))
     document.getElementById('tabPower').addEventListener('click', () => setMode('power'))
     document.getElementById('tabColors').addEventListener('click', () => setMode('colors'))
-    // Animation des previews de l'onglet COULEURS (bascule idle0/idle1).
+    // Animation des previews de l'onglet COULEURS : repaint ~8 fps (temps
+    // partagé des effets animés), bascule idle0/idle1 toutes les 4 tick.
     // unref : ne bloque pas la sortie des simulations Node.
+    let colorsTick = 0
     const colorsAnim = setInterval(() => {
-      colorsAlt = !colorsAlt
+      colorsTick++
+      if (colorsTick % 4 === 0) colorsAlt = !colorsAlt
       if (mode === 'colors') repaintTierPreviews()
-    }, 450)
+    }, 120)
     if (colorsAnim && typeof colorsAnim.unref === 'function') colorsAnim.unref()
     document.getElementById('btnNew').addEventListener('click', newPattern)
     document.getElementById('btnDefaults').addEventListener('click', installDefaults)

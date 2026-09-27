@@ -176,7 +176,11 @@ let C_TIER = 0
 function applyTiers() {
   if (C_TIER) COLORS.length = C_TIER
   C_TIER = COLORS.length
-  for (const t of TIERS) COLORS.push(t.hex, SlimeColors.shade(t.hex, 0.62), SlimeColors.shade(t.hex, -0.45))
+  // Fallbacks procéduraux : couleur representative du palier (+ clair/sombre).
+  for (const t of TIERS) {
+    const c = SlimeColors.primary(t)
+    COLORS.push(c, SlimeColors.shade(c, 0.62), SlimeColors.shade(c, -0.45))
+  }
   pal(COLORS, C_WHITE)
 }
 function tierCol(i) { return C_TIER + i * 3 }
@@ -1962,6 +1966,9 @@ function drawSlowmoOverlay() {
 }
 
 function draw() {
+  // Effets de couleur animés (rainbow/brillant/étoilé) : ~10 fps, coût nul
+  // si aucun palier animé. Le temps de jeu T les ralentit en bullet-time.
+  Sprites.tickAnimated(T)
   calcView()
   ensureVoidPattern()
   drawOuterFrame()
