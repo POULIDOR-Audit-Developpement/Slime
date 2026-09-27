@@ -82,13 +82,20 @@ function newStore() {
   return { seq: 0, entries: [] }
 }
 
-// Pseudo : trim + NFC + minuscules + espaces réduits, 1-12 caractères, charset
-// lettres (accents compris) / chiffres / espaces / -_. ' — '' si invalide.
+// Normalisation VALIDATION du pseudo : trim + NFC + espaces réduits, 1-12
+// caractères, charset lettres (accents compris) / chiffres / espaces / -_. '
+// — casse PRÉSERVÉE (c'est le nom affiché) ; '' si invalide.
 function normalizeName(raw) {
   if (typeof raw !== 'string') return ''
-  const s = raw.normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' ')
+  const s = raw.normalize('NFC').trim().replace(/\s+/g, ' ')
   if (s.length < 1 || s.length > 12) return ''
   return /^[\p{L}\p{N} _.'-]+$/u.test(s) ? s : ''
+}
+
+// Clé de dédoublonnage meilleur-par-nom : le normalizeName résultat mis en
+// minuscules — 'Émile', 'émile' et 'ÉMILE' désignent le même joueur.
+function nameKey(name) {
+  return normalizeName(name).toLowerCase()
 }
 
 // times = [[tierIdx, sec], ...] : paires exactes, tierIdx entiers >= 0 strictement
@@ -164,13 +171,15 @@ function reconcile(store, tiers) {
 }
 
 // Ingestion d'une soumission validée : palier recalculé serveur, meilleur-par-nom
-// (nom normalisé NFC) — la nouvelle entrée remplace l'ancienne seulement si son
-// score est STRICTEMENT supérieur, sinon la soumission est ignorée.
+// (clé nameKey insensible à la casse) — la nouvelle entrée remplace l'ancienne
+// seulement si son score est STRICTEMENT supérieur, sinon la soumission est
+// ignorée. Le nom stocké est celui du normalizeName (casse préservée).
 function ingest(store, sub, code, tiers, now) {
   if (!sub || typeof sub !== 'object') return { accepted: false, replaced: false, entry: null }
   const name = normalizeName(sub.name)
-  if (!name || !Number.isInteger(sub.score)) return { accepted: false, replaced: false, entry: null }
-  const prev = store.entries.find(e => e.name === name)
+  const key = nameKey(name)
+  if (!key || !Number.isInteger(sub.score)) return { accepted: false, replaced: false, entry: null }
+  const prev = store.entries.find(e => nameKey(e.name) === key)
   if (prev && !(sub.score > prev.score)) return { accepted: false, replaced: false, entry: prev }
   if (prev) store.entries.splice(store.entries.indexOf(prev), 1)
   const entry = {
@@ -244,7 +253,7 @@ function publicView(store, tiers) {
 
 export const Scores = {
   RATE_MAX, RATE_MARGE, MAX_SCORE, PAGE, JAR,
-  newStore, normalizeName, validateSubmission, tierIndex,
+  newStore, normalizeName, nameKey, validateSubmission, tierIndex,
   ingest, approve, remove, publicView
 }
 

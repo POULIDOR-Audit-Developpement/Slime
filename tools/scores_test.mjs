@@ -1,6 +1,7 @@
 // Test du module Scores (server.mjs) — cœur de classement de L'Atelier des bocaux.
-// Partie pure : validation des soumissions, meilleur-par-nom NFC, paliers ouverts
-// DÉRIVÉS des piliers approuvés (jamais stockés), vues publiques sans aucun score.
+// Partie pure : validation des soumissions, meilleur-par-nom insensible à la
+// casse (casse PRÉSERVÉE à l'affichage), paliers ouverts DÉRIVÉS des piliers
+// approuvés (jamais stockés), vues publiques sans aucun score.
 // Fin de fichier : branchement scores.json dans createHandler (chargement/écriture).
 // Run : node tools/scores_test.mjs
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
@@ -34,14 +35,20 @@ check('constantes aussi exportées nommées', server.RATE_MAX === 45 && server.R
 check('newStore() -> {seq:0, entries:[]}', deepEq(Scores.newStore(), { seq: 0, entries: [] }))
 check('newStore() : objet neuf à chaque appel (pas de partage)', Scores.newStore() !== Scores.newStore())
 
-// ---- normalizeName : trim, NFC, minuscules, espaces réduits, 1-12 car, charset ----
-check("normalizeName('  Émile  ') -> 'émile' (trim + NFC + casse)", Scores.normalizeName('  Émile  ') === 'émile')
+// ---- normalizeName : trim, NFC, casse préservée, espaces réduits, 1-12 car, charset ----
+check("normalizeName('  Émile  ') -> 'Émile' (trim + NFC, casse préservée)", Scores.normalizeName('  Émile  ') === 'Émile')
 check("normalizeName('<b>x</b>') -> '' (charset)", Scores.normalizeName('<b>x</b>') === '')
 check("normalizeName('Z'.repeat(13)) -> '' (trop long)", Scores.normalizeName('Z'.repeat(13)) === '')
 check("normalizeName('a  b') -> 'a b' (espaces réduits)", Scores.normalizeName('a  b') === 'a b')
 check('normalizeName : NFD et NFC donnent le même nom', Scores.normalizeName('Émile'.normalize('NFD')) === Scores.normalizeName('Émile'))
-check("normalizeName : charset complet (lettres accents, chiffres, -_. ')", Scores.normalizeName("Ça-và_B.2 '") === "ça-và_b.2 '")
+check("normalizeName : charset complet (lettres accents, chiffres, -_. ')", Scores.normalizeName("Ça-và_B.2 '") === "Ça-và_B.2 '")
 check('normalizeName : entrées non valides -> ""', Scores.normalizeName('') === '' && Scores.normalizeName(null) === '' && Scores.normalizeName(42) === '' && Scores.normalizeName('   ') === '')
+
+// ---- nameKey : clé de dédoublonnage insensible à la casse ----
+check("nameKey('  Émile  ') -> 'émile' (normalizeName + minuscules)", Scores.nameKey('  Émile  ') === 'émile')
+check("nameKey('ÉMILE') === nameKey('émile') === nameKey('Émile')", Scores.nameKey('ÉMILE') === 'émile' && Scores.nameKey('émile') === 'émile' && Scores.nameKey('Émile') === 'émile')
+check('nameKey : NFD et NFC donnent la même clé', Scores.nameKey('émile'.normalize('NFD')) === Scores.nameKey('Émile'))
+check('nameKey : entrée non valide -> ""', Scores.nameKey('') === '' && Scores.nameKey(null) === '' && Scores.nameKey('<b>') === '')
 
 // ---- tierIndex : mêmes sémantiques que SlimeColors.tierIndex ----
 check(
@@ -54,7 +61,7 @@ check(
 // ---- validateSubmission ----
 {
   const r = Scores.validateSubmission({ name: '  Émile ', score: 300, playtime: 10, times: [[0, 1], [2, 9]] }, 1000)
-  check('validateSubmission : corps valide -> {ok:true, sub normalisé}', r.ok === true && deepEq(r.sub, { name: 'émile', score: 300, playtime: 10, times: [[0, 1], [2, 9]] }))
+  check('validateSubmission : corps valide -> {ok:true, sub normalisé (casse préservée)}', r.ok === true && deepEq(r.sub, { name: 'Émile', score: 300, playtime: 10, times: [[0, 1], [2, 9]] }))
   check('validateSubmission : score 0 + times [] valides', Scores.validateSubmission({ name: 'a', score: 0, playtime: 1, times: [] }, 0).ok === true)
   check('validateSubmission : score 999999 -> refusé', Scores.validateSubmission({ name: 'a', score: 999999, playtime: 99999, times: [] }, 0).ok === false)
   check('validateSubmission : score non entier -> refusé', Scores.validateSubmission({ name: 'a', score: 12.5, playtime: 9, times: [] }, 0).ok === false)
@@ -93,15 +100,15 @@ check(
   check('approve(alice) -> true', Scores.approve(st, a.entry.id, TIERS) === true)
   v = Scores.publicView(st, TIERS)
   check('approve -> paliers 0..2 ouverts, 3..5 fermés', v.tiers[0].open === true && v.tiers[1].open === true && v.tiers[2].open === true && v.tiers.slice(3).every(t => t.open === false))
-  check('publicView.tiers[2].top[0] = {id, name, time:95}', deepEq(v.tiers[2].top[0], { id: a.entry.id, name: 'alice', time: 95 }))
-  check('golden = [{id, name, tier}] sans aucun champ score', deepEq(v.golden, [{ id: a.entry.id, name: 'alice', tier: 2 }]) && deepEq(Object.keys(v.golden[0]), ['id', 'name', 'tier']))
+  check('publicView.tiers[2].top[0] = {id, name, time:95} (casse préservée)', deepEq(v.tiers[2].top[0], { id: a.entry.id, name: 'Alice', time: 95 }))
+  check('golden = [{id, name, tier}] sans aucun champ score', deepEq(v.golden, [{ id: a.entry.id, name: 'Alice', tier: 2 }]) && deepEq(Object.keys(v.golden[0]), ['id', 'name', 'tier']))
   check('top de palier sans le temps correspondant : alice time 10 au palier 0', v.tiers[0].top.length === 1 && v.tiers[0].top[0].time === 10 && v.tiers[1].top[0].time === 60)
 
   // 2e joueur au palier 2 pendant l'ouverture : validé d'office (sans pilier).
   const b = Scores.ingest(st, { name: 'Bob', score: 260, playtime: 300, times: [[2, 80]] }, 'CODE-B', TIERS, 2000)
   check('ingest palier ouvert -> statut ok (non pilier)', b.accepted === true && b.entry.status === 'ok' && b.entry.approved === false)
   v = Scores.publicView(st, TIERS)
-  check('2e joueur time 80 -> top[0] = lui, total = 2', v.tiers[2].top[0].name === 'bob' && v.tiers[2].top[1].name === 'alice' && v.tiers[2].total === 2)
+  check('2e joueur time 80 -> top[0] = lui, total = 2', v.tiers[2].top[0].name === 'Bob' && v.tiers[2].top[1].name === 'Alice' && v.tiers[2].total === 2)
   check("entrée sans temps du palier 0 : compte au total (2) mais pas au top", v.tiers[0].total === 2 && v.tiers[0].top.length === 1)
 
   // Palier 4 pendant que seul le palier 2 est ouvert : pending, invisible partout.
@@ -118,16 +125,20 @@ check(
   check('remove du seul pilier -> tiers[2].open=false, golden vide', v.tiers[2].open === false && v.tiers.every(t => t.open === false) && v.golden.length === 0)
 }
 
-// ---- meilleur-par-nom NFC : remplacement si strictement meilleur ----
+// ---- meilleur-par-nom : clé insensible à la casse, remplacement si strictement meilleur ----
 {
   const st = Scores.newStore()
   const r1 = Scores.ingest(st, { name: 'Émile', score: 300, playtime: 200, times: [[2, 100]] }, 'C1', TIERS, 1000)
-  check("meilleur-par-nom : nom stocké normalisé ('émile')", r1.entry.name === 'émile')
+  check("meilleur-par-nom : nom stocké à casse préservée ('Émile')", r1.entry.name === 'Émile')
   const r2 = Scores.ingest(st, { name: 'émile'.normalize('NFD'), score: 280, playtime: 200, times: [[2, 90]] }, 'C2', TIERS, 2000)
   check('même nom (NFD) score inférieur -> ignoré, 1 entrée', r2.accepted === false && r2.replaced === false && st.entries.length === 1 && st.entries[0].score === 300)
   const r3 = Scores.ingest(st, { name: 'émile'.normalize('NFD'), score: 350, playtime: 200, times: [[3, 150]] }, 'C3', TIERS, 3000)
   check('même nom score strictement supérieur -> remplacé, toujours 1 entrée', r3.accepted === true && r3.replaced === true && st.entries.length === 1 && r3.entry.score === 350)
   check('égalité de score -> ignorée (strictement supérieur requis)', Scores.ingest(st, { name: 'Émile', score: 350, playtime: 200, times: [] }, 'C4', TIERS, 4000).accepted === false)
+  // Casse différente = même clé : 'ÉMILE' et 'émile' désignent la même entrée.
+  check("'ÉMILE' score inférieur -> ignoré, toujours 1 entrée", Scores.ingest(st, { name: 'ÉMILE', score: 200, playtime: 200, times: [] }, 'C5', TIERS, 5000).accepted === false && st.entries.length === 1)
+  const r6 = Scores.ingest(st, { name: 'ÉMILE', score: 400, playtime: 200, times: [[3, 140]] }, 'C6', TIERS, 6000)
+  check("'ÉMILE' score supérieur -> meilleur-par-nom s'applique (remplacé, 1 entrée, nom affiché 'ÉMILE')", r6.accepted === true && r6.replaced === true && st.entries.length === 1 && r6.entry.name === 'ÉMILE')
 }
 
 // ---- remplacement + changement de config : le palier peut redescendre ----
