@@ -4,9 +4,9 @@ Endless runner rétro pixel-art : guide un slime le plus loin possible alors que
 
 ## Jouer
 
-Ouvrir `index.html` : c'est la **page de présentation** (vitrine animée avec les sprites, FR/EN/中文). Le bouton **JOUER** lance le jeu : `play.html`.
+Ouvrir `index.html` : c'est la **page de présentation** (vitrine animée avec les sprites, EN/FR). Le bouton **JOUER** lance le jeu : `play.html`.
 
-Le jeu affiche le même univers (fond sombre, panneaux flottants, sol en tuiles) et un sélecteur de langue FR / EN / 中文 sur le titre et l'écran de game over.
+Le jeu affiche le même univers (fond sombre, panneaux flottants, sol en tuiles) et un sélecteur de langue EN / FR sur le titre et l'écran de game over.
 
 ### Jouer / éditer depuis le réseau local (LAN), pool synchronisé
 
@@ -25,9 +25,9 @@ L'éditeur demande un **mot de passe** (par défaut : `slime`) — les joueurs p
 ### Structure du projet
 
 ```
-index.html              ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu (FR/EN/中文)
+index.html              ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu (EN/FR)
 play.html               ← page hôte du jeu (charge les scripts)
-js/i18n.js              ← traductions FR/EN/中文 (jeu + page de présentation, très peu de mots)
+js/i18n.js              ← traductions EN/FR, EN par défaut (jeu + page de présentation, très peu de mots)
 server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev, PUT protégé par X-Slime-Key)
 data/pool.json          ← pool partagé du LAN (créé par server.mjs, ignoré par git)
 editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs + couleurs du slime (autonome)

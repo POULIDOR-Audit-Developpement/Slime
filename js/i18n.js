@@ -1,4 +1,4 @@
-// SLIME — i18n minimal : FR / EN / 中文, très peu de mots.
+// SLIME — i18n minimal : EN (défaut) / FR, très peu de mots.
 // Partagé par le jeu (canvas) et la page de présentation ([data-i18n]).
 // La langue est persistée dans localStorage('slime_lang').
 
@@ -114,71 +114,17 @@ const I18N = (() => {
       galTitle: 'A whole range of slime',
       galSub: 'Green, orange, red — your life.',
       foot: 'SLIME — pixel-art endless runner.'
-    },
-    zh: {
-      aim: '拖动瞄准，松手起跳',
-      anywhere: '任意位置触摸',
-      start: '点击开始',
-      over: '游戏结束',
-      record: '新纪录！',
-      replay: '重玩',
-      copy: '代码',
-      copied: '已复制！',
-      code: '成绩代码',
-      codehint: '出示此代码以认证',
-      time: '时间',
-      rotate: '请横屏！',
-      addhome: '添加到主屏幕',
-      speed: '速度',
-      tagline: '镜头越跑越快。瞄准、跳跃、抓稳。',
-      play: '开始游戏',
-      editor: '关卡编辑器',
-      src: '源代码',
-      fAim: '瞄准',
-      fAimP: '越远越强，松手起跳。',
-      fDj: '二段跳',
-      fDjP: '空中子弹时间。',
-      fLedge: '绝壁抓附',
-      fLedgeP: '最后一刻抓住边缘。',
-      fBonus: '金球与奖励',
-      fBonusP: '金球50分，奖励加命。',
-      fDeath: '搞笑死亡',
-      fDeathP: '四帧摔扁动画。',
-      fDiff: '生命=颜色',
-      fDiffP: '绿、橙、红……啪叽。',
-      platsTitle: '六种平台',
-      platsSub: '有的帮忙，有的背叛。',
-      pBase: '基础', pBaseS: '始终可靠',
-      pSticky: '黏性', pStickyS: '粘住你',
-      pDyn: '动态', pDynS: '上下摆动',
-      pCrumble: '易碎', pCrumbleS: '踩就碎',
-      pGhost: '幽灵', pGhostS: '可穿过去',
-      pBouncy: '弹跳', pBouncyS: '自动弹飞',
-      speedTitle: '速度表不说谎',
-      speedSub: '绿、橙、红，只升不降。',
-      editTitle: '打造你的地狱',
-      editSub: '编辑器可替换游戏内容。',
-      ePat: '图案',
-      ePatP: '实时验证跳跃。',
-      eVue: '设置',
-      eVueP: '物理与技能滑块调节。',
-      eLan: '局域网同步',
-      eLanP: '电脑上编辑，手机上玩。',
-      editCta: '打开编辑器',
-      galTitle: '史莱姆百态',
-      galSub: '绿、橙、红，随生命变化。',
-      foot: 'SLIME — 像素风跑酷。'
     }
   }
   const listeners = []
-  let lang = 'fr'
-  try { lang = localStorage.getItem(KEY) || 'fr' } catch (e) {}
-  if (!D[lang]) lang = 'fr'
+  let lang = 'en'
+  try { lang = localStorage.getItem(KEY) || 'en' } catch (e) {}
+  if (!D[lang]) lang = 'en'
 
   function t(k) { return (D[lang] && D[lang][k]) || D.fr[k] || k }
   function get() { return lang }
   function langs() { return Object.keys(D) }
-  function label(l) { return l === 'zh' ? '中文' : l.toUpperCase() }
+  function label(l) { return l.toUpperCase() }
   function apply() {
     // Remplace le texte des éléments [data-i18n] (page de présentation).
     try {
