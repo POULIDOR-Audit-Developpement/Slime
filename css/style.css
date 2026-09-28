@@ -1,3 +1,20 @@
 html,body{margin:0;padding:0;height:100%;background:#05050e;overflow:hidden;touch-action:none}
 body{display:flex;align-items:center;justify-content:center}
 canvas{display:block}
+/* modal pseudo (js/player.js) */
+.slime-modal{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(5,5,14,.8)}
+.slime-modal-box{background:#12122b;border:2px solid #2e2e5e;box-shadow:0 6px 0 #0a0a12;padding:26px 28px;width:min(320px,86vw);display:flex;flex-direction:column;gap:14px;text-align:center;font:16px/1.4 'Segoe UI',system-ui,sans-serif;color:#d8e8f4}
+.slime-modal-title{font-weight:900;letter-spacing:.08em;font-size:20px;color:#3ecb3e;text-shadow:0 2px 0 #0a0a12}
+.slime-modal-ask{margin:0;font-size:14px;color:#8a8ab0}
+.slime-modal-input{background:#05050e;border:2px solid #2e2e5e;color:#d8e8f4;padding:10px 12px;font:700 16px 'Segoe UI',system-ui,sans-serif;text-align:center;outline:none;width:100%}
+.slime-modal-input:focus{border-color:#3ecb3e}
+.slime-modal-btn{background:#3ecb3e;color:#062806;border:0;padding:12px;font:800 15px 'Segoe UI',system-ui,sans-serif;letter-spacing:.06em;cursor:pointer;box-shadow:0 4px 0 #12521d,0 6px 0 #0a0a12}
+.slime-modal-btn:active{transform:translateY(2px)}
+.slime-modal-skip{background:none;border:0;padding:0;color:#8a8ab0;font:13px 'Segoe UI',system-ui,sans-serif;text-decoration:underline;cursor:pointer}
+.slime-modal-skip:hover{color:#d8e8f4}
+/* atelier.html (T7) : canvas plein écran + bouton retour */
+#atelier{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+#atelier:active{cursor:grabbing}
+.atelier-back{position:fixed;top:10px;left:10px;z-index:10;padding:8px 14px;font:800 12px 'Segoe UI',system-ui,sans-serif;letter-spacing:.08em;color:#d8e8f4;background:#1c2148;border:2px solid #2e2e5e;box-shadow:0 4px 0 #141840,0 6px 0 #0a0a12;text-decoration:none;cursor:pointer}
+.atelier-back:hover{border-color:#3ecb3e;color:#fff}
+.atelier-back:active{transform:translateY(2px)}

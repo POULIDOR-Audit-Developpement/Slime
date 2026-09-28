@@ -16,7 +16,7 @@ node server.mjs    # à lancer depuis ce dossier (port 8471, --port N pour chang
 
 Puis depuis n'importe quel appareil du LAN : `http://<IP-de-la-machine>:8471/` (présentation), `http://<IP-de-la-machine>:8471/play.html` (jeu) ou `http://<IP-de-la-machine>:8471/editor.html` (éditeur). IP locale : `hostname -I`.
 
-Avec ce serveur, le **pool de patterns + le layout (VUE/PHYS/POWER) sont partagés** entre tous les appareils : édite depuis la tablette, le jeu sur le PC et le téléphone se mettent à jour en ~2 s (polling). La sync est en **concurrence optimiste** : chaque sauvegarde porte la révision sur laquelle elle se base, et le serveur **refuse (409) une poussée périmée** — une session oubliée (onglet rouvert le lendemain) ne peut plus écraser le travail récent. Sur refus, le client recharge l'état à jour et **fusionne** : les patterns créés localement sont conservés et repoussés, un même id existant des deux côtés prend la version du serveur (dernière validée), le layout idem. L'éditeur affiche « conflit résolu, fusion appliquée » quand cela arrive. Contrepartie (pas de marqueurs de suppression) : un pattern supprimé sur un appareil peut ressortir depuis un appareil pas encore synchronisé. Sans serveur (ou avec `python3 -m http.server`), tout reste local au navigateur comme avant — l'éditeur affiche l'état de la sync dans son pied de page. Le pool partagé vit dans `data/pool.json` (ignoré par git) ; premier appareil connecté avec un pool local non vide → il le partage automatiquement.
+Avec ce serveur, le **pool de patterns + le layout (VUE/PHYS/POWER) sont partagés** entre tous les appareils : édite depuis la tablette, le jeu sur le PC et le téléphone se mettent à jour en ~2 s (polling). Le même serveur héberge aussi **L'Atelier des bocaux** (hall of fame, voir la section dédiée) : son API scores vit sur les endpoints `GET`/`POST /api/scores` (+ `GET /api/admin/pending`, `POST /api/admin/validate|delete` réservés à la clé éditeur). La sync est en **concurrence optimiste** : chaque sauvegarde porte la révision sur laquelle elle se base, et le serveur **refuse (409) une poussée périmée** — une session oubliée (onglet rouvert le lendemain) ne peut plus écraser le travail récent. Sur refus, le client recharge l'état à jour et **fusionne** : les patterns créés localement sont conservés et repoussés, un même id existant des deux côtés prend la version du serveur (dernière validée), le layout idem. L'éditeur affiche « conflit résolu, fusion appliquée » quand cela arrive. Contrepartie (pas de marqueurs de suppression) : un pattern supprimé sur un appareil peut ressortir depuis un appareil pas encore synchronisé. Sans serveur (ou avec `python3 -m http.server`), tout reste local au navigateur comme avant — l'éditeur affiche l'état de la sync dans son pied de page. Le pool partagé vit dans `data/pool.json` (ignoré par git) ; premier appareil connecté avec un pool local non vide → il le partage automatiquement. Les scores de l'atelier vivent dans `data/scores.json` (même pattern d'écriture atomique).
 
 #### Éditeur protégé
 
@@ -28,18 +28,23 @@ L'éditeur demande un **mot de passe** (par défaut : `slime`) — les joueurs p
 index.html              ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu (EN/FR)
 play.html               ← page hôte du jeu (charge les scripts)
 js/i18n.js              ← traductions EN/FR, EN par défaut (jeu + page de présentation, très peu de mots)
-server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev, PUT protégé par X-Slime-Key)
+server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev, PUT protégé par X-Slime-Key) + API scores de l'atelier (GET/POST /api/scores, modération /api/admin/*)
 data/pool.json          ← pool partagé du LAN (créé par server.mjs, ignoré par git)
-editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs + couleurs du slime (autonome)
+data/scores.json        ← classement de l'atelier (créé par server.mjs, ignoré par git)
+editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs + couleurs du slime + modération atelier (autonome)
+atelier.html            ← ATELIER DES BOCAUX : hall of fame visuel (bocaux par palier + livre, scène zoomable)
 css/style.css           ← styles de la page
 js/game.js              ← moteur du jeu (rendu, physique, enchaînement des patterns)
 js/physics.js           ← constantes + config physique réglable + simulation de saut partagée (jeu, éditeur, outils)
 js/patterns.js          ← pool de patterns, poids par difficulté, stockage, export/import
 js/patterns-defaults.js ← pool par défaut GÉNÉRÉ (20 sections validées) — ne pas éditer
-js/music.js             ← musique chiptune procédurale (module Music)
+js/music.js             ← BGM : playlist .mp3 à BPM fixe (module Music)
 js/crypto.js            ← signature HMAC des scores (module Crypto)
 js/sprites.js           ← chargement et dessin des sprites du slime (recoloration runtime des variantes)
 js/slime-colors.js      ← paliers score → couleur (module SlimeColors, partagé jeu + settings)
+js/player.js            ← pseudo du joueur (sanitize + stockage, modal 1re visite)
+js/scores.js            ← soumission du score à la mort + temps d'obtention des paliers (module Scores/TierTimes)
+js/atelier.js           ← scène de l'atelier : bocaux par palier, livre à pages, polling live (fallbacks vectoriels)
 vendor/                 ← litecanvas embarqué (fallback CDN inclus)
 ASSETS/                 ← direction artistique + sprites
 tools/                  ← générateur de pool (gen_defaults.mjs, gen-core.js, gen_default_pool.html) + extraction des sprites (Python : extract_v2.py / extract_v3.py, make_v2_sprites.py / make_v3_sprites.py)
@@ -82,7 +87,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 
 ### Musique & record
 
-- Boucle chiptune de 8 mesures (128 pas, progression Am–F–C–G, refrain une octave plus haut) dont le tempo suit la vitesse de la caméra (112 → 150 BPM) — ~15 s par boucle
+- BGM : 3 fichiers `ASSETS/music/bgm1..3.mp3` (~3 min, BPM fixe) joués en séquence pendant la partie — démarrage au 1er saut, arrêt à la mort, « Rejouer » repart de la piste 1 ; la 3e boucle si tu survies au-delà de 9 min. Touche 'm' ou coin haut-gauche : mute (coupe aussi les SFX, préférence persistée). Fichier absent = silence, jamais bloquant
 - Meilleur score sauvegardé localement mais **jamais affiché en clair** ; à l'écran titre, le gros slime porte la **couleur du palier de ton record** (et « NOUVEAU RECORD ! » signale quand tu bats le mien, sans le chiffre)
 
 ## Éditeur & patterns (créateur de jeu)
@@ -131,15 +136,22 @@ Physique du jeu réglable pour de **micro-ajustements** du game feel — même m
 | Saut & visée | gravité (620), vitesse min/max (210/360), portée de visée min/max (24/140 px), chute max (520), traînée aérienne (0.6) |
 | Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×0.8) |
 | Dégâts | invincibilité après un coup (1.3 s), échelle des reculs infligés (×1) |
-| Caméra | vitesse de base (40), vitesse max (120), secondes entre chaque palier de +5 (10 s) |
+| Caméra | vitesse de base (80), vitesse max (240), temps jusqu'au max en min (9 min = 3 musiques de 3 min ; paliers automatiques de +3 toutes les 10 s) |
 | Game feel | coyote time (0.08 s) — 0 = désactivé |
 
 - La validation ✓/✗ des patterns et le playtest utilisent les valeurs **appliquées** (aucun décalage éditeur/jeu)
 - « Réinitialiser la physique » remet les défauts et les applique immédiatement
 - Si tu augmentes la taille du slime au-delà du défaut, revalide tes patterns : quelques sauts du pool par défaut pourraient devenir serrés
 
+### Onglet ATELIER
+Modération de **L'Atelier des bocaux** (serveur requis — sans serveur : note « atelier disponible en ligne ») :
+
+- **EN ATTENTE** : les soumissions des joueurs (nom, **score visible par l'admin seul**, palier, temps d'obtention) avec ✅ **valider** / 🗑 **supprimer** — valider la première entrée d'un palier fermé **l'ouvre** (et rend visibles tous les joueurs qui l'atteignaient déjà) ;
+- **PAR PALIER** : les joueurs classés de chaque palier ouvert, chacun supprimable (🗑) pour retirer un tricheur ;
+- Les appels partent avec la **clé de l'éditeur** (en-tête `X-Slime-Key`, mémorisée au déverrouillage) ; chaque action recharge la liste — le serveur redérive les paliers ouverts à chaque mutation.
+
 ### Difficulté & pool
-- Le jeu pioche dans le pool selon une **courbe de poids** : T1 domine au début, les tiers durs prennent le dessus vers 120 s ; anti-répétition immédiate ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
+- Le jeu pioche dans le pool selon une **courbe de poids** : T1 domine au début, les tiers durs prennent le dessus vers 9 min (calé sur la caméra : 3 BGM de 3 min) ; anti-répétition immédiate ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
 - **Ton pool remplace le pool par défaut dès qu'il contient au moins 1 pattern** (sinon le jeu joue les 20 sections embarquées) ; bouton « Pool par défaut » pour les copier et les éditer
 
 ### Portabilité (autre machine)
@@ -161,6 +173,20 @@ Pour vérifier un code : ouvrir `decode.html` et coller le code.
 
 Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.js` **et** `decode.html`).
 
+## L'Atelier des bocaux
+
+Hall of fame visuel du giveaway : **aucun score n'est jamais public — le classement se lit en images.** Chaque joueur choisit un **pseudo** (1re visite, éditable à l'écran titre) ; à sa **mort**, son score est soumis au serveur (code signé, plausibilité vérifiée) et l'atelier se remplit : un **bocal par palier** contient les slimes recolorés des **8 meilleurs temps** du palier (+ « +N » au-delà), et le **livre** sur la table détaille une page par palier — précédée d'une **page dorée** (top score général, noms seuls). Un **palier fermé** reste un bocal vide : il ne s'ouvre que lorsque l'**admin valide la première entrée** qui l'atteint (modération dans l'onglet ATELIER de l'éditeur). L'écran titre et l'écran de fin proposent un bouton **ATELIER** ; sans serveur, l'atelier affiche une note « en ligne ».
+
+- **Accès** : `atelier.html` (bouton ATELIER de l'écran titre / de fin) — scène zoomable, polling ~2 s, paliers et couleurs suivis depuis la config COULEURS poussée par l'éditeur.
+- **API serveur** (server.mjs, zéro dépendance) :
+  - `GET /api/scores` — vue publique : noms + temps **uniquement** (page dorée + un bloc par palier, ouvert ou fermé) ;
+  - `POST /api/scores` — soumission à la mort : `{v:1, name, score, playtime, times, code}` signé HMAC (score jamais affiché, 1 soumission valide par IP / 30 s) ;
+  - `GET /api/admin/pending` (en-tête `X-Slime-Key`) — file d'attente : nom, **score** (l'admin voit tout), palier recalculé, temps ;
+  - `POST /api/admin/validate` / `POST /api/admin/delete` `{id}` (en-tête `X-Slime-Key`) — la validation pose le **pilier** qui ouvre le palier ; la suppression du dernier pilier le referme (tout est redérivé à chaque mutation).
+- **Modération** : onglet **ATELIER** de l'éditeur (`editor.html`) — section « EN ATTENTE » (✅ valider / 🗑 supprimer) et section « PAR PALIER » où un tricheur classé peut être supprimé.
+- **Playtest exclu** : un run de playtest (caméra gelée) ne soumet jamais de score.
+- **Assets** : fond direct `ASSETS/atbg.jpeg`, bocaux `ASSETS/atelier/jar_full.png` / `jar_empty.png` (découpe `tools/extract_atelier.py`), plaque vectorielle — voir `ASSETS/atelier/README.md`.
+
 ## Tech
 
 - Moteur : [Litecanvas](https://litecanvas.js.org) v0.302.0 via CDN jsDelivr (fallback unpkg)
@@ -171,4 +197,5 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression : `node tools/smoke_test.mjs` (génération/validation), `node tools/game_sim.mjs` (partie simulée : saut, coyote, jump buffer, physique live), `node tools/editor_dom_test.mjs` (onglets PHYS et COULEURS de l'éditeur) et `node tools/sprites_test.mjs` (variantes canvas acceptées par les gardes de dessin)
+- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `editor_dom_test` (onglets PHYS, COULEURS et ATELIER de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `scores_test` (cœur de classement de l'atelier : ingestion, piliers/paliers dérivés, vues sans score + anti-dérive SECRET/paliers client-serveur), `scores_http_test` (API scores sur HTTP réel : codes signés, rate-limit 1/30 s, modération admin, paliers syncés via layout.tiers), `player_test` (pseudo : sanitize + stockage), `tiertime_test` (temps d'obtention des paliers + soumission fire-and-forget côté client), `atelier_test` (logique pure de l'atelier : pages du livre, remplissage des bocaux, étagères), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
+- Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame

@@ -21,6 +21,19 @@ const I18N = (() => {
       rotate: 'Paysage !',
       addhome: "Ajoute a l'ecran d'accueil",
       speed: 'VITESSE',
+      // T6 — bouton écran de fin -> atelier.html
+      atelier: 'ATELIER',
+      // T7 — atelier.html : bouton retour
+      back: 'RETOUR',
+      // T8 — atelier.html : livre hors ligne
+      offline: "L'atelier se remplit en ligne",
+      // T9 — onglet ATELIER de l'éditeur (modération admin)
+      admTitle: "Modération de l'atelier",
+      admPending: 'EN ATTENTE',
+      admTiers: 'PAR PALIER',
+      admOffline: 'Atelier disponible en ligne',
+      admValidate: 'Valider',
+      admDelete: 'Supprimer',
       // page de présentation
       tagline: 'La camera accelere sans pitie. Vise, saute, accroche-toi.',
       play: 'JOUER',
@@ -59,7 +72,12 @@ const I18N = (() => {
       editCta: 'OUVRIR L\'EDITEUR',
       galTitle: 'Tout un slime d\'etats',
       galSub: 'Vert, orange, rouge selon ta vie.',
-      foot: 'SLIME — endless runner pixel-art.'
+      foot: 'SLIME — endless runner pixel-art.',
+      // pseudo joueur (js/player.js)
+      nameTitle: 'TON NOM',
+      nameAsk: 'Quel est ton nom ?',
+      nameSkip: 'Jouer sans nom',
+      yourName: 'TON NOM'
     },
     en: {
       aim: 'Drag to aim, release to jump',
@@ -76,6 +94,19 @@ const I18N = (() => {
       rotate: 'Landscape!',
       addhome: 'Add to Home Screen',
       speed: 'SPEED',
+      // T6 — end-screen button -> atelier.html
+      atelier: 'ATELIER',
+      // T7 — atelier.html : back button
+      back: 'BACK',
+      // T8 — atelier.html : offline book message
+      offline: 'The workshop fills up online',
+      // T9 — editor ATELIER tab (admin moderation)
+      admTitle: 'Workshop moderation',
+      admPending: 'PENDING',
+      admTiers: 'BY TIER',
+      admOffline: 'Workshop available online',
+      admValidate: 'Validate',
+      admDelete: 'Delete',
       tagline: 'The camera never slows down. Aim, jump, hang on.',
       play: 'PLAY',
       editor: 'EDITOR',
@@ -113,7 +144,12 @@ const I18N = (() => {
       editCta: 'OPEN EDITOR',
       galTitle: 'A whole range of slime',
       galSub: 'Green, orange, red — your life.',
-      foot: 'SLIME — pixel-art endless runner.'
+      foot: 'SLIME — pixel-art endless runner.',
+      // player name (js/player.js)
+      nameTitle: 'YOUR NAME',
+      nameAsk: 'What is your name?',
+      nameSkip: 'Play without a name',
+      yourName: 'YOUR NAME'
     }
   }
   const listeners = []

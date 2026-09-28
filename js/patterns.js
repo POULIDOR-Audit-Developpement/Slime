@@ -311,7 +311,8 @@ const Patterns = (() => {
   }
 
   // ---------- pool pondéré ----------
-  // Poids par difficulté (1..5) : début de partie -> fin de partie (120 s).
+  // Poids par difficulté (1..5) : début de partie -> fin de partie (9 min,
+  // calé sur la caméra : 3 BGM de 3 min).
   const W0 = [100, 26, 6, 0, 0]
   const W1 = [2, 12, 30, 55, 80]
 
@@ -322,7 +323,7 @@ const Patterns = (() => {
   }
 
   function weights(pool, elapsed) {
-    const t = Math.min(elapsed / 120, 1)
+    const t = Math.min(elapsed / 540, 1)
     return pool.map(p => {
       const d = clampN((p.difficulty | 0) - 1, 0, 4)
       let w = W0[d] + (W1[d] - W0[d]) * t

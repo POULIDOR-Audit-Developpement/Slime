@@ -52,7 +52,11 @@ const Sprites = (() => {
   let ready = false
   let tiers = (typeof SlimeColors !== 'undefined') ? SlimeColors.load() : SlimeColors_DEFAULTS_FALLBACK()
   let animT = -1   // temps courant des effets animés (-1 : jamais tiqué)
-  let animIdx = 0  // round-robin parmi les paliers animés
+  // Variantes animées réellement DESSINÉES depuis le dernier tick : seules
+  // celles-ci sont régénérées (~1-3 sprites visibles au lieu des 15 bases —
+  // l'ancien comportement coûtait 15-45 ms de pixels par tick = saccades).
+  const usedAnim = new Set()
+  function markAnim(key) { if (/_t\d+$/.test(key)) usedAnim.add(key) }
 
   function tierSuffix(i) { return i > 0 ? '_t' + i : '' }
 
@@ -67,32 +71,34 @@ const Sprites = (() => {
   }
 
   // Effets animés (rainbow/brillant/étoilé) : régénération des canvas à
-  // ~10 fps max, un palier animé par tick (round-robin) pour plafonner le
-  // coût — les plus gros sprites (ledge 400×420) coûtent ~2-3 ms chacun.
-  // Coût nul si aucun palier animé.
+  // ~10 fps max, LIMITÉE aux variantes réellement dessinées depuis le dernier
+  // tick (marquées par markAnim via les fonctions de dessin). Coût nul si
+  // aucun palier animé, et quasi nul sinon (1-3 petits sprites, pas 15).
   function tickAnimated(now) {
     if (typeof SlimeColors === 'undefined' || !ready || animT === now) return
     let hasAnim = false
     for (let i = 1; i < tiers.length; i++) if (SlimeColors.isAnimated(tiers[i])) { hasAnim = true; break }
     if (!hasAnim) return
-    if (animT >= 0 && now - animT < 0.1) return
-    animT = now
-    const animIdxs = []
-    for (let i = 1; i < tiers.length; i++) if (SlimeColors.isAnimated(tiers[i])) animIdxs.push(i)
-    if (!animIdxs.length) return
-    animIdx = (animIdx + 1) % animIdxs.length
-    const ti = animIdxs[animIdx]
-    for (const base of VARIANT_BASES) {
-      const im = imgs[base]
-      if (im && im.width) makeVariants(base, im, ti)
+    if (animT >= 0 && now > animT && now - animT < 0.1) return
+    const jobs = []
+    for (const k of usedAnim) {
+      const m = /^(.+)_t(\d+)$/.exec(k)
+      if (!m) continue
+      const base = imgs[m[1]], ti = +m[2]
+      if (base && base.width && tiers[ti] && SlimeColors.isAnimated(tiers[ti])) jobs.push([m[1], base, ti])
     }
+    usedAnim.clear()
+    if (!jobs.length) return
+    animT = now
+    for (const [k, im, ti] of jobs) makeVariants(k, im, ti)
   }
 
   // Nouvelle liste de paliers (éditeur) : purge des variantes _t* et
-  // régénération immédiate si les PNG de base sont déjà chargés.
+  // régénération immédiate si les PNG de base sont déjà chargés. Le suivi
+  // d'usage repart à zéro : tout est frais, rien à rafraîchir d'urgence.
   function setTiers(list) {
     tiers = list
-    animIdx = 0
+    usedAnim.clear()
     for (const k of Object.keys(imgs)) if (/_t\d+$/.test(k)) delete imgs[k]
     if (!ready) return
     for (const base of VARIANT_BASES) {
@@ -119,6 +125,7 @@ const Sprites = (() => {
   }
 
   function draw(key, cx, feetY, w, sx, sy) {
+    markAnim(key)
     const im = imgs[key]
     if (!im || !im.width || im.complete === false) return false
     const c = ctx()
@@ -132,6 +139,7 @@ const Sprites = (() => {
   }
 
   function drawImage(key, x, y, w, h) {
+    markAnim(key)
     const im = imgs[key]
     if (!im || !im.width || im.complete === false) return false
     const c = ctx()
@@ -143,6 +151,7 @@ const Sprites = (() => {
   }
 
   function drawSrc(key, sx, sy, sw, sh, dx, dy, dw, dh) {
+    markAnim(key)
     const im = imgs[key]
     if (!im || !im.width || im.complete === false) return false
     const c = ctx()
@@ -156,6 +165,7 @@ const Sprites = (() => {
   // Ancre haut-gauche (utile pour les frames calées comme le ledge catch),
   // miroir horizontal optionnel.
   function drawTL(key, x, y, w, flip) {
+    markAnim(key)
     const im = imgs[key]
     if (!im || !im.width || im.complete === false) return false
     const c = ctx()
@@ -174,6 +184,7 @@ const Sprites = (() => {
   }
 
   function rotated(key, angle, px, py, ax, ay, scale) {
+    markAnim(key)
     const im = imgs[key]
     if (!im || !im.width || im.complete === false) return false
     const c = ctx()
@@ -199,6 +210,7 @@ const Sprites = (() => {
   }
 
   function get(key) {
+    markAnim(key)
     return imgs[key]
   }
 

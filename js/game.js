@@ -5,6 +5,10 @@ litecanvas({
 let VSC = 1, VOX = 0, VOY = 0
 let framePattern = null
 let voidPattern = null
+// Diagnostic perf (?fps ?sim=N ?prof) : compteurs incrémentés dans update()/draw().
+let diagFps = false, diagSimTxt = '', diagUps = 0, diagDrs = 0, diagT0 = 0, diagShown = ''
+let diagProf = false, diagUpMs = 0, diagDnMs = 0, diagGapMs = 0, diagGapMax = 0, diagLastDraw = 0
+let diagSecAn = 0, diagSecOf = 0, diagSecBg = 0, diagSecSc = 0, diagSecRe = 0
 
 function calcView() {
   VSC = Math.min(W / VW, H / VH)
@@ -233,10 +237,22 @@ let aim = { on: false, x: 0, y: 0, id: -1, air: false }
 // couvrir la cible) et le réticule suit son déplacement (delta × AIM_SENS).
 // `aimPad` = position écran du doigt pendant la visée (null = souris, absolu).
 const AIM_SENS = 1.1
+// Caméra : intervalle fixe entre paliers (s). La taille du pas se déduit de
+// camRampDur (PHYS : durée pour atteindre camMax) — voir update().
+const CAM_PALIER_S = 10
 let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
 let best = 0, newRecord = false
 let testMode = false, testSecT = 0
+// T6 — L'Atelier des bocaux : temps d'obtention de chaque palier de couleur
+// ([[tierIdx, sec], ...]), suivi au tick par TierTimes.track puis envoyé au
+// serveur à la mort par Scores.submit. TierTimes/Scores (js/scores.js) et
+// Player (js/player.js) sont chargés AVANT game.js par play.html ; le harnais
+// Node game_sim.mjs ne les charge pas -> capturés une fois, null si absents.
+let tierTimes = []
+const TT = typeof TierTimes !== 'undefined' ? TierTimes : null
+const SCORES = typeof Scores !== 'undefined' ? Scores : null
+const PLAYER = typeof Player !== 'undefined' ? Player : null
 
 function slimeR() { return PH().slimeR }
 function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
@@ -328,6 +344,7 @@ function burst(x, y, color, n, pow) {
 
 function startGame() {
   elapsed = 0
+  tierTimes = [] // T6 — nouvelle partie : suivi des paliers remis à zéro
   camX = 0
   camSpd = PH().camBase
   gameT = 0
@@ -380,6 +397,7 @@ function damage() {
 function die() {
   if (state === 'over') return
   state = 'over'
+  Music.stop()
   deathT = 0
   aim.on = false
   aimPad = null
@@ -393,10 +411,31 @@ function die() {
     try { localStorage.setItem('slime_best', String(best)) } catch (e) {}
   }
   scoreCode = Crypto.makeCode(s, elapsed)
+  submitScore(s) // T6 — hall of fame : envoi au serveur, jamais bloquant
   shakeT = 0.4
   sfx(SFX_DIE)
   burst(slime.x, slime.y, tierCol(deathTier), 24, 220)
   burst(slime.x, slime.y, tierColL(deathTier), 12, 160)
+}
+
+// T6 — soumission du score à la mort (fire-and-forget) : nom connu -> envoi
+// immédiat ; sans nom -> la modal le demande et la soumission part au onDone
+// (null = « jouer sans nom » -> rien). Ruling revue finale : score nul -> RIEN
+// du tout (ni POST ni demande de nom — pas de bruit à modérer ; le code
+// copiable reste disponible). Sans module Player (harnais Node) : pas d'envoi.
+// L'écran de fin s'affiche dans tous les cas.
+function submitScore(s) {
+  if (testMode) return // ruling T6 — un playtest (caméra gelée, pattern en boucle) ne remplit JAMAIS l'atelier
+  if (!(s > 0)) return // ruling revue finale — score 0 : pas de soumission, pas de modal nom
+  if (!SCORES) return
+  const payload = name => ({
+    v: 1, name, score: s, playtime: Math.round(elapsed), times: tierTimes, code: scoreCode
+  })
+  const name = PLAYER ? PLAYER.get() : null
+  if (name) { SCORES.submit(payload(name)); return }
+  if (PLAYER && PLAYER.ensureModal) {
+    PLAYER.ensureModal({ onDone: n => { if (n) SCORES.submit(payload(n)) } })
+  }
 }
 
 // Exécute le saut visé : puissance = distance du point visé au slime (bornée
@@ -436,6 +475,7 @@ function execJump() {
   aimPad = null
   slowmoT = 0 // le ralenti ne concerne que la visée : le saut part à pleine vitesse
   runStarted = true
+  Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
 }
 
 function land(p) {
@@ -688,7 +728,16 @@ function updParticles(dt) {
   particles = particles.filter(p => p.life > 0)
 }
 
+// Shim de mesure : ?prof chronomètre update() (tous early-returns inclus).
 function update(dt) {
+  if (!diagProf) { update_(dt); return }
+  const t0 = performance.now()
+  update_(dt)
+  diagUpMs += performance.now() - t0
+}
+
+function update_(dt) {
+  if (diagFps || diagProf) diagUps++
   if (dt > 1) dt /= 1000
   if (iskeypressed('m')) Music.toggle()
   // Slow-mo : la durée décroit en temps réel ; l'échelle de temps du jeu
@@ -713,12 +762,13 @@ function update(dt) {
   }
   elapsed += dts
   const P = PH()
-  // Caméra : paliers tous les camRampT s, pas calibré sur (camMax - camBase)
-  // pour atteindre le plafond en ~2 min (durée de référence d'une partie),
-  // quelle que soit la base choisie dans l'éditeur. Le playtest n'est plus
-  // figé : il part de la vitesse de base réglée (P.camBase).
-  const camStep = Math.max(1, Math.round((P.camMax - P.camBase) * P.camRampT / 120))
-  camSpd = testMode ? P.camBase : Math.min(P.camBase + Math.floor(elapsed / P.camRampT) * camStep, P.camMax)
+  // Caméra : paliers tous les CAM_PALIER_S s ; le pas est déduit de camRampDur
+  // (réglage éditeur « Temps jusqu'au max ») pour atteindre le plafond en
+  // camRampDur secondes de jeu, quelle que soit la base/max choisies.
+  // Défauts (80→240, 9 min) : +3 px/s toutes les 10 s — calé sur 3 BGM de 3 min.
+  // Le playtest n'est pas figé : il part de la vitesse de base réglée (P.camBase).
+  const camStep = Math.max(1, Math.round((P.camMax - P.camBase) * CAM_PALIER_S / P.camRampDur))
+  camSpd = testMode ? P.camBase : Math.min(P.camBase + Math.floor(elapsed / CAM_PALIER_S) * camStep, P.camMax)
   camX += camSpd * dts
   if (testMode) testSecT += dts
   if (shakeT > 0) shakeT -= dts
@@ -749,7 +799,11 @@ function update(dt) {
   if (aim.on && !aim.air && !slime.grounded && !slime.pull && slime.coyote <= 0) { aim.on = false; aimPad = null }
   updBalls()
   updParticles(dts)
-  Music.tick(dt, camRatio())
+  // T6 — score de ce tick recalculé (distance parcourue + billes ramassées
+  // ci-dessus) : mémorise l'instant d'obtention d'un palier de couleur.
+  // Pur et O(1) hors franchissement de palier ; avant les tests de mort pour
+  // que la soumission embarque le palier atteint à l'instant fatal.
+  if (TT) tierTimes = TT.track(tierTimes, scoreTierIdx(), elapsed)
   if (slime.x + slime.r < camX) die()
   if (slime.y - slime.r > VH + 30) die()
 }
@@ -765,6 +819,7 @@ function tap(px, py, touchId) {
     if (deathT < OVER_DELAY + 0.7) return // boutons pas encore affichés
     if (hitBtn(vx, vy, BTN_COPY)) { copyCode(); return }
     if (hitBtn(vx, vy, BTN_REPLAY)) { startGame(); return }
+    if (hitBtn(vx, vy, BTN_ATELIER)) { openAtelier(); return }
     return
   }
   const w = s2w(px, py)
@@ -1629,6 +1684,15 @@ function drawPowerHud() {
 const OVER_DELAY = 1.5, OVER_FADE = 0.4
 const BTN_COPY = { x: 62, y: 180, w: 156, h: 34 }
 const BTN_REPLAY = { x: 262, y: 180, w: 156, h: 34 }
+// T6 — lien vers L'Atelier des bocaux (hall of fame), pleine largeur sous les
+// deux boutons ; disponible même si le joueur n'a pas donné de pseudo.
+const BTN_ATELIER = { x: 62, y: 219, w: 356, h: 28 }
+
+// T6 — « VOIR L'ATELIER » : ouvre la page du hall of fame (même onglet).
+// try : game_sim (Node) n'a qu'un window.location factice.
+function openAtelier() {
+  try { window.location.href = 'atelier.html' } catch (e) {}
+}
 
 function hitBtn(x, y, b) {
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
@@ -1681,10 +1745,11 @@ function drawOver() {
   c.restore()
   // Tout le panneau fond avec k (les textes sans alpha() explicite héritent).
   alpha(k)
-  // Panneau central, style « présentation ».
-  rectfill(VW / 2 - 3, 30, 406, 226, C_BLACK, 12)
-  rectfill(VW / 2 - 200, 24, 400, 226, C_FRAME, 12)
-  rect(VW / 2 - 200, 24, 400, 226, C_BG3, 2)
+  // Panneau central, style « présentation » (234 de haut : T6 ajoute le
+  // bouton VOIR L'ATELIER sous CODE/REJOUER).
+  rectfill(VW / 2 - 3, 30, 406, 234, C_BLACK, 12)
+  rectfill(VW / 2 - 200, 24, 400, 234, C_FRAME, 12)
+  rect(VW / 2 - 200, 24, 400, 234, C_BG3, 2)
   drawLangToggle()
   textalign('center', 'top')
   // Titre à ombres superposées.
@@ -1714,6 +1779,9 @@ function drawOver() {
     drawBtn(BTN_COPY, copied ? I18N.t('copied') : I18N.t('copy'), copied ? C_SLIME_L : C_GOLD, copied)
     alpha(kb * (0.6 + 0.4 * Math.sin(T * 4)))
     drawBtn(BTN_REPLAY, I18N.t('replay'), C_BLACK, false, C_GREEN)
+    // T6 — hall of fame : disponible même sans pseudo (navigation seule).
+    alpha(kb)
+    drawBtn(BTN_ATELIER, I18N.t('atelier'), C_WHITE, false, C_BLUE)
     alpha(1)
   }
   textalign('start', 'top')
@@ -1975,13 +2043,32 @@ function drawSlowmoOverlay() {
   alpha(1)
 }
 
+// Shim de mesure : ?prof chronomètre draw() et l'écart entre frames (rAF).
 function draw() {
+  if (!diagProf) { draw_(); return }
+  const now = performance.now()
+  if (diagLastDraw) {
+    const g = now - diagLastDraw
+    diagGapMs += g
+    if (g > diagGapMax) diagGapMax = g
+  }
+  diagLastDraw = now
+  const t0 = now
+  draw_()
+  diagDnMs += performance.now() - t0
+}
+
+function draw_() {
+  if (diagFps || diagProf) diagDrs++
+  const q0 = diagProf ? performance.now() : 0
   // Effets de couleur animés (rainbow/brillant/étoilé) : ~10 fps, coût nul
   // si aucun palier animé. Le temps de jeu T les ralentit en bullet-time.
   Sprites.tickAnimated(T)
+  const q05 = diagProf ? performance.now() : 0
   calcView()
   ensureVoidPattern()
   drawOuterFrame()
+  const q1 = diagProf ? performance.now() : 0
   const c = ctx()
   c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
   updateCam()
@@ -1990,6 +2077,7 @@ function draw() {
   c.rect(0, 0, VW, VH)
   c.clip()
   drawBG()
+  const q2 = diagProf ? performance.now() : 0
   if (state !== 'title') {
     const shx = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
     const shy = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
@@ -2011,6 +2099,7 @@ function draw() {
     }
     drawDamageWalls()
     c.restore()
+    const q3 = diagProf ? performance.now() : 0
     drawOffscreen()
     drawSlowmoOverlay()
     drawFrameEdges()
@@ -2026,6 +2115,32 @@ function draw() {
   drawVignette()
   c.restore()
   rect(-1, -1, VW + 2, VH + 2, C_BLACK)
+  if (diagFps || diagProf) {
+    const now = performance.now()
+    if (diagProf) {
+      const q4 = now
+      diagSecAn += q05 - q0
+      diagSecOf += q1 - q05; diagSecBg += q2 - q1; diagSecSc += q3 - q2; diagSecRe += q4 - q3
+    }
+    if (now - diagT0 >= 1000) {
+      if (diagProf) {
+        const avg = (total, n) => (n ? (total / n).toFixed(1) : '?')
+        diagShown = diagDrs + 'f u' + avg(diagUpMs, diagUps) + ' d' + avg(diagDnMs, diagDrs) +
+          ' g' + Math.round(diagGapMs / Math.max(1, diagDrs)) + '/' + Math.round(diagGapMax) +
+          ' [an' + Math.round(diagSecAn / Math.max(1, diagDrs)) +
+          ' of' + Math.round(diagSecOf / Math.max(1, diagDrs)) +
+          ' bg' + Math.round(diagSecBg / Math.max(1, diagDrs)) +
+          ' sc' + Math.round(diagSecSc / Math.max(1, diagDrs)) +
+          ' r' + Math.round(diagSecRe / Math.max(1, diagDrs)) + ']' +
+          ' ' + W + 'x' + H + diagSimTxt
+      } else {
+        diagShown = diagDrs + ' fps / ' + diagUps + ' maj' + diagSimTxt
+      }
+      diagDrs = 0; diagUps = 0; diagUpMs = 0; diagDnMs = 0; diagGapMs = 0; diagGapMax = 0
+      diagSecAn = 0; diagSecOf = 0; diagSecBg = 0; diagSecSc = 0; diagSecRe = 0; diagT0 = now
+    }
+    if (diagShown) text(4, 4, diagShown, C_WHITE)
+  }
 }
 
 function setupTestMode() {
@@ -2050,6 +2165,20 @@ function init() {
   // rendu quasi à chaque rAF : supprime le judder sur écrans 120/144 Hz.
   // Garde : le stub litecanvas de tools/game_sim.mjs n'a pas cette API.
   if (typeof framerate === 'function') framerate(240)
+  // ---- Instrumentation diagnostic (?sim=N, ?fps — aucun effet sinon) ----
+  // ?sim=N : force la cadence de simulation (ex. ?sim=60 — test « sur écran
+  //          60 Hz, la sim 240 Hz = 4 pas de physique par frame »).
+  // ?fps   : compteur live en haut à gauche (images/s rendues, maj/s simulées).
+  // Modèle setupTestMode : window.location dans un try (game_sim n'a pas window).
+  try {
+    const q = new URLSearchParams(window.location.search)
+    const sim = +q.get('sim')
+    if (sim >= 30 && sim <= 240 && typeof framerate === 'function') framerate(sim)
+    diagSimTxt = q.has('sim') ? ' sim=' + sim : ''
+    diagFps = q.has('fps')
+    diagProf = q.has('prof')
+    diagT0 = performance.now()
+  } catch (e) {}
   try {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
   } catch (e) {}
@@ -2058,6 +2187,14 @@ function init() {
   else if (st === 'invalide' || st === 'corrompu') console.warn('SLIME : stockage illisible — réglages par défaut utilisés')
   applyLayout()
   setupTestMode()
+  // T5 — modal « 1re visite » (spec §3) : lancement de play.html sans pseudo
+  // posé (Player.get() null) -> on le demande tout de suite. Jamais en playtest
+  // (?pattern= : le testeur n'a pas de nom à donner) ni dans le harnais Node
+  // (PLAYER null, js/player.js n'y est pas chargé). Non bloquante : onDone
+  // vide, la modal se ferme au clic et le jeu reste jouable dessous.
+  if (!testMode && PLAYER && PLAYER.ensureModal && PLAYER.get() === null) {
+    PLAYER.ensureModal({ onDone: function() {} })
+  }
   Music.restore()
   Sprites.load()
   buildFramePattern()
