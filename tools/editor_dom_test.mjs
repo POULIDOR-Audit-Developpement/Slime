@@ -1,13 +1,11 @@
 // Test DOM Node : exécute editor.js avec un mini-DOM et vérifie l'onglet PHYS
 // (vue pleine page, sliders rendus, application au layout/Phys, reset), le
-// redimensionnement du panneau propriétés (poignée + persistance), l'onglet
-// COULEURS (création/suppression de paliers, application au stockage, sync
-// des paliers vers le layout partagé) et l'onglet ATELIER (modération avec
-// fetch factice : hors ligne, pending affiché, clic valider -> POST attendu).
+// redimensionnement du panneau propriétés (poignée + persistance) et l'onglet
+// COULEURS (création/suppression de paliers, application au stockage).
 // Usage : node tools/editor_dom_test.mjs
 import { readFileSync } from 'fs'
 const root = new URL('../', import.meta.url).pathname
-const src = ['js/physics.js','js/slime-colors.js','js/sprites.js','js/patterns-defaults.js','js/patterns.js','js/i18n.js','js/editor.js']
+const src = ['js/physics.js','js/slime-colors.js','js/sprites.js','js/patterns-defaults.js','js/patterns.js','js/editor.js']
   .map(f => readFileSync(root + f, 'utf8')).join('\n')
 
 // --- mini DOM ---
@@ -330,10 +328,6 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('appliquer -> seuil 1000 persisté', saved7.some(t => t.min === 1000))
   check('appliquer -> bouton plus dirty', !els.btnApplyColors.classList.contains('dirty'))
   check('appliquer -> message succès', els.status.textContent === 'Couleurs appliquées au jeu')
-  // T9 — sync atelier : la config COULEURS rejoint le layout partagé (poussé
-  // à PUT /api/state -> state.layout.tiers = recalcul serveur + couleurs livre)
-  check('appliquer -> layout.tiers synchronisé avec slime_tiers', JSON.stringify(Patterns.getLayout().tiers) === localStorage.getItem('slime_tiers'))
-  check('appliquer -> layout.tiers persisté dans le store', (localStorage.getItem('slime_patterns_v1') || '').includes('"tiers"'))
   // re-rendu depuis le stockage : les 7 paliers sont bien là
   Ed.setMode('colors')
   check('re-rendu : 7 paliers depuis le stockage', (els.props.innerHTML.match(/tierRow/g) || []).length === 7)
@@ -347,7 +341,6 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('reset : clé slime_tiers retirée', localStorage.getItem('slime_tiers') === null)
   check('reset : 6 paliers par défaut', (els.props.innerHTML.match(/tierRow/g) || []).length === 6)
   check('reset : message', els.status.textContent === 'Couleurs réinitialisées')
-  check('reset : layout.tiers = défauts (6 paliers, mins 0..750)', (Patterns.getLayout().tiers || []).length === 6 && Patterns.getLayout().tiers[5].min === 750)
 
   // --- COULEURS : effets spéciaux (type, N couleurs, vitesse) ---
   els.btnAddTier.handlers.click()
@@ -380,95 +373,10 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   Ed.setMode('patterns')
   check('retour patterns : classe colors retirée', !main.classList.contains('colors'))
 })()
-
-;return (async () => {
-  // --- T9 — onglet ATELIER : modération avec un fetch factice ---
-  // Aucune vraie requête : le stub remplace globalThis.fetch (les appels de
-  // editor.js résolvent en microtâches, on draine avec un macrotask).
-  const tick = () => new Promise(r => setTimeout(r, 0))
-  const T = k => (typeof I18N !== 'undefined' ? I18N.t(k) : k)
-  const main = document.querySelector('main')
-  const calls = []
-  let pend = [{ id: 7, name: 'Émile', score: 250, tier: 2, times: [[0, 10], [2, 95]], createdAt: 1 }]
-  const scoresView = () => ({
-    golden: [{ id: 9, name: 'Bob', tier: 1 }],
-    tiers: [
-      { index: 0, open: true, total: 2, top: [{ id: 9, name: 'Bob', time: 12 }] },
-      { index: 1, open: false, total: 0, top: [] }
-    ]
-  })
-  const jres = o => ({ ok: true, json: () => Promise.resolve(o) })
-  const fakeFetch = (url, opts) => {
-    calls.push({ url: String(url), opts })
-    if (url === '/api/rev') return jres({ rev: 42 })
-    if (url === '/api/admin/pending') return jres({ pending: pend })
-    if (url === '/api/scores') return jres(scoresView())
-    if (url === '/api/admin/validate') {
-      const body = JSON.parse((opts && opts.body) || '{}')
-      pend = pend.filter(e => e.id !== body.id) // le faux serveur valide : la file se vide
-      return jres({ ok: true })
-    }
-    if (url === '/api/admin/delete') return jres({ ok: true })
-    return jres({})
-  }
-  const origFetch = globalThis.fetch
-  try {
-    // 1) hors ligne : /api/rev en échec -> note i18n admOffline, rien d'autre
-    globalThis.fetch = () => Promise.reject(new Error('offline'))
-    Ed.setMode('atelier')
-    await tick()
-    check('classe atelier sur <main>', main.classList.contains('atelier'))
-    check('hors ligne : note admOffline affichée', (els.admBody.innerHTML || '').includes(T('admOffline')))
-    check('hors ligne : aucune liste chargée', !(els.admBody.innerHTML || '').includes('admRow'))
-
-    // 2) en ligne : serveur détecté, pending + paliers affichés
-    globalThis.fetch = fakeFetch
-    localStorage.setItem('slime_key', 'slime') // clé mémorisée par le portail
-    calls.length = 0
-    els.admReload.handlers.click()
-    await tick()
-    const ah = els.admBody.innerHTML
-    check('en ligne : section EN ATTENTE rendue', ah.includes(T('admPending')))
-    check("pending affiché : nom + score (l'admin voit tout)", ah.includes('Émile') && ah.includes('250 pts'))
-    check('pending affiché : palier lisible tier+1 (badge 3)', ah.includes('adm_ok_7') && ah.includes('>3<'))
-    check('pending affiché : temps formatés (T1 0:10 · T3 1:35)', ah.includes('T1 0:10') && ah.includes('T3 1:35'))
-    check('pending : boutons valider et supprimer', ah.includes('✅') && ah.includes('🗑'))
-    check('section PAR PALIER rendue', ah.includes(T('admTiers')))
-    check('par palier : joueur du palier ouvert + suppression', ah.includes('Bob') && ah.includes('adm_tdel_9'))
-    check('par palier : palier fermé non rendu (pas de badge 2)', !ah.includes('>2<'))
-    const getPend = calls.find(c => c.url === '/api/admin/pending')
-    check('GET pending porte la clé éditeur (X-Slime-Key)', !!getPend && getPend.opts.headers['X-Slime-Key'] === 'slime')
-
-    // 3) clic ✅ -> POST /api/admin/validate {id} puis RECHARGEMENT de la liste
-    els['adm_ok_7'].handlers.click()
-    await tick()
-    const vc = calls.find(c => c.url === '/api/admin/validate')
-    check('clic ✅ -> POST /api/admin/validate', !!vc && vc.opts.method === 'POST')
-    check('POST validate : corps {id:7}', !!vc && JSON.parse(vc.opts.body).id === 7)
-    check('POST validate : en-tête X-Slime-Key', !!vc && vc.opts.headers['X-Slime-Key'] === 'slime')
-    check('après action : liste rechargée (pending re-demandé)', calls.filter(c => c.url === '/api/admin/pending').length >= 2)
-    check('après validation : le pending a disparu de la liste', !els.admBody.innerHTML.includes('Émile'))
-
-    // 4) suppression d'un joueur classé (par palier) -> POST /api/admin/delete
-    els['adm_tdel_9'].handlers.click()
-    await tick()
-    const dc = calls.find(c => c.url === '/api/admin/delete')
-    check('clic 🗑 joueur -> POST /api/admin/delete {id:9}', !!dc && dc.opts.method === 'POST' && JSON.parse(dc.opts.body).id === 9)
-    check('suppression : message de statut affiché', els.status.textContent.includes('supprimée') || els.status.textContent.includes('supprimé'))
-
-    // 5) retour patterns : classes retirées
-    Ed.setMode('patterns')
-    check('retour patterns : classe atelier retirée', !main.classList.contains('atelier'))
-  } finally {
-    globalThis.fetch = origFetch
-  }
-})()
 `)
 const store = {}
-// La dernière expression du corps injecté est l'IIFE async de l'onglet
-// ATELIER : on attend sa promesse pour que ses checks comptent avant l'exit.
 const done = fn(documentStub, windowStub, { getItem: k => ls[k] ?? null, setItem: (k, v) => { ls[k] = String(v) }, removeItem: k => { delete ls[k] } }, () => false, class { set src(v) {} }, () => 0, els, check, windowStub)
 if (done && typeof done.then === 'function') await done
 
 if (failed) { console.error(failed + ' ÉCHEC(S)'); process.exit(1) }
-console.log('\nDOM OK — panneaux PHYS, COULEURS et ATELIER fonctionnels')
+console.log('\nDOM OK — panneaux PHYS et COULEURS fonctionnels')

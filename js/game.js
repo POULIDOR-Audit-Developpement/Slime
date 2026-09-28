@@ -244,15 +244,6 @@ let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
 let best = 0, newRecord = false
 let testMode = false, testSecT = 0
-// T6 — L'Atelier des bocaux : temps d'obtention de chaque palier de couleur
-// ([[tierIdx, sec], ...]), suivi au tick par TierTimes.track puis envoyé au
-// serveur à la mort par Scores.submit. TierTimes/Scores (js/scores.js) et
-// Player (js/player.js) sont chargés AVANT game.js par play.html ; le harnais
-// Node game_sim.mjs ne les charge pas -> capturés une fois, null si absents.
-let tierTimes = []
-const TT = typeof TierTimes !== 'undefined' ? TierTimes : null
-const SCORES = typeof Scores !== 'undefined' ? Scores : null
-const PLAYER = typeof Player !== 'undefined' ? Player : null
 
 function slimeR() { return PH().slimeR }
 function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
@@ -344,7 +335,6 @@ function burst(x, y, color, n, pow) {
 
 function startGame() {
   elapsed = 0
-  tierTimes = [] // T6 — nouvelle partie : suivi des paliers remis à zéro
   camX = 0
   camSpd = PH().camBase
   gameT = 0
@@ -411,31 +401,10 @@ function die() {
     try { localStorage.setItem('slime_best', String(best)) } catch (e) {}
   }
   scoreCode = Crypto.makeCode(s, elapsed)
-  submitScore(s) // T6 — hall of fame : envoi au serveur, jamais bloquant
   shakeT = 0.4
   sfx(SFX_DIE)
   burst(slime.x, slime.y, tierCol(deathTier), 24, 220)
   burst(slime.x, slime.y, tierColL(deathTier), 12, 160)
-}
-
-// T6 — soumission du score à la mort (fire-and-forget) : nom connu -> envoi
-// immédiat ; sans nom -> la modal le demande et la soumission part au onDone
-// (null = « jouer sans nom » -> rien). Ruling revue finale : score nul -> RIEN
-// du tout (ni POST ni demande de nom — pas de bruit à modérer ; le code
-// copiable reste disponible). Sans module Player (harnais Node) : pas d'envoi.
-// L'écran de fin s'affiche dans tous les cas.
-function submitScore(s) {
-  if (testMode) return // ruling T6 — un playtest (caméra gelée, pattern en boucle) ne remplit JAMAIS l'atelier
-  if (!(s > 0)) return // ruling revue finale — score 0 : pas de soumission, pas de modal nom
-  if (!SCORES) return
-  const payload = name => ({
-    v: 1, name, score: s, playtime: Math.round(elapsed), times: tierTimes, code: scoreCode
-  })
-  const name = PLAYER ? PLAYER.get() : null
-  if (name) { SCORES.submit(payload(name)); return }
-  if (PLAYER && PLAYER.ensureModal) {
-    PLAYER.ensureModal({ onDone: n => { if (n) SCORES.submit(payload(n)) } })
-  }
 }
 
 // Exécute le saut visé : puissance = distance du point visé au slime (bornée
@@ -799,11 +768,6 @@ function update_(dt) {
   if (aim.on && !aim.air && !slime.grounded && !slime.pull && slime.coyote <= 0) { aim.on = false; aimPad = null }
   updBalls()
   updParticles(dts)
-  // T6 — score de ce tick recalculé (distance parcourue + billes ramassées
-  // ci-dessus) : mémorise l'instant d'obtention d'un palier de couleur.
-  // Pur et O(1) hors franchissement de palier ; avant les tests de mort pour
-  // que la soumission embarque le palier atteint à l'instant fatal.
-  if (TT) tierTimes = TT.track(tierTimes, scoreTierIdx(), elapsed)
   if (slime.x + slime.r < camX) die()
   if (slime.y - slime.r > VH + 30) die()
 }
@@ -819,7 +783,6 @@ function tap(px, py, touchId) {
     if (deathT < OVER_DELAY + 0.7) return // boutons pas encore affichés
     if (hitBtn(vx, vy, BTN_COPY)) { copyCode(); return }
     if (hitBtn(vx, vy, BTN_REPLAY)) { startGame(); return }
-    if (hitBtn(vx, vy, BTN_ATELIER)) { openAtelier(); return }
     return
   }
   const w = s2w(px, py)
@@ -1684,15 +1647,6 @@ function drawPowerHud() {
 const OVER_DELAY = 1.5, OVER_FADE = 0.4
 const BTN_COPY = { x: 62, y: 180, w: 156, h: 34 }
 const BTN_REPLAY = { x: 262, y: 180, w: 156, h: 34 }
-// T6 — lien vers L'Atelier des bocaux (hall of fame), pleine largeur sous les
-// deux boutons ; disponible même si le joueur n'a pas donné de pseudo.
-const BTN_ATELIER = { x: 62, y: 219, w: 356, h: 28 }
-
-// T6 — « VOIR L'ATELIER » : ouvre la page du hall of fame (même onglet).
-// try : game_sim (Node) n'a qu'un window.location factice.
-function openAtelier() {
-  try { window.location.href = 'atelier.html' } catch (e) {}
-}
 
 function hitBtn(x, y, b) {
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
@@ -1745,11 +1699,10 @@ function drawOver() {
   c.restore()
   // Tout le panneau fond avec k (les textes sans alpha() explicite héritent).
   alpha(k)
-  // Panneau central, style « présentation » (234 de haut : T6 ajoute le
-  // bouton VOIR L'ATELIER sous CODE/REJOUER).
-  rectfill(VW / 2 - 3, 30, 406, 234, C_BLACK, 12)
-  rectfill(VW / 2 - 200, 24, 400, 234, C_FRAME, 12)
-  rect(VW / 2 - 200, 24, 400, 234, C_BG3, 2)
+  // Panneau central, style « présentation ».
+  rectfill(VW / 2 - 3, 30, 406, 226, C_BLACK, 12)
+  rectfill(VW / 2 - 200, 24, 400, 226, C_FRAME, 12)
+  rect(VW / 2 - 200, 24, 400, 226, C_BG3, 2)
   drawLangToggle()
   textalign('center', 'top')
   // Titre à ombres superposées.
@@ -1779,9 +1732,6 @@ function drawOver() {
     drawBtn(BTN_COPY, copied ? I18N.t('copied') : I18N.t('copy'), copied ? C_SLIME_L : C_GOLD, copied)
     alpha(kb * (0.6 + 0.4 * Math.sin(T * 4)))
     drawBtn(BTN_REPLAY, I18N.t('replay'), C_BLACK, false, C_GREEN)
-    // T6 — hall of fame : disponible même sans pseudo (navigation seule).
-    alpha(kb)
-    drawBtn(BTN_ATELIER, I18N.t('atelier'), C_WHITE, false, C_BLUE)
     alpha(1)
   }
   textalign('start', 'top')
@@ -2187,14 +2137,6 @@ function init() {
   else if (st === 'invalide' || st === 'corrompu') console.warn('SLIME : stockage illisible — réglages par défaut utilisés')
   applyLayout()
   setupTestMode()
-  // T5 — modal « 1re visite » (spec §3) : lancement de play.html sans pseudo
-  // posé (Player.get() null) -> on le demande tout de suite. Jamais en playtest
-  // (?pattern= : le testeur n'a pas de nom à donner) ni dans le harnais Node
-  // (PLAYER null, js/player.js n'y est pas chargé). Non bloquante : onDone
-  // vide, la modal se ferme au clic et le jeu reste jouable dessous.
-  if (!testMode && PLAYER && PLAYER.ensureModal && PLAYER.get() === null) {
-    PLAYER.ensureModal({ onDone: function() {} })
-  }
   Music.restore()
   Sprites.load()
   buildFramePattern()

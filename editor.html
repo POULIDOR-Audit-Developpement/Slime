@@ -104,8 +104,7 @@
   main.phys #list, main.phys #center, main.phys #propsResize { display: none; }
   main.power #list, main.power #center, main.power #propsResize { display: none; }
   main.colors #list, main.colors #center, main.colors #propsResize { display: none; }
-  main.atelier #list, main.atelier #center, main.atelier #propsResize { display: none; }
-  main.phys #props, main.power #props, main.colors #props, main.atelier #props {
+  main.phys #props, main.power #props, main.colors #props {
     flex: 1; width: auto; max-width: 89.23rem; margin: 0 auto;
     border-left: none; padding: 1.23rem 1.54rem;
   }
@@ -173,22 +172,6 @@
   .stopbtn:disabled { opacity: .35; }
   .tierGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(25.38rem, 1fr)); gap: .77rem; margin-top: .77rem; }
   .tierGrid .tierRow { margin-top: 0; }
-  /* onglet ATELIER : lignes de modération (pending + joueurs par palier) */
-  .admRow {
-    display: flex; align-items: center; gap: .77rem; background: var(--bg);
-    border: 1px solid var(--line); padding: .54rem .77rem; margin-top: .54rem;
-  }
-  .admRow .nm { flex: 1; min-width: 0; }
-  .admRow .nm b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .admRow .nm span { color: var(--dim); font-size: .85rem; }
-  .admRow button { flex: 0 0 auto; padding: .31rem .62rem; }
-  .admRow .admNames { display: flex; flex-wrap: wrap; gap: .31rem .62rem; }
-  .admRow .admNames em {
-    font-style: normal; display: inline-flex; align-items: center; gap: .23rem;
-    background: var(--panel2); border: 1px solid var(--line); padding: .08rem .46rem;
-  }
-  .admRow .admNames button { padding: 0 .31rem; font-size: .85rem; }
-  #admBody h3 { margin-top: 1.08rem; }
 </style>
 </head>
 <body>
@@ -209,7 +192,6 @@
     <div class="tab" id="tabPhys" title="Physique du jeu : slime, saut, caméra, game feel">PHYS</div>
     <div class="tab" id="tabPower" title="Pouvoirs : double saut, slow-mo, cooldowns, activation">POWER</div>
     <div class="tab" id="tabColors" title="Couleurs du slime par palier de score">COULEURS</div>
-    <div class="tab" id="tabAtelier" title="Modération de L'Atelier des bocaux (serveur requis)">ATELIER</div>
   </div>
   <span class="spacer"></span>
   <button id="btnNew">+ Nouveau</button>
@@ -242,8 +224,7 @@
 <script src="js/sprites.js?v=20260927a"></script>
 <script src="js/patterns-defaults.js?v=20260925b"></script>
 <script src="js/patterns.js?v=20260926d"></script>
-<script src="js/crypto.js?v=20260926d"></script>
-<script src="js/i18n.js?v=20260927e"></script>
+<script src="js/crypto.js?v=20260929a"></script>
 <script>
 // ---------- portail : editor.js n'est charge qu'apres le bon mot de passe ----------
 // Hash sale de la cle : la source ne contient pas le mot de passe en clair, et
@@ -261,7 +242,7 @@
   }
   function loadEditor() {
     var s = document.createElement('script')
-    s.src = 'js/editor.js?v=20260927e'
+    s.src = 'js/editor.js?v=20260929a'
     document.body.appendChild(s)
   }
   function fail(msg) {
