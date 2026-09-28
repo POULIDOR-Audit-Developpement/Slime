@@ -28,7 +28,7 @@ L'éditeur demande un **mot de passe** (par défaut : `slime`) — les joueurs p
 index.html              ← PAGE DE PRÉSENTATION : vitrine animée avec les sprites du jeu (EN/FR)
 play.html               ← page hôte du jeu (charge les scripts)
 js/i18n.js              ← traductions EN/FR, EN par défaut (jeu + page de présentation, très peu de mots)
-server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev, PUT protégé par X-Slime-Key)
+server.mjs              ← serveur LAN zéro dépendance : statique + sync du pool (API /api/state, /api/rev, PUT protégé par X-Slime-Key) + HTTPS auto-signé PORT+1 (scanner QR)
 data/pool.json          ← pool partagé du LAN (créé par server.mjs, ignoré par git)
 editor.html             ← ÉDITEUR : patterns + vue principale + physique + pouvoirs + couleurs du slime (autonome)
 css/style.css           ← styles de la page
@@ -176,6 +176,23 @@ c'est assumé pour le giveaway.
 
 Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.js` **et** `decode.html`).
 
+### Scanner QR sur le LAN (HTTPS)
+
+La **caméra** du scanner n'est disponible qu'en **contexte sécurisé** (HTTPS ou localhost). Le serveur
+gère ça tout seul : au premier lancement, il génère un **certificat auto-signé** (`data/tls/`, ignoré
+par git, via `openssl`) et écoute **aussi en HTTPS sur PORT+1 (8472 par défaut)** :
+
+```bash
+node server.mjs                # HTTP :8471 (jeu) + HTTPS :8472 (scanner QR)
+node server.mjs --no-tls       # HTTP seul
+node server.mjs --tls-port 9000
+```
+
+Sur le téléphone : ouvrir `https://<IP-du-PC>:8472/decode.html`, accepter l'avertissement de
+certificat (auto-signé — « Avancé → Continuer »), puis 📷 Scanner. Le SAN du certificat couvre
+toutes les IP LAN détectées. Sans openssl sur la machine : HTTP seul, le scan photo et le collage
+du code restent disponibles.
+
 ## Tech
 
 - Moteur : [Litecanvas](https://litecanvas.js.org) v0.302.0 via CDN jsDelivr (fallback unpkg)
@@ -186,5 +203,5 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
+- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
 - Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame

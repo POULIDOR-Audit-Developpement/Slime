@@ -42,7 +42,10 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
   <h1>SLIME — SCAN &amp; CLASSEMENT</h1>
   <p>Scanne le QR affiché sur l'écran de fin du joueur (ou colle son code) : le score est
   vérifié par signature HMAC puis ajouté au <b>classement local</b> — meilleur score par joueur.
-  La clé secrète (<code>SECRET</code> de <code>js/crypto.js</code>) doit être celle du jeu.</p>
+  La clé secrète (<code>SECRET</code> de <code>js/crypto.js</code>) doit être celle du jeu.
+  <b>Caméra = HTTPS uniquement</b> : sur le LAN, ouvre cette page via
+  <code>https://&lt;IP-du-PC&gt;:8472/decode.html</code> (port TLS affiché au lancement du serveur)
+  et accepte l'avertissement de certificat auto-signé. Sinon : photo du QR ou collage du code.</p>
 
   <div class="row">
     <button id="btnScan">📷 Scanner (caméra)</button>
@@ -175,8 +178,15 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
 
   $('btnScan').addEventListener('click', () => {
     if (stream) { stopScan(); return }
+    if (!window.isSecureContext) {
+      flash.textContent = 'Caméra bloquée : cette page n\'est pas en HTTPS. Ouvre ' +
+        (location.hostname ? 'https://' + location.hostname + ':8472/decode.html' : 'la version HTTPS du serveur (port TLS affiché au lancement)') +
+        ' et accepte l\'avertissement de certificat — ou utilise « Depuis une photo ».'
+      flash.style.display = 'block'
+      return
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof jsQR === 'undefined') {
-      flash.textContent = 'Caméra indisponible ici (ouvre la page en localhost ou HTTPS). Utilise « Depuis une photo » ou le collage du code.'
+      flash.textContent = 'Caméra indisponible ici (navigateur sans getUserMedia). Utilise « Depuis une photo » ou le collage du code.'
       flash.style.display = 'block'
       return
     }

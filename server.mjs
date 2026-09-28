@@ -1,10 +1,16 @@
 // SLIME — serveur LAN : fichiers statiques + API de synchronisation du pool.
-// Zéro dépendance : node server.mjs [--port 8471]
+// Zéro dépendance : node server.mjs [--port 8471] [--no-tls] [--tls-port 8472]
 //
 // SLIME_DATA_DIR=<chemin> : place data/pool.json ailleurs (tests, multi-instances).
 //
+// HTTPS : un certificat auto-signé (data/tls/) est généré via openssl au
+// premier lancement, puis le serveur écoute AUSSI en HTTPS sur PORT+1 (8472)
+// — requis pour la caméra du scanner QR (decode.html) hors localhost.
+// --no-tls désactive ; --tls-port / SLIME_TLS_PORT changent le port.
+//
 // Exportable pour les tests : createHandler({ dataDir, writeKey }) renvoie le
-// handler HTTP (sans écouter) — voir tools/server_test.mjs.
+// handler HTTP (sans écouter) — voir tools/server_test.mjs ; ensureTlsCert
+// est testée par tools/tls_test.mjs.
 //
 // API :
 //   GET  /api/rev    -> { rev }
@@ -15,7 +21,10 @@
 // Le pool partagé vit dans data/pool.json (écriture atomique tmp+rename).
 
 import http from 'node:http'
-import { promises as fs } from 'node:fs'
+import https from 'node:https'
+import { promises as fs, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -30,8 +39,51 @@ let argPort = 8471
 const ai = process.argv.indexOf('--port')
 if (ai > 0 && process.argv[ai + 1]) argPort = parseInt(process.argv[ai + 1], 10) || argPort
 const PORT = process.env.PORT ? (parseInt(process.env.PORT, 10) || argPort) : argPort
+// TLS : actif par défaut (cert auto-signé), PORT+1 ; --no-tls / --tls-port N.
+let argTlsPort = process.env.SLIME_TLS_PORT ? parseInt(process.env.SLIME_TLS_PORT, 10) : PORT + 1
+const ti = process.argv.indexOf('--tls-port')
+if (ti > 0 && process.argv[ti + 1]) argTlsPort = parseInt(process.argv[ti + 1], 10) || argTlsPort
+const TLS_PORT = argTlsPort || PORT + 1
+const TLS_ON = process.argv.indexOf('--no-tls') < 0 && process.env.SLIME_TLS !== 'off'
 // Cle d'ecriture du pool (mot de passe de l'editeur). SLIME_KEY pour changer.
 const WRITE_KEY = process.env.SLIME_KEY || 'slime'
+
+// IP LAN détectées (pour le SAN du certificat : le téléphone visite
+// https://<IP>:8472 — le cert doit couvrir cette IP pour éviter un rejet dur).
+function lanIps() {
+  const out = []
+  try {
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const ni of list || []) if (ni.family === 'IPv4' && !ni.internal) out.push(ni.address)
+    }
+  } catch (e) {}
+  return [...new Set(out)]
+}
+
+// Certificat auto-signé du serveur (caméra du scanner QR = contexte sécurisé
+// requis). Généré UNE FOIS dans <dir>/server.{crt,key} via openssl (SAN :
+// localhost + 127.0.0.1 + ::1 + les IP LAN passées), réutilisé ensuite.
+// openssl absent/erreur -> null (le serveur tourne en HTTP seul, jamais de
+// crash). Exporté : testé par tools/tls_test.mjs.
+export function ensureTlsCert({ dir, ips, opensslBin }) {
+  const cert = path.join(dir, 'server.crt')
+  const key = path.join(dir, 'server.key')
+  if (existsSync(cert) && existsSync(key)) return { cert, key }
+  try {
+    mkdirSync(dir, { recursive: true })
+    const san = ['DNS:localhost', 'IP:127.0.0.1', 'IP:::1']
+      .concat((ips || []).filter(Boolean).map(ip => 'IP:' + ip))
+      .join(',')
+    execFileSync(opensslBin || 'openssl', [
+      'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', key, '-out', cert, '-days', '3650',
+      '-subj', '/CN=SLIME LAN', '-addext', 'subjectAltName=' + san
+    ], { stdio: 'ignore' })
+    return statSync(cert).size > 100 && statSync(key).size > 100 ? { cert, key } : null
+  } catch (e) {
+    return null
+  }
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -171,5 +223,21 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
       console.log('SLIME — http://0.0.0.0:' + PORT + '/  (jeu) et /editor.html (éditeur)')
       console.log('Pool partagé : ' + POOL_FILE + ' (rev ' + handler.pool.rev + ')')
     })
+    // HTTPS (même handler) : requis par la caméra du scanner QR — les navigateurs
+    // n'exposent getUserMedia qu'en contexte sécurisé (https ou localhost).
+    // Cert auto-signé : le téléphone affiche un avertissement -> « advanced ->
+    // proceed » une fois, ensuite la caméra fonctionne.
+    if (TLS_ON) {
+      const c = ensureTlsCert({ dir: path.join(DATA_DIR, 'tls'), ips: lanIps() })
+      if (c) {
+        const tlsServer = https.createServer({ key: readFileSync(c.key), cert: readFileSync(c.cert) }, handler)
+        tlsServer.listen(TLS_PORT, '0.0.0.0', () => {
+          console.log('SLIME HTTPS — https://0.0.0.0:' + TLS_PORT + '/decode.html  (scanner QR : caméra)')
+          console.log('Certificat auto-signé : ' + c.cert + ' — acceptez l\'avertissement du navigateur')
+        })
+      } else {
+        console.log('TLS indisponible (openssl absent) — scanner QR : ouvrez decode.html en localhost ou posez un cert manuel')
+      }
+    }
   })
 }
