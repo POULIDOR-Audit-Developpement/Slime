@@ -7,11 +7,11 @@ const Patterns = (() => {
   const FORMAT = 'slime-patterns@1'
   const STORE_KEY = 'slime_patterns_v1'
   const BAK_KEY = 'slime_patterns_v1_bak'
-  const TYPES = ['basic', 'sticky', 'dynamic', 'crumble', 'ghost', 'bouncy']
+  const TYPES = ['basic', 'sticky', 'dynamic', 'crumble', 'phase', 'bouncy', 'turbo', 'gold', 'seesaw']
 
   // Pool embarqué par défaut (généré + validé par tools/gen_defaults.mjs).
   const DEFAULT_POOL_JSON = (typeof SLIME_DEFAULT_POOL === 'string' && SLIME_DEFAULT_POOL) || '[]'
-  const DEFAULT_PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
+  const DEFAULT_PLAT = { crumbleT: CRUMBLE_T, spdMul: 1 }
   // Pouvoirs (onglet POWER) et vue du jeu (onglet VUE) : valeurs par défaut.
   // ledge.pullT : durée de la remontée (« pulled up time ») — le slime ne
   // s'accroche plus, il se hisse sur la plateforme.
@@ -44,7 +44,9 @@ const Patterns = (() => {
     w.right = clampN(+w.right || SPIKE_W, 4, 60)
     out.walls = w
     p.crumbleT = clampN(+p.crumbleT || DEFAULT_PLAT.crumbleT, 0.2, 2)
-    p.dynLife = clampN(+p.dynLife || DEFAULT_PLAT.dynLife, 1, 10)
+    // dynLife : champ hérité des anciens saves/layouts (timer des dynamiques,
+    // retiré du runtime) — encore borné pour les tolérer, mais ignoré du jeu.
+    p.dynLife = clampN(+p.dynLife || 4, 1, 10)
     p.spdMul = clampN(+p.spdMul || DEFAULT_PLAT.spdMul, 0.5, 2)
     out.plat = p
     out.phys = Phys.normalize(out.phys)
@@ -112,7 +114,8 @@ const Patterns = (() => {
       if (typeof q.x !== 'number' || q.x < 0) errs.push(tag + ':x')
       if (!Number.isInteger(q.row) || q.row < 0 || q.row > 4) errs.push(tag + ':ligne')
       if (!Number.isInteger(q.cells) || q.cells < 1 || q.cells > 12) errs.push(tag + ':largeur')
-      if (TYPES.indexOf(q.type) < 0) errs.push(tag + ':type')
+      // 'ghost' : alias de compat (anciens patterns/exports) -> phasante.
+      if (TYPES.indexOf(q.type) < 0 && q.type !== 'ghost') errs.push(tag + ':type')
       if (q.spike && !(typeof q.spike.a === 'number' && typeof q.spike.b === 'number' && q.spike.a >= 0 && q.spike.a < q.spike.b && q.spike.b <= 1)) errs.push(tag + ':pics')
       if (q.type === 'dynamic' && (!(q.amp >= 0) || !(q.spd >= 0))) errs.push(tag + ':oscillation')
       // Overrides optionnels par plateforme (sinon réglage global du layout)
@@ -158,10 +161,13 @@ const Patterns = (() => {
       const row = clampN((q.row | 0) + delta, 0, 4)
       const inst = {
         x: dx + q.x, row, y: rowY(row), baseY: rowY(row),
-        w: q.cells * CELL, type: q.type,
+        w: q.cells * CELL, type: q.type === 'ghost' ? 'phase' : q.type,
         amp: q.amp || 0, spd: q.spd || 0, ph: Math.random() * Math.PI * 2, spike: null,
         crumbleT: q.crumbleT != null ? +q.crumbleT : undefined,
-        dynLife: q.dynLife != null ? +q.dynLife : undefined
+        dynLife: q.dynLife != null ? +q.dynLife : undefined,
+        // Phasante : décalage de cycle par plateforme — TOUJOURS défini
+        // (défaut 0 pour les autres types), sinon phaseSolid donnerait NaN.
+        phase0: (q.type === 'ghost' || q.type === 'phase') ? Math.random() : 0
       }
       if (inst.type === 'dynamic') {
         inst.baseY = clampN(rowY(row) + (q.yOff || 0), CEIL + 24 + inst.amp, 246 - inst.amp)
@@ -237,10 +243,16 @@ const Patterns = (() => {
     const tgt = targetOf(b)
     const opts = { ledge: lg.enabled ? lg.window : 0, catchable: b.type !== 'ghost' }
     const noLedge = { catchable: opts.catchable }
-    if (a.type === 'bouncy') {
-      if (Phys.canReachBounce(a, tgt, walls, opts)) return { ok: true, via: 'bounce', okSimple: true }
+    if (a.type === 'bouncy' || a.type === 'seesaw') {
+      // Bascule : même famille rebond (bounce, bounce+dj) mais avec la
+      // vitesse de lancement qui lui est propre (BASCULE_VX, -BOUNCE_VY
+      // × BASCULE_VY_MUL) — cf. execJump côté jeu.
+      const bascule = a.type === 'seesaw'
+      const vx = bascule ? BASCULE_VX : undefined
+      const vy = bascule ? -BOUNCE_VY * BASCULE_VY_MUL : undefined
+      if (Phys.canReachBounce(a, tgt, walls, opts, vx, vy)) return { ok: true, via: 'bounce', okSimple: true }
       if (budget && budget.dj > 0 && dj.enabled &&
-          Phys.canReachBounceExt(a, tgt, walls, dj, opts)) {
+          Phys.canReachBounceExt(a, tgt, walls, dj, opts, vx, vy)) {
         budget.dj--
         return { ok: true, via: 'bounce+dj', okSimple: false }
       }

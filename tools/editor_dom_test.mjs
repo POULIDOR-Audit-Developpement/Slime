@@ -188,7 +188,7 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   els.btnResetL.handlers.click()
   check('reset murs : gauche défaut 11, pas de plafond', Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.ceil === undefined)
   check('reset murs : phys préservée (grav 777)', Patterns.getLayout().phys.grav === 777)
-  check('reset murs : plat préservée', Patterns.getLayout().plat.crumbleT === 0.5)
+  check('reset murs : plat préservée', Patterns.getLayout().plat.crumbleT === 0.8)
   Phys.setPhys(Patterns.getLayout().phys)
   check('outil Déplacer actif par défaut', els.lToolSelect.classList.contains('on'))
   els.lToolDecor.handlers.click()

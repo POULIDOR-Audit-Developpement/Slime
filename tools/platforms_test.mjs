@@ -63,6 +63,41 @@ function driverFn() {
   check('canReachBounce : surcharge vx/vy utilisée', Phys.canReachBounce(cbA, cbT, [], null, 200, -360) === true)
   check('canReachBounce : défauts sans surcharge', Phys.canReachBounce(cbA, cbT, [], null) === false)
 
+  // --- 5) alias ghost -> phase (compat anciens patterns/exports) ---
+  // Géométrie : les x des patterns sont relatifs à l'ancrage (dx = 0 + 4*CELL).
+  // La cible seesaw est posée à portée du saut visé depuis la plateforme
+  // fantôme (inst x = 448, zone atteignable 294..526) — à la même position
+  // qu'elle, aucun des 14 combos ne repasse dessus (et { dj: 0 } interdit le
+  // saut double).
+  const patGhost = { id: 't-alias', name: 'alias', difficulty: 1, entry: { row: 2 },
+    platforms: [{ x: 3 * CELL, row: 2, cells: 3, type: 'ghost', yOff: 0, amp: 0, spd: 0, spike: null }], balls: [], decor: [] }
+  check('validatePattern accepte ghost (alias)', Patterns.validatePattern(patGhost).length === 0)
+  const anchor = { x: 0, row: 2, y: rowY(2), w: 4 * CELL, type: 'basic' }
+  const instG = Patterns.instantiate(patGhost, anchor)
+  check('instantiate normalise ghost -> phase', instG.platforms[0].type === 'phase')
+  check('phase0 toujours défini', typeof instG.platforms[0].phase0 === 'number')
+
+  // --- 6) seesaw validé comme famille rebond ---
+  const patSeesaw = { id: 't-seesaw', name: 'seesaw', difficulty: 3, entry: { row: 2 },
+    platforms: [{ x: 10 * CELL, row: 2, cells: 3, type: 'seesaw', yOff: 0, amp: 0, spd: 0, spike: null }], balls: [], decor: [] }
+  check('validatePattern accepte seesaw', Patterns.validatePattern(patSeesaw).length === 0)
+  const instS = Patterns.instantiate(patSeesaw, anchor)
+  const r = Patterns.jumpOk(instG.platforms[0], instS.platforms[0], [], { dj: 0 })
+  check('jumpOk depuis phase vers seesaw (source famille basique)', r.ok)
+  // Source seesaw = famille rebond à vitesse bascule (BASCULE_VX, -BOUNCE_VY
+  // × BASCULE_VY_MUL) : la cible (inst x = 736) est atteinte à (200,-360) mais
+  // manquée avec le rebond orange par défaut (140,-400) — le via épingle la
+  // branche bounce, pas un saut visé.
+  const patLoin = { id: 't-bascule', name: 'bascule', difficulty: 3, entry: { row: 2 },
+    platforms: [{ x: 19 * CELL, row: 2, cells: 3, type: 'basic', yOff: 0, amp: 0, spd: 0, spike: null }], balls: [], decor: [] }
+  const instL = Patterns.instantiate(patLoin, anchor)
+  const rb = Patterns.jumpOk(instS.platforms[0], instL.platforms[0], [], { dj: 0 })
+  check('jumpOk depuis seesaw (famille rebond, vitesse bascule)', rb.ok && rb.via === 'bounce')
+
+  // --- 7) catalogue : 9 types, champ hérité dynLife toujours toléré ---
+  check('TYPES a 9 types', Patterns.TYPES.length === 9 && Patterns.TYPES.indexOf('turbo') >= 0 && Patterns.TYPES.indexOf('gold') >= 0 && Patterns.TYPES.indexOf('seesaw') >= 0)
+  check('layout normalisé : dynLife hérité borné (4)', Patterns.getLayout().plat.dynLife === 4)
+
   console.log(fails === 0 ? '\nPLATFORMS OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('platforms_test failed')
 }
