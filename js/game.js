@@ -51,7 +51,8 @@ const VERSION = '4.0'
 // Plus de plafond : le haut du monde est ouvert (grands sauts autorisés).
 let WALL = { left: TIP_L, right: SPIKE_W }
 // Réglages globaux des plateformes (onglet VUE), surchargés par plateforme.
-let PLAT = { crumbleT: CRUMBLE_T, dynLife: 4, spdMul: 1 }
+// (plus de dynLife : les dynamiques n'ont plus de timer de disparition)
+let PLAT = { crumbleT: CRUMBLE_T, spdMul: 1 }
 // Pouvoirs (onglet POWER) et vue (zoom global, onglet VUE) issus du layout.
 let POWERS = {
   doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
@@ -87,7 +88,6 @@ function applyLayout() {
   if (l && l.plat) {
     PLAT = {
       crumbleT: numBound(l.plat.crumbleT, CRUMBLE_T, 0.2, 2),
-      dynLife: numBound(l.plat.dynLife, 4, 1, 10),
       spdMul: numBound(l.plat.spdMul, 1, 0.5, 2)
     }
   }
@@ -211,6 +211,14 @@ const SFX_COIN = [,,1675,,.06,.24,1,1.82,,,837,.06]
 const SFX_HURT = [,,537,.02,.02,.22,1,1.59,-6.98,4.97]
 const SFX_DIE = [,,333,.01,0,.9,4,1.9,,,,,,.5,,.6]
 const SFX_LAND = [2,.8,999,,,,,1.5,,.3,-99,.1,1.63,,,.11,.22]
+// « Plateformes fun » : craquement (crumble télégraphé), souffle (turbo),
+// carillon (dorée) et tic sec (réservé phasante/UI).
+const SFX_CRACK = [2,.4,90,,.03,.2,4,,,,-.1,,.05,.3]
+const SFX_WHOOSH = [1.5,.3,240,.01,.09,.22,1,2.2,,-.6,-5,.05]
+const SFX_GOLD = [1.5,.05,1318,,.04,.18,1,1.8,,,660,.05]
+const SFX_TIC = [1,.15,880,,.015,.06,2,,,,,,,,.1]
+// Hauteur du « plouf » par type de plateforme (repérage audio au posé).
+const SFX_LAND_PITCH = { basic: 0, sticky: 1, dynamic: -1, crumble: 2, phase: 3, turbo: 4, gold: 5, seesaw: 6 }
 
 const LETTERS = {
   S: ['.####', '#....', '.###.', '....#', '####.'],
@@ -371,7 +379,8 @@ function startGame() {
     x: VW / 2, y: rowY(2) - slimeR(), vx: 0, vy: 0, size: 3,
     grounded: true, groundPlat: first, jumpMul: 1, invuln: 0, squashT: 0,
     coyote: PH().coyote, airJumps: POWERS.doubleJump.charges, djCd: 0,
-    pull: null, noCatchT: 0, pumpT: 0, face: 1
+    pull: null, noCatchT: 0, pumpT: 0, face: 1,
+    bounceCombo: 0, goldT: 0, turboT: 0
   }
   slime.r = slimeR()
   let guard = 0
@@ -459,7 +468,16 @@ function makeDeathCode() {
 // En l'air (aim.air) : double saut — consomme une charge et démarre le cooldown.
 function execJump() {
   const dj = POWERS.doubleJump
-  const mul = Phys.aimVel(dist(slime.x, slime.y, aim.x, aim.y)) * slime.jumpMul * (aim.air ? dj.powerMul : 1)
+  // Ref locale : la plateforme de départ est annulée plus bas (saut au sol)
+  // mais ses bonus (rythme des dynamiques, turbo) se lisent avant.
+  const gp = slime.groundPlat
+  let mul = Phys.aimVel(dist(slime.x, slime.y, aim.x, aim.y)) * slime.jumpMul * (aim.air ? dj.powerMul : 1)
+  // Rythme des dynamiques : plateforme montante = saut amplifié (le cos est
+  // le signe de la dérive verticale de l'oscillation).
+  if (gp && gp.type === 'dynamic' && gp.amp > 0 && Math.cos(gameT * gp.spd * PLAT.spdMul + gp.ph) > 0) {
+    mul *= RHYTHM_MUL
+    burst(slime.x, slime.y - 10, C_BLUE_L, 8, 120)
+  }
   const ang = Math.atan2(aim.y - slime.y, aim.x - slime.x)
   slime.vx = Math.cos(ang) * mul
   slime.vy = Math.sin(ang) * mul
@@ -468,11 +486,6 @@ function execJump() {
   if (slime.pull) {
     slime.pull = null
     slime.noCatchT = 0.3
-  }
-  const gp = slime.groundPlat
-  if (gp && gp.type === 'ghost') {
-    killPlat(gp, C_GH_SIDE)
-    sfx(SFX_COIN, -4, 0.4)
   }
   if (aim.air) {
     slime.airJumps--
@@ -497,11 +510,15 @@ function execJump() {
 function land(p) {
   // Chaque contact avec une plateforme recharge les sauts aériens ; une visée
   // de double saut en cours devient une visée de saut au sol (slow-mo coupé).
+  // Combo de rebonds : tout atterrissage non-orange remet le compteur à zéro.
+  if (p.type !== 'bouncy') slime.bounceCombo = 0
   slime.airJumps = POWERS.doubleJump.charges
   if (aim.on && aim.air) { aim.air = false; slowmoT = 0 }
   if (p.type === 'bouncy') {
     const P = PH()
-    slime.vy = -P.bounceVy
+    // Combo : chaque rebond consécutif amplifie le lancement (cap ×COMBO_MAX).
+    slime.bounceCombo = (slime.bounceCombo || 0) + 1
+    slime.vy = -P.bounceVy * Math.min(COMBO_MAX, Math.pow(COMBO_STEP, slime.bounceCombo - 1))
     if (Math.abs(slime.vx) < P.bounceVx) slime.vx = P.bounceVx
     slime.squashT = 0.12
     sfx(SFX_LAND, -2, 0.7)
@@ -514,11 +531,7 @@ function land(p) {
   slime.squashT = 0.1
   slime.jumpMul = p.type === 'sticky' ? PH().stickyMul : 1
   if (p.type === 'crumble' && !p.crackT) p.crackT = p.crumbleT || PLAT.crumbleT
-  if (p.type === 'dynamic' && !p.timerSet) {
-    p.timerSet = true
-    p.timer = p.dynLife || PLAT.dynLife
-  }
-  sfx(SFX_LAND, 0, 0.2)
+  sfx(SFX_LAND, SFX_LAND_PITCH[p.type] || 0, 0.2)
 }
 
 // ---------- Ledge catch ----------
@@ -545,16 +558,7 @@ function tryLedgeCatch(prevY) {
 }
 
 function catchLedge(p, side) {
-  if (p.type === 'ghost') { // éphémère : disparaît, pas d'accroche
-    killPlat(p, C_GH_SIDE)
-    sfx(SFX_COIN, -4, 0.4)
-    return
-  }
   if (p.type === 'crumble' && !p.crackT) p.crackT = p.crumbleT || PLAT.crumbleT
-  if (p.type === 'dynamic' && !p.timerSet) {
-    p.timerSet = true
-    p.timer = p.dynLife || PLAT.dynLife
-  }
   slime.pull = { plat: p, side, t: POWERS.ledge.pullT, dur: POWERS.ledge.pullT }
   slime.grounded = false
   slime.groundPlat = null
@@ -619,15 +623,13 @@ function updSlime(dt) {
   if (slime.grounded) {
     const p = slime.groundPlat
     if (!p || p.dead || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
-      if (p && p.type === 'ghost' && !p.dead) {
-        killPlat(p, C_GH_SIDE)
-        sfx(SFX_COIN, -4, 0.4)
-      }
       slime.grounded = false
       slime.groundPlat = null
       // Quitter le sol sans sauter : fenêtre de coyote encore disponible.
     } else {
-      slime.vx *= Math.pow(0.002, dt)
+      // Collante : le slime s'arrête quasi immédiatement (friction forte).
+      const fr = p.type === 'sticky' ? 0.0001 : 0.002
+      slime.vx *= Math.pow(fr, dt)
       if (Math.abs(slime.vx) < 2) slime.vx = 0
       slime.x += slime.vx * dt
       slime.y = p.y - slime.r
@@ -648,7 +650,12 @@ function updSlime(dt) {
       for (const p of platforms) {
         if (p.dead) continue
         if (slime.x > p.x - 6 && slime.x < p.x + p.w + 6 && prevY + slime.r <= p.y + 8 && slime.y + slime.r >= p.y) {
+          // Juice universel d'impact : shake sur gros choc + poussière (la
+          // bouncy a déjà son squash/SFX : pas de poussière en plus).
+          const impactVy = slime.vy
           land(p)
+          if (impactVy > 600 && VIEW.shake !== false) shakeT = 0.08
+          if (p.type !== 'bouncy') burst(slime.x, slime.y + slime.r, C_WHITE, 4, 60)
           break
         }
       }
@@ -792,19 +799,17 @@ function update_(dt) {
   cleanup()
   for (const p of platforms) {
     if (p.type === 'dynamic') p.y = p.baseY + Math.sin(gameT * p.spd * PLAT.spdMul + p.ph) * p.amp
+    // Cassable télégraphée : à mi-crise, craquement + flag de rendu (le
+    // décompte continue en dessous jusqu'à la casse).
+    if (p.crackT > 0 && !p.crackWarn && p.crackT <= CRUMBLE_T / 2) {
+      p.crackWarn = true
+      sfx(SFX_CRACK, 0, 0.5)
+    }
     if (p.crackT > 0) {
       p.crackT -= dts
       if (p.crackT <= 0) {
         p.crackT = 0
         killPlat(p, C_CR_SIDE)
-        sfx(SFX_DIE, 2, 0.3)
-      }
-    }
-    if (p.timerSet) {
-      p.timer -= dts
-      if (p.timer <= 0) {
-        p.timer = 0
-        killPlat(p, C_BLUE_L)
         sfx(SFX_DIE, 2, 0.3)
       }
     }
@@ -1166,11 +1171,6 @@ function drawPlat(p) {
       for (let i = 0; i < n; i++) {
         const t = (i % 9) * pitch
         Sprites.drawSrc('dynStrip', t, 0, pitch, 33, p.x + jx + i * CELL, p.y, CELL, 24)
-      }
-      if (p.timerSet && p.timer < 1.5) {
-        alpha(0.25 + 0.25 * Math.sin(T * 12))
-        rectfill(p.x + jx, p.y, p.w, 24, C_RED)
-        alpha(1)
       }
     } else {
       const keys = { basic: 'tileGreen', crumble: 'tileGray', ghost: 'tileGhost', bouncy: 'tileOrange' }
