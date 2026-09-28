@@ -5,8 +5,14 @@
 const VW = 480, VH = 270
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
 const TIP_L = 11
-const VMIN = 210, VMAX = 360, AIM_MIN = 24, AIM_MAX = 140, STICKY_MUL = 0.8, SPIKE_W = 14
-const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.5, GOLD_PTS = 50
+const VMIN = 210, VMAX = 360, AIM_MIN = 24, AIM_MAX = 140, STICKY_MUL = 1.15, SPIKE_W = 14
+const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.8, GOLD_PTS = 50
+// Constantes « plateformes fun » (spec 2026-09-29) : phasante (cycle
+// solide/traversable), turbo, dorée, bascule, combo de rebonds et rythme
+// des dynamiques. Consommées par game.js, patterns.js et l'éditeur.
+const PHASE_CYCLE = 2.0, PHASE_SOLID = 0.6, TURBO_MUL = 1.5, TURBO_MIN = 180
+const GOLD_AIRJUMP_T = 10, BASCULE_VX = 200, BASCULE_VY_MUL = 0.9
+const COMBO_STEP = 1.12, COMBO_MAX = 1.5, RHYTHM_MUL = 1.15
 
 // Réglages physique mutables (onglet PHYS de l'éditeur, section `phys` du
 // layout). Les constantes ci-dessus restent les valeurs par défaut.
@@ -58,7 +64,9 @@ function normPhys(n) {
     dragAir: physBound(n.dragAir, d.dragAir, 0.2, 1),
     bounceVy: physBound(n.bounceVy, d.bounceVy, 200, 650),
     bounceVx: physBound(n.bounceVx, d.bounceVx, 20, 300),
-    stickyMul: physBound(n.stickyMul, d.stickyMul, 0.4, 1.1),
+    // Borne haute 1.5 : le défaut 1.15 doit survivre à la normalisation
+    // (l'ancienne borne 1.1 le ramenait silencieusement à 1.1).
+    stickyMul: physBound(n.stickyMul, d.stickyMul, 0.4, 1.5),
     invuln: physBound(n.invuln, d.invuln, 0.3, 3),
     hurtRecoil: physBound(n.hurtRecoil, d.hurtRecoil, 0.25, 2),
     coyote: physBound(n.coyote, d.coyote, 0, 0.25),
@@ -227,14 +235,27 @@ const Phys = (() => {
   }
 
   // Rebond automatique d'une plateforme orange : trajectoire fixe.
-  function canReachBounce(a, target, walls, opts) {
-    return simLandV(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls, opts)
+  // vx/vy optionnels : surcharge de la vitesse de départ (le lancement de la
+  // bascule réutilise cette validation avec ses propres vitesses), défauts =
+  // rebond standard de l'orange (physCfg.bounceVx / -bounceVy).
+  function canReachBounce(a, target, walls, opts, vx, vy) {
+    return simLandV(a.x + a.w - 10, a.y - 12, vx != null ? vx : physCfg.bounceVx, vy != null ? vy : -physCfg.bounceVy, target, walls, opts)
   }
 
   // Rebond + correction éventuelle en plein arc par un double saut (si `dj`).
-  function canReachBounceExt(a, target, walls, dj, opts) {
-    if (!dj) return canReachBounce(a, target, walls, opts)
-    return doubleFrom(a.x + a.w - 10, a.y - 12, physCfg.bounceVx, -physCfg.bounceVy, target, walls, dj, opts)
+  // vx/vy : mêmes surcharges que canReachBounce (1ère jambe à la vitesse donnée).
+  function canReachBounceExt(a, target, walls, dj, opts, vx, vy) {
+    vx = vx != null ? vx : physCfg.bounceVx
+    vy = vy != null ? vy : -physCfg.bounceVy
+    if (!dj) return canReachBounce(a, target, walls, opts, vx, vy)
+    return doubleFrom(a.x + a.w - 10, a.y - 12, vx, vy, target, walls, dj, opts)
+  }
+
+  // Plateforme phasante : solide pendant PHASE_SOLID du cycle PHASE_CYCLE.
+  // phase0 ∈ [0,1) décale le cycle par plateforme (défaut 0).
+  function phaseSolid(p, t) {
+    const u = (((t / PHASE_CYCLE) + (p && p.phase0 ? p.phase0 : 0)) % 1 + 1) % 1
+    return u < PHASE_SOLID
   }
 
   // Puissance du saut « visée » : la distance du clic/touch au slime, bornée
@@ -251,5 +272,5 @@ const Phys = (() => {
     return Math.max(0, Math.min(1, (d - P.aimMin) / Math.max(1, P.aimMax - P.aimMin)))
   }
 
-  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachDouble, canReachBounce, canReachBounceExt, aimVel, aimRatio }
+  return { setWalls, walls: getWalls, setPhys, phys: getPhys, normalize: normPhys, simLandV, canReach, canReachDouble, canReachBounce, canReachBounceExt, phaseSolid, aimVel, aimRatio }
 })()
