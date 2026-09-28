@@ -71,21 +71,47 @@ const Crypto = (() => {
     return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   }
 
-  function makeCode(score, elapsed) {
+  function unb64url(s) {
+    return atob(s.replace(/-/g, '+').replace(/_/g, '/'))
+  }
+
+  // Code de fin de partie. SANS contact : format historique
+  //   b64url("score.elapsed.date") + '.' + HMAC32
+  // AVEC contact (email/Instagram, déjà sanitizé par Contact.sanitize) :
+  // version 2 —   b64url("2.score.elapsed.date.b64url(contact)") + '.' + HMAC32
+  // (le contact est lui-même encodé b64url : aucun '.' dans le payload).
+  function makeCode(score, elapsed, contact) {
     const t = Math.max(0, Math.floor(elapsed || 0))
-    const body = b64url(score + '.' + t + '.' + Date.now())
+    const payload = (typeof contact === 'string' && contact)
+      ? '2.' + score + '.' + t + '.' + Date.now() + '.' + b64url(contact)
+      : score + '.' + t + '.' + Date.now()
+    const body = b64url(payload)
     return body + '.' + hmacHex(SECRET, body).slice(0, 32)
   }
 
   function verifyCode(code, secret) {
+    if (typeof code !== 'string') return null
     const idx = code.lastIndexOf('.')
     if (idx < 1) return null
     const body = code.slice(0, idx)
     const sig = code.slice(idx + 1)
     if (hmacHex(secret || SECRET, body).slice(0, 32) !== sig.trim()) return null
     try {
-      const payload = atob(body.replace(/-/g, '+').replace(/_/g, '/'))
+      const payload = unb64url(body)
       const parts = payload.split('.')
+      // v2 : "2.score.elapsed.date.contactB64"
+      if (parts[0] === '2' && parts.length >= 5) {
+        const out = {
+          v: 2,
+          score: parseInt(parts[1], 10),
+          date: new Date(parseInt(parts[3], 10))
+        }
+        if (isNaN(out.date.getTime())) return null
+        out.elapsed = parseInt(parts[2], 10)
+        try { out.contact = unb64url(parts[4]) } catch (e) { out.contact = '' }
+        return out
+      }
+      // format historique : "score.elapsed.date"
       if (parts.length < 2) return null
       const out = { score: parseInt(parts[0], 10), date: new Date(parseInt(parts[parts.length - 1], 10)) }
       if (parts.length >= 3) out.elapsed = parseInt(parts[1], 10)

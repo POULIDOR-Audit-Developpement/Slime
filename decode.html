@@ -3,135 +3,258 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>SLIME — Vérificateur de codes</title>
+<title>SLIME — Scan QR & classement</title>
 <style>
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0d0d21;color:#f4f4f4;font-family:'Courier New',monospace}
-.card{width:min(560px,92vw);background:#191936;border:2px solid #2e2e5e;border-radius:8px;padding:28px}
+.card{width:min(680px,94vw);background:#191936;border:2px solid #2e2e5e;border-radius:8px;padding:28px;margin:16px 0}
 h1{color:#6fdc4f;font-size:22px;margin:0 0 6px;letter-spacing:2px}
+h2{color:#6fdc4f;font-size:16px;margin:26px 0 8px;letter-spacing:1px}
 p{color:#8a8ab0;font-size:13px;line-height:1.5}
-textarea{width:100%;box-sizing:border-box;height:84px;background:#0d0d21;color:#f4f4f4;border:1px solid #2e2e5e;border-radius:4px;padding:10px;font-family:inherit;font-size:13px;resize:vertical}
-button{margin-top:12px;width:100%;padding:12px;background:#3ecb3e;color:#0a0a12;border:0;border-radius:4px;font-family:inherit;font-weight:bold;font-size:15px;letter-spacing:1px;cursor:pointer}
-button:hover{background:#6fdc4f}
-#result{margin-top:16px;padding:14px;border-radius:4px;font-size:14px;display:none;line-height:1.6}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+button,label.filebtn{margin-top:10px;flex:1;min-width:140px;padding:12px;background:#3ecb3e;color:#0a0a12;border:0;border-radius:4px;font-family:inherit;font-weight:bold;font-size:14px;letter-spacing:1px;cursor:pointer;text-align:center}
+button:hover,label.filebtn:hover{background:#6fdc4f}
+button.danger{background:#e23b3b;color:#fff}
+button.danger:hover{background:#ff6b6b}
+button.ghost{background:#2e2e5e;color:#f4f4f4}
+button.ghost:hover{background:#43439a}
+label.filebtn{position:relative;box-sizing:border-box}
+label.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+textarea{width:100%;box-sizing:border-box;height:72px;background:#0d0d21;color:#f4f4f4;border:1px solid #2e2e5e;border-radius:4px;padding:10px;font-family:inherit;font-size:13px;resize:vertical;margin-top:10px}
+#result{margin-top:14px;padding:14px;border-radius:4px;font-size:14px;display:none;line-height:1.6}
 #result.ok{display:block;background:#123312;border:1px solid #3ecb3e;color:#a5f0a5}
 #result.ko{display:block;background:#331212;border:1px solid #e23b3b;color:#ff9c9c}
-#result b{font-size:20px}
+#result b{font-size:19px}
+#scanZone{display:none;margin-top:12px}
+#scanZone.on{display:block}
+#video{width:100%;max-height:340px;object-fit:cover;border:2px solid #2e2e5e;border-radius:6px;background:#000}
+#flash{margin-top:8px;font-size:13px;color:#ffd23f;display:none}
+table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}
+th{color:#8a8ab0;text-align:left;padding:6px 8px;border-bottom:1px solid #2e2e5e;font-size:11px;letter-spacing:1px}
+td{padding:7px 8px;border-bottom:1px solid #232348}
+td.sc{font-weight:bold;color:#ffd23f}
+td.ct{color:#a5f0a5;word-break:break-all}
+tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
+.empty{color:#8a8ab0;font-size:13px;padding:10px 0}
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>SLIME — Vérificateur de codes</h1>
-  <p>Colle un code de fin de partie pour vérifier son authenticité et lire le score réel. La clé secrète (<code>SECRET</code>) doit être identique à celle de <code>index.html</code>.</p>
-  <textarea id="code" placeholder="Colle le code ici..."></textarea>
-  <button onclick="verify()">Vérifier le code</button>
+  <h1>SLIME — SCAN &amp; CLASSEMENT</h1>
+  <p>Scanne le QR affiché sur l'écran de fin du joueur (ou colle son code) : le score est
+  vérifié par signature HMAC puis ajouté au <b>classement local</b> — meilleur score par joueur.
+  La clé secrète (<code>SECRET</code> de <code>js/crypto.js</code>) doit être celle du jeu.</p>
+
+  <div class="row">
+    <button id="btnScan">📷 Scanner (caméra)</button>
+    <label class="filebtn">🖼 Depuis une photo<input id="photo" type="file" accept="image/*" capture="environment"/></label>
+  </div>
+  <div id="scanZone"><video id="video" playsinline muted></video><canvas id="scanCv" hidden></canvas></div>
+  <div id="flash"></div>
+
+  <details>
+    <summary style="cursor:pointer;color:#8a8ab0;font-size:13px;margin-top:16px">Coller un code à la main</summary>
+    <textarea id="code" placeholder="Colle le code ici..."></textarea>
+    <button id="btnVerify">Vérifier le code</button>
+  </details>
+
   <div id="result"></div>
+
+  <h2>🏆 CLASSEMENT (<span id="count">0</span> joueur(s))</h2>
+  <div id="board"></div>
+  <div class="row">
+    <button id="btnExport" class="ghost">⬇ Export JSON</button>
+    <label class="filebtn ghost">⬆ Import JSON<input id="import" type="file" accept="application/json,.json"/></label>
+    <button id="btnReset" class="danger">🗑 Vider</button>
+  </div>
 </div>
+<script src="js/crypto.js?v=20260929a"></script>
+<script src="vendor/jsQR.js?v=1"></script>
+<script src="js/ranking.js?v=1"></script>
 <script>
-const SECRET = 'S1!m3~Vault#K7-2026'
+(function () {
+  'use strict'
+  const SECRET = 'S1!m3~Vault#K7-2026' // DOIT être identique à js/crypto.js
 
-function sha256Digest(msg) {
-  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]
-  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]
-  const rrot = (v, n) => (v >>> n) | (v << (32 - n))
-  const l = msg.length
-  const words = []
-  for (let i = 0; i < l; i++) words[i >> 2] = (words[i >> 2] || 0) | (msg.charCodeAt(i) & 0xff) << (24 - (i % 4) * 8)
-  words[l >> 2] = (words[l >> 2] || 0) | (0x80 << (24 - (l % 4) * 8))
-  const nBlocks = Math.ceil((l + 9) / 64)
-  words[nBlocks * 16 - 1] = (words[nBlocks * 16 - 1] || 0) | (l * 8)
-  for (let b = 0; b < nBlocks; b++) {
-    const w = []
-    for (let j = 0; j < 16; j++) w[j] = words[b * 16 + j] || 0
-    for (let j = 16; j < 64; j++) {
-      const s0 = rrot(w[j - 15], 7) ^ rrot(w[j - 15], 18) ^ (w[j - 15] >>> 3)
-      const s1 = rrot(w[j - 2], 17) ^ rrot(w[j - 2], 19) ^ (w[j - 2] >>> 10)
-      w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0
+  const $ = id => document.getElementById(id)
+  const res = $('result'), flash = $('flash')
+  let stream = null, scanTimer = null
+
+  const fmtTime = s => { const t = Math.max(0, Math.floor(+s || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') }
+
+  function show(kind, html) { res.className = kind; res.innerHTML = html }
+
+  // Vérifie un code et l'ajoute au classement. Renvoie true si valide.
+  function verifyAndAdd(raw) {
+    const code = String(raw || '').trim()
+    if (!code) { show('ko', 'Aucun code fourni.'); return false }
+    const out = Crypto.verifyCode(code, SECRET)
+    if (!out || isNaN(out.score)) {
+      show('ko', 'Code invalide ou falsifié (signature HMAC non vérifiée).')
+      return false
     }
-    let a = H[0], bb = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7]
-    for (let j = 0; j < 64; j++) {
-      const S1 = rrot(e, 6) ^ rrot(e, 11) ^ rrot(e, 25)
-      const ch = (e & f) ^ (~e & g)
-      const t1 = (h + S1 + ch + K[j] + w[j]) | 0
-      const S0 = rrot(a, 2) ^ rrot(a, 13) ^ rrot(a, 22)
-      const maj = (a & bb) ^ (a & c) ^ (bb & c)
-      const t2 = (S0 + maj) | 0
-      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0
+    const entry = {
+      contact: out.contact || '',
+      score: out.score,
+      elapsed: out.elapsed || 0,
+      date: out.date instanceof Date ? out.date.getTime() : 0,
+      code
     }
-    H[0] = (H[0] + a) | 0; H[1] = (H[1] + bb) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0
-    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0
+    const r = Ranking.add(Ranking.load(), entry)
+    if (r.accepted) Ranking.save(r.list)
+    renderBoard()
+    const bits = ['<b>Code authentique</b>', 'Score : <b>' + out.score + '</b>']
+    bits.push('Temps : <b>' + fmtTime(entry.elapsed) + '</b>')
+    bits.push('Contact : <b>' + (entry.contact ? esc(entry.contact) : '— (pas de contact)') + '</b>')
+    bits.push('Partie du ' + (entry.date ? new Date(entry.date).toLocaleString('fr-FR') : '?'))
+    if (!r.accepted) bits.push('ℹ️ déjà enregistré — le meilleur score est conservé.')
+    else if (r.replaced) bits.push('✅ <b>nouveau meilleur score</b> pour ce joueur.')
+    else bits.push('✅ ajouté au classement.')
+    show('ok', bits.join('<br>'))
+    return true
   }
-  return H
-}
 
-function toHex(words) {
-  let hex = ''
-  for (let i = 0; i < words.length; i++) hex += ((words[i] >>> 0).toString(16)).padStart(8, '0')
-  return hex
-}
-
-function sha256Hex(msg) {
-  return toHex(sha256Digest(msg))
-}
-
-function hmacHex(key, msg) {
-  let o = '', i = ''
-  for (let n = 0; n < 64; n++) {
-    const c = n < key.length ? key.charCodeAt(n) & 0xff : 0
-    o += String.fromCharCode(c ^ 0x5c)
-    i += String.fromCharCode(c ^ 0x36)
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
   }
-  const inner = sha256Digest(i + msg)
-  let innerStr = ''
-  for (let n = 0; n < inner.length; n++) {
-    innerStr += String.fromCharCode((inner[n] >>> 24) & 0xff, (inner[n] >>> 16) & 0xff, (inner[n] >>> 8) & 0xff, inner[n] & 0xff)
-  }
-  return sha256Hex(o + innerStr)
-}
 
-function verifyCode(code, secret) {
-  const idx = code.lastIndexOf('.')
-  if (idx < 1) return null
-  const body = code.slice(0, idx)
-  const sig = code.slice(idx + 1)
-  if (hmacHex(secret, body).slice(0, 32) !== sig.trim()) return null
-  try {
-    const payload = atob(body.replace(/-/g, '+').replace(/_/g, '/'))
-    const parts = payload.split('.')
-    if (parts.length < 2) return null
-    const out = { score: parseInt(parts[0], 10), date: new Date(parseInt(parts[parts.length - 1], 10)) }
-    if (parts.length >= 3) out.elapsed = parseInt(parts[1], 10)
-    return out
-  } catch (e) {
-    return null
+  // ---- classement ----
+  function renderBoard() {
+    const list = Ranking.sort(Ranking.load())
+    $('count').textContent = String(list.length)
+    const host = $('board')
+    if (!list.length) { host.innerHTML = '<div class="empty">Aucun scan pour l\'instant — le classement se remplit ici.</div>'; return }
+    const table = document.createElement('table')
+    const thead = table.appendChild(document.createElement('thead'))
+    thead.innerHTML = '<tr><th>#</th><th>CONTACT</th><th>SCORE</th><th>TEMPS</th><th>DATE</th></tr>'
+    const tbody = table.appendChild(document.createElement('tbody'))
+    list.forEach((x, i) => {
+      const tr = tbody.appendChild(document.createElement('tr'))
+      const cells = [
+        String(i + 1),
+        x.contact || '—',
+        String(x.score),
+        fmtTime(x.elapsed),
+        x.date ? new Date(x.date).toLocaleDateString('fr-FR') : '?'
+      ]
+      cells.forEach((v, j) => {
+        const td = tr.appendChild(document.createElement('td'))
+        td.textContent = v
+        if (j === 1) td.className = 'ct'
+        if (j === 2) td.className = 'sc'
+      })
+    })
+    host.innerHTML = ''
+    host.appendChild(table)
   }
-}
 
-function verify() {
-  const code = document.getElementById('code').value.trim()
-  const res = document.getElementById('result')
-  if (!code) { res.className = 'ko'; res.textContent = 'Aucun code fourni.'; return }
-  const out = verifyCode(code, SECRET)
-  if (out && !isNaN(out.score)) {
-    let html = '<b>Code authentique</b><br>Score réel : <b>' + out.score + '</b>'
-    if (out.elapsed != null && !isNaN(out.elapsed)) {
-      const m = Math.floor(out.elapsed / 60), s = out.elapsed % 60
-      html += '<br>Temps de jeu : <b>' + m + ':' + String(s).padStart(2, '0') + '</b>'
+  // ---- scan caméra (getUserMedia : localhost/HTTPS uniquement) ----
+  function stopScan() {
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+    $('scanZone').classList.remove('on')
+    $('btnScan').textContent = '📷 Scanner (caméra)'
+  }
+
+  function tickScan() {
+    const video = $('video'), cv = $('scanCv')
+    if (!video.videoWidth) return
+    const w = 480, h = Math.round(video.videoHeight * w / video.videoWidth) || 360
+    cv.width = w; cv.height = h
+    const c2 = cv.getContext('2d')
+    c2.drawImage(video, 0, 0, w, h)
+    const img = c2.getImageData(0, 0, w, h)
+    const d = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' })
+    if (d && d.data) {
+      stopScan()
+      flash.style.display = 'none'
+      const ok = verifyAndAdd(d.data)
+      if (!ok) flash.textContent = 'QR lu mais code refusé — colle-le à la main pour le voir.'
+      if (!ok) flash.style.display = 'block'
     }
-    html += '<br>Date de la partie : ' + out.date.toLocaleString('fr-FR')
-    res.className = 'ok'
-    res.innerHTML = html
-  } else {
-    res.className = 'ko'
-    res.textContent = 'Code invalide ou falsifié (signature HMAC non vérifiée).'
   }
-}
+
+  $('btnScan').addEventListener('click', () => {
+    if (stream) { stopScan(); return }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof jsQR === 'undefined') {
+      flash.textContent = 'Caméra indisponible ici (ouvre la page en localhost ou HTTPS). Utilise « Depuis une photo » ou le collage du code.'
+      flash.style.display = 'block'
+      return
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(s => {
+      stream = s
+      const video = $('video')
+      video.srcObject = s
+      video.setAttribute('playsinline', 'true')
+      video.play()
+      $('scanZone').classList.add('on')
+      $('btnScan').textContent = '⏹ Arrêter le scan'
+      flash.style.display = 'none'
+      scanTimer = setInterval(tickScan, 150)
+    }).catch(e => {
+      flash.textContent = 'Caméra refusée/indisponible (' + (e && e.name || e) + ') — utilise « Depuis une photo » ou le collage du code.'
+      flash.style.display = 'block'
+    })
+  })
+
+  // ---- scan depuis une photo (marche partout, même en file://) ----
+  $('photo').addEventListener('change', ev => {
+    const f = ev.target.files && ev.target.files[0]
+    ev.target.value = ''
+    if (!f) return
+    const img = new Image()
+    img.onload = () => {
+      const cv = document.createElement('canvas')
+      const w = Math.min(1200, img.width), h = Math.round(img.height * w / img.width)
+      cv.width = w; cv.height = h
+      const c2 = cv.getContext('2d')
+      c2.drawImage(img, 0, 0, w, h)
+      const d = jsQR(c2.getImageData(0, 0, w, h).data, w, h)
+      if (d && d.data) verifyAndAdd(d.data)
+      else { show('ko', 'Aucun QR lisible sur cette photo — rapproche-toi ou demande au joueur d\'agrandir le QR.'); URL.revokeObjectURL(img.src) }
+    }
+    img.onerror = () => show('ko', 'Image illisible.')
+    img.src = URL.createObjectURL(f)
+  })
+
+  // ---- collage manuel ----
+  $('btnVerify').addEventListener('click', () => verifyAndAdd($('code').value))
+
+  // ---- export / import / reset ----
+  $('btnExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(Ranking.load(), null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'slime-classement.json'
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+  })
+
+  $('import').addEventListener('change', ev => {
+    const f = ev.target.files && ev.target.files[0]
+    ev.target.value = ''
+    if (!f) return
+    const fr = new FileReader()
+    fr.onload = () => {
+      try {
+        const merged = Ranking.merge(Ranking.load(), JSON.parse(String(fr.result)))
+        Ranking.save(merged)
+        renderBoard()
+        show('ok', 'Import : classement fusionné (' + merged.length + ' joueur(s)).')
+      } catch (e) { show('ko', 'Import impossible : JSON invalide.') }
+    }
+    fr.readAsText(f)
+  })
+
+  $('btnReset').addEventListener('click', () => {
+    if (confirm('Vider tout le classement ? (pense à exporter avant)')) {
+      Ranking.save([])
+      renderBoard()
+      show('ok', 'Classement vidé.')
+    }
+  })
+
+  renderBoard()
+})()
 </script>
 </body>
 </html>

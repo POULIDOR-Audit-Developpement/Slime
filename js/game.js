@@ -8,6 +8,7 @@ let voidPattern = null
 // Diagnostic perf (?fps ?sim=N ?prof) : compteurs incrémentés dans update()/draw().
 let diagFps = false, diagSimTxt = '', diagUps = 0, diagDrs = 0, diagT0 = 0, diagShown = ''
 let diagProf = false, diagUpMs = 0, diagDnMs = 0, diagGapMs = 0, diagGapMax = 0, diagLastDraw = 0
+let diagFsDbg = false
 let diagSecAn = 0, diagSecOf = 0, diagSecBg = 0, diagSecSc = 0, diagSecRe = 0
 
 function calcView() {
@@ -244,6 +245,12 @@ let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
 let best = 0, newRecord = false
 let testMode = false, testSecT = 0
+// Code de fin de partie : le contact (Instagram/email, js/contact.js) est
+// embarqué dans le code signé v2 puis affiché en QR — le créateur scanne
+// (decode.html) pour reconstruire son classement. pendingCodeScore : score
+// en attente de génération le temps de la modal contact (1re mort).
+let pendingCodeScore = 0, qrCv = null
+const CONTACT = typeof Contact !== 'undefined' ? Contact : null
 
 function slimeR() { return PH().slimeR }
 function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
@@ -405,6 +412,46 @@ function die() {
   sfx(SFX_DIE)
   burst(slime.x, slime.y, tierCol(deathTier), 24, 220)
   burst(slime.x, slime.y, tierColL(deathTier), 12, 160)
+  // Le code est généré APRÈS la modal contact (1re mort avec score) pour que
+  // le QR embarque déjà le contact. Rulings : playtest (caméra gelée) et
+  // score nul -> pas de modal, code v1 sans contact. Hors navigateur (Node) :
+  // pas de modal non plus.
+  pendingCodeScore = s
+  scoreCode = null
+  qrCv = null
+  if (!testMode && s > 0 && CONTACT && CONTACT.asked && !CONTACT.asked()) {
+    CONTACT.ensureModal({ onDone: () => { makeDeathCode() } })
+  } else {
+    makeDeathCode()
+  }
+}
+
+// Génère le code v2 (contact s'il existe) + le canvas du QR. Une seule fois
+// par mort/édition : le QR est mis en cache, jamais reconstruit par frame.
+function makeDeathCode() {
+  const c = CONTACT && CONTACT.get ? CONTACT.get() : ''
+  scoreCode = Crypto.makeCode(pendingCodeScore, elapsed, c)
+  qrCv = null
+  if (typeof qrcode === 'undefined' || typeof document === 'undefined') return
+  try {
+    const qr = qrcode(0, 'M')
+    qr.addData(scoreCode)
+    qr.make()
+    const n = qr.getModuleCount(), quiet = 2, size = n + quiet * 2
+    const cv = document.createElement('canvas')
+    cv.width = size; cv.height = size
+    const c2 = cv.getContext('2d')
+    if (!c2) return
+    c2.fillStyle = '#fff'
+    c2.fillRect(0, 0, size, size)
+    c2.fillStyle = '#000'
+    for (let r = 0; r < n; r++) {
+      for (let k = 0; k < n; k++) {
+        if (qr.isDark(r, k)) c2.fillRect(k + quiet, r + quiet, 1, 1)
+      }
+    }
+    qrCv = cv
+  } catch (e) { qrCv = null }
 }
 
 // Exécute le saut visé : puissance = distance du point visé au slime (bornée
@@ -783,6 +830,11 @@ function tap(px, py, touchId) {
     if (deathT < OVER_DELAY + 0.7) return // boutons pas encore affichés
     if (hitBtn(vx, vy, BTN_COPY)) { copyCode(); return }
     if (hitBtn(vx, vy, BTN_REPLAY)) { startGame(); return }
+    // ✏ contact : réouvre la modal puis régénère code + QR avec le nouveau.
+    if (scoreCode && hitBtn(vx, vy, BTN_CONTACT) && CONTACT) {
+      CONTACT.ensureModal({ onDone: () => { copiedT = 0; makeDeathCode() } })
+      return
+    }
     return
   }
   const w = s2w(px, py)
@@ -1647,6 +1699,10 @@ function drawPowerHud() {
 const OVER_DELAY = 1.5, OVER_FADE = 0.4
 const BTN_COPY = { x: 62, y: 180, w: 156, h: 34 }
 const BTN_REPLAY = { x: 262, y: 180, w: 156, h: 34 }
+// Ligne contact (Instagram/email) sous le code : tap -> modal d'édition.
+const BTN_CONTACT = { x: 56, y: 154, w: 246, h: 18 }
+// Assiette blanche du QR (marge quiet incluse) à droite du panneau.
+const QR_PLATE = { x: 320, y: 66, w: 112, h: 112 }
 
 function hitBtn(x, y, b) {
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
@@ -1704,6 +1760,10 @@ function drawOver() {
   rectfill(VW / 2 - 200, 24, 400, 226, C_FRAME, 12)
   rect(VW / 2 - 200, 24, 400, 226, C_BG3, 2)
   drawLangToggle()
+  // Temps en haut à gauche du panneau (libère la ligne du contact).
+  textalign('start', 'top')
+  textsize(9)
+  text(56, 34, I18N.t('time') + ' ' + fmtTime(elapsed), C_WHITE)
   textalign('center', 'top')
   // Titre à ombres superposées.
   textsize(30)
@@ -1715,16 +1775,34 @@ function drawOver() {
     text(VW / 2, 80, I18N.t('record'), C_GOLD, 'bold')
     alpha(k)
   }
-  textsize(9)
-  text(VW / 2, 102, I18N.t('code'), C_GRAY)
-  rectfill(72, 112, 336, 28, C_PAGE, 6)
-  rect(72, 112, 336, 28, C_BG3, 2)
-  textsize(9)
-  text(VW / 2, 120, scoreCode, C_WHITE)
-  textsize(8)
-  text(VW / 2, 148, I18N.t('codehint'), C_GRAY)
-  textsize(9)
-  text(VW / 2, 164, I18N.t('time') + ' ' + fmtTime(elapsed), C_WHITE)
+  if (scoreCode) {
+    // Colonne gauche : code (tronqué, le COPIER porte le code complet) +
+    // astuce + contact éditable. Colonne droite : QR du code complet.
+    textalign('start', 'top')
+    textsize(9)
+    text(64, 102, I18N.t('code'), C_GRAY)
+    rectfill(56, 112, 246, 28, C_PAGE, 6)
+    rect(56, 112, 246, 28, C_BG3, 2)
+    textsize(8)
+    text(64, 120, scoreCode.length > 46 ? scoreCode.slice(0, 45) + '…' : scoreCode, C_WHITE)
+    textalign('center', 'top')
+    text(179, 148, I18N.t('codehint'), C_GRAY)
+    // Contact : ✏ + valeur (ou inviter à l'ajouter). Tap -> modal.
+    const contact = CONTACT && CONTACT.get ? CONTACT.get() : ''
+    textalign('start', 'top')
+    textsize(9)
+    text(64, 158, '✏ ' + (contact || I18N.t('contactAdd')), contact ? C_GOLD : C_GRAY)
+    // QR (canvas mis en cache à la génération du code — jamais par frame).
+    if (qrCv) {
+      const c2 = ctx()
+      rectfill(QR_PLATE.x, QR_PLATE.y, QR_PLATE.w, QR_PLATE.h, '#fff', 4)
+      rect(QR_PLATE.x, QR_PLATE.y, QR_PLATE.w, QR_PLATE.h, C_BG3, 2)
+      c2.save()
+      c2.imageSmoothingEnabled = false
+      c2.drawImage(qrCv, QR_PLATE.x + 4, QR_PLATE.y + 4, 104, 104)
+      c2.restore()
+    }
+  }
   if (deathT > OVER_DELAY + 0.7) {
     const copied = copiedT > 0
     const kb = clamp((deathT - OVER_DELAY - 0.7) * 3, 0, 1)
@@ -1949,6 +2027,7 @@ function fsMouseUpFn(e) {
 }
 
 function drawFsIcon() {
+  if (diagFsDbg) { drawFsDbg(); return }
   if (!fsCanEnter() || fsStandalone()) return
   alpha(fsFullscreenActive() ? 0.45 : 0.85)
   const l = 5
@@ -1959,6 +2038,34 @@ function drawFsIcon() {
   line(x0, y1 - l, x0, y1, C_WHITE); line(x0, y1, x0 + l, y1, C_WHITE)
   line(x1 - l, y1, x1, y1, C_WHITE); line(x1, y1, x1, y1 - l, C_WHITE)
   alpha(1)
+}
+
+// ?fsdbg : panneau de diagnostic du plein écran — valeurs brutes de chaque API
+// testée et verdict du garde de l'icône. Objectif : désigner sur l'appareil
+// réel (iPhone) le terme exact qui masque l'icône, au lieu d'une hypothèse.
+// Affiché en coordonnées vue (clip 0,0,VW,VH) ; coût nul sans ?fsdbg.
+function drawFsDbg() {
+  let nat = '0/0', vid = '0/0', cs = 0, sa = '0/0', ios = 'autre'
+  try {
+    const el = document.documentElement
+    nat = (el.requestFullscreen ? 1 : 0) + '/' + (el.webkitRequestFullscreen ? 1 : 0)
+    const vp = typeof HTMLVideoElement !== 'undefined' ? HTMLVideoElement.prototype : null
+    vid = (vp && vp.webkitEnterFullscreen ? 1 : 0) + '/' + (vp && vp.webkitRequestFullscreen ? 1 : 0)
+    const cv = canvas()
+    cs = cv && cv.captureStream ? 1 : 0
+    const dm = !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    sa = (navigator.standalone ? 1 : 0) + '/' + (dm ? 1 : 0)
+    ios = /iPhone|iPod/.test(navigator.userAgent) ? 'iPhone'
+      : /iPad/.test(navigator.userAgent) ? 'iPad' : 'autre'
+  } catch (e) {}
+  const ce = fsCanEnter() ? 1 : 0
+  const st = fsStandalone() ? 1 : 0
+  textsize(8)
+  text(6, 32, 'fsdbg iOS=' + ios, C_WHITE)
+  text(6, 44, 'nat(req/webkit)=' + nat + ' vid=' + vid + ' cs=' + cs, C_WHITE)
+  text(6, 56, 'sa(nav/dm)=' + sa + ' canEnter=' + ce + ' standalone=' + st, C_WHITE)
+  text(6, 68, 'icone=' + (ce && !st ? 'ON' : 'OFF'), ce && !st ? C_WHITE : C_RED)
+  textsize(9)
 }
 
 // Indicateur hors-écran : flèche + tête de slime en haut quand il vole
@@ -2127,6 +2234,7 @@ function init() {
     diagSimTxt = q.has('sim') ? ' sim=' + sim : ''
     diagFps = q.has('fps')
     diagProf = q.has('prof')
+    diagFsDbg = q.has('fsdbg')
     diagT0 = performance.now()
   } catch (e) {}
   try {

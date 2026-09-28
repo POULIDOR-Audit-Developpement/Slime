@@ -35,6 +35,8 @@ sprite) :
   `g` = écart moyen/max rAF, sections `[an animation | of cadre | bg fond |
   sc scène | r reste]` + résolution du canvas
 - `?sim=N` : force la cadence de simulation (ex. `?sim=60` — défaut 240 Hz)
+- `?fsdbg` : panneau diagnostic plein écran (valeurs brutes des API fullscreen/
+  captureStream/standalone + verdict du garde de l'icône) — pour iPhone.
 
 Méthode : **mesurer avant/après sur le mobile cible**. Ce dossier a coûté
 plusieurs allers-retours en hypothèses non mesurées ; un seul `?prof` a

@@ -37,13 +37,15 @@ js/physics.js           ← constantes + config physique réglable + simulation 
 js/patterns.js          ← pool de patterns, poids par difficulté, stockage, export/import
 js/patterns-defaults.js ← pool par défaut GÉNÉRÉ (20 sections validées) — ne pas éditer
 js/music.js             ← BGM : playlist .mp3 à BPM fixe (module Music)
-js/crypto.js            ← signature HMAC des codes de fin de partie (module Crypto)
+js/crypto.js            ← signature HMAC des codes de fin de partie v1/v2 (module Crypto ; v2 = contact embarqué)
+js/contact.js           ← contact du joueur (Instagram/email) : sanitize, stockage, modal 1re mort
+js/ranking.js           ← classement local du créateur (decode.html) : meilleur score par joueur, export/import
 js/sprites.js           ← chargement et dessin des sprites du slime (recoloration runtime des variantes)
 js/slime-colors.js      ← paliers score → couleur (module SlimeColors, partagé jeu + settings)
-vendor/                 ← litecanvas embarqué (fallback CDN inclus)
+vendor/                 ← litecanvas embarqué (fallback CDN inclus) + libs QR (qrcode.js, jsQR.js — voir vendor/README.md)
 ASSETS/                 ← direction artistique + sprites
 tools/                  ← générateur de pool (gen_defaults.mjs, gen-core.js, gen_default_pool.html) + extraction des sprites (Python : extract_v2.py / extract_v3.py, make_v2_sprites.py / make_v3_sprites.py)
-decode.html             ← outil créateur : vérifier les codes (autonome)
+decode.html             ← outil créateur : scan QR / collage du code, vérif HMAC et classement local (autonome)
 docs/                   ← spécifications de design + aperçus (docs/previews/)
 ```
 
@@ -156,8 +158,21 @@ ou visuellement : `tools/gen_default_pool.html` (aperçu validé saut par saut, 
 
 ## Scores sécurisés (côté créateur)
 
-À la mort, le jeu génère un code signé en HMAC-SHA256 — le score n'est jamais affiché. Le **temps de jeu** est affiché à l'écran de fin et signé dans le code : `decode.html` le restitue pour croiser les deux et détecter toute triche. L'écran de fin propose un bouton **COPIER LE CODE** (presse-papiers) et un bouton **REJOUER**.
-Pour vérifier un code : ouvrir `decode.html` et coller le code.
+À la mort, le jeu génère un **code signé en HMAC-SHA256** (le score n'est jamais calculé côté lecteur).
+Si le joueur a renseigné son **contact** (Instagram ou email — demandé à la 1re mort avec un score,
+éditable sur l'écran de fin via ✏), il est **embarqué dans le code** (format v2) : c'est ce qui permet
+de contacter le gagnant. L'écran de fin affiche le code en **QR code** (plus le bouton **COPIER LE CODE**
+et **REJOUER**) ; un joueur sans contact a quand même un QR valide (code v1).
+
+Côté créateur, `decode.html` :
+- **📷 Scanner (caméra)** : lecture live du QR à l'écran du joueur (caméra = localhost/HTTPS uniquement) ;
+- **🖼 Depuis une photo** : lecture d'un QR photographié (marche partout, même en `file://`) ;
+- **Coller un code** à la main (secours) ;
+- chaque code vérifié alimente le **classement local** (meilleur score par joueur, persisté en
+  localStorage) avec **export/import JSON** pour sauvegarde ou transfert entre appareils.
+
+Le contact vit DANS le code : quiconque décode un QR lit le contact de CE joueur seulement —
+c'est assumé pour le giveaway.
 
 Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.js` **et** `decode.html`).
 
@@ -171,5 +186,5 @@ Pour changer la clé secrète : modifier la constante `SECRET` (dans `js/crypto.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
+- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
 - Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame
