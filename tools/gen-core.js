@@ -1,8 +1,11 @@
 // SLIME — génération du pool de patterns par défaut.
-// Port fidèle de l'ancien générateur procédural de game.js, découpé en sections
-// autonomes (une ancre + N plateformes), validées par la physique (reachOk :
-// saut visé simple ; les tiers 4-5 acceptent un saut par section via le
-// double saut — Phys.canReachDouble).
+// Pool pédagogique (spec 2026-09-29) : chaque tier ne tire que sa PALETTE de
+// types (cumulative — un tier introduit les siens sans perdre les précédents)
+// et ses premiers patterns sont des VITRINES : le nouveau type y apparaît
+// isolé, large, sans pics, entouré de basic. La difficulté monte en continu
+// dans le tier (gaps/pics croissants avec la progression D). Chaque saut est
+// validé par la physique (reachOk : saut visé simple ; les tiers 4-5
+// acceptent un saut par section via le double saut — Phys.canReachDouble).
 // Utilisable côté Node (tools/gen_defaults.mjs) et côté navigateur (tools/gen_default_pool.html).
 // Dépend de js/physics.js.
 
@@ -11,10 +14,11 @@ function generateDefaultPool(opts) {
   const perTier = opts.perTier || 4
   const seed = opts.seed != null ? opts.seed : 20260921
 
-  // Temps simulé par difficulté : reprend les paliers du générateur d'origine
-  // (D = elapsed/75, déblocages progressifs des types — cf. seuils du roll ;
-  // pics sur les basic larges posés à partir de 20 s — cf. roll spike).
-  const TIER_T = [14, 26, 45, 62, 90]
+  // Types NOUVEAUX par tier (l'ordre = courbe de découverte, UNLOCK_T côté
+  // patterns.js) et palette cumulative par tier.
+  const TIER_NEW = { 1: ['dynamic'], 2: ['crumble', 'phase'], 3: ['sticky', 'turbo'], 4: ['bouncy', 'seesaw'], 5: ['gold'] }
+  const paletteOf = tier =>
+    ['basic', ...[1, 2, 3, 4, 5].slice(0, tier).flatMap(t => TIER_NEW[t])]
 
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v))
 
@@ -47,27 +51,29 @@ function generateDefaultPool(opts) {
     }
   }
 
-  // --- port de spawnNext (game.js d'origine, sans branches ni billes dorées) ---
-  // lastOne : dernière plateforme du pattern en cours de génération (la
-  // bascule n'y est jamais tirée — voir les règles sous le roll).
-  function simSpawnNext(A, plats, balls, simElapsed, budget, lastOne) {
+  // --- port de spawnNext (génération par palette de tier) ---
+  // opts : { tier, idx, perTier, s, vitrine, showcase } — position dans la
+  // courbe (D = progression 0..1 sur tout le pool) et mode vitrine.
+  // lastOne : dernière plateforme du pattern (la bascule n'y est jamais
+  // tirée — elle propulse, rien ne doit la dépendre).
+  function simSpawnNext(A, plats, balls, opts, lastOne) {
+    const { tier, idx, perTier, s, vitrine, showcase, budget } = opts
+    const D = clampN((tier - 1 + (idx + 1) / perTier) / 5, 0, 1)
     const last = plats[plats.length - 1]
-    const D = Math.min(simElapsed / 75, 1)
     for (let attempt = 0; attempt < 24; attempt++) {
       let gap = 2 + A.randi(0, Math.round(2 * D))
+      if (vitrine) gap = Math.min(gap, 3)
       let dRow = A.randi(-2, 2)
-      const roll = A.rand()
+      // Type : vitrine imposée (showcase puis 2 basic), sinon sac pondéré
+      // sur la palette du tier (le basic domine).
       let type
-      if (roll < 0.30) type = 'basic'
-      else if (roll < 0.42) type = 'dynamic'
-      else if (roll < 0.52) type = simElapsed > 12 ? 'crumble' : 'basic'
-      else if (roll < 0.60) type = 'sticky'
-      else if (roll < 0.69) type = simElapsed > 12 ? 'phase' : 'basic'
-      else if (roll < 0.79) type = simElapsed > 25 ? 'bouncy' : 'basic'
-      else if (roll < 0.87) type = simElapsed > 18 ? 'turbo' : 'basic'
-      else if (roll < 0.93) type = simElapsed > 25 ? 'seesaw' : 'basic'
-      else if (roll < 0.96) type = simElapsed > 30 ? 'gold' : 'basic'
-      else type = 'basic'
+      if (vitrine && s === 0) type = showcase
+      else if (vitrine && (s === 1 || s === 2)) type = 'basic'
+      else {
+        const pal = paletteOf(tier)
+        const bag = ['basic', 'basic', 'basic', ...pal.filter(t => t !== 'basic')]
+        type = bag[A.randi(0, bag.length - 1)]
+      }
       // Règles de génération : gold ≤ 1 par pattern ; jamais plus de 2
       // phasantes consécutives ; la bascule n'est jamais la dernière
       // plateforme du pattern (elle propulse, rien ne doit la dépendre).
@@ -83,20 +89,26 @@ function generateDefaultPool(opts) {
       else if (type === 'phase') cells = A.randi(2, 3)
       else if (type === 'gold') cells = A.randi(1, 2)
       else cells = 2
-      if (simElapsed < 10) { gap = Math.min(gap, 2); dRow = clampN(dRow, -1, 1); type = 'basic'; cells = A.randi(3, 4) }
+      if (vitrine && s === 0) cells = Math.max(3, cells)
+      // Début de run tout en douceur : les premières plateformes du tout
+      // premier pattern sont du basic large, gaps courts (hors showcase).
+      if (tier === 1 && plats.length <= 3 && !(vitrine && s === 0)) {
+        gap = Math.min(gap, 2); dRow = clampN(dRow, -1, 1); type = 'basic'; cells = A.randi(3, 4)
+      }
       if (dRow === -2 && gap > 2) dRow = -1
       if (last.type === 'sticky') { gap = Math.min(gap, 3); if (dRow < -1) dRow = -1; if (dRow === -1 && gap > 2) gap = 2 }
       if (last.type === 'bouncy' && dRow < -1) dRow = -1
       const row = clampN(last.row + dRow, 0, 4)
       const p = { x: last.x + last.w + gap * CELL, row, y: rowY(row), baseY: rowY(row), w: cells * CELL, type, amp: 0, spd: 0, ph: 0, spike: null }
       if (type === 'dynamic') {
-        p.amp = 16 + A.rand() * 18
-        p.spd = 1.2 + A.rand() * 0.9
+        // T1 : dynamique douce (découverte des cibles qui bougent).
+        p.amp = tier === 1 ? 8 + A.rand() * 8 : 16 + A.rand() * 18
+        p.spd = tier === 1 ? 1.2 + A.rand() * 0.4 : 1.2 + A.rand() * 0.9
         p.ph = A.rand() * Math.PI * 2
         p.baseY = clampN(p.baseY, CEIL + 24 + p.amp, 248 - p.amp)
         p.y = p.baseY
       }
-      if (type === 'basic' && cells >= 4 && simElapsed > 20 && A.rand() < 0.3) {
+      if (type === 'basic' && cells >= 4 && !vitrine && A.rand() < 0.10 + 0.30 * D) {
         p.spike = { x1: p.x + p.w * 0.28, x2: p.x + p.w * 0.78 }
       }
       const checkY = type === 'dynamic' ? p.baseY - p.amp * 0.7 : p.y
@@ -159,7 +171,13 @@ function generateDefaultPool(opts) {
         const balls = []
         const n = A.randi(7, 11)
         const budget = { dj: tier >= DJ_TIERS ? 1 : 0 }
-        for (let s = 0; s < n; s++) simSpawnNext(A, plats, balls, TIER_T[tier - 1], budget, s === n - 1)
+        // Vitrines : les premiers patterns du tier présentent ses nouveaux
+        // types (un pattern par type, dans l'ordre de la courbe).
+        const vitrine = i < TIER_NEW[tier].length
+        const showcase = vitrine ? TIER_NEW[tier][i] : null
+        for (let s = 0; s < n; s++) {
+          simSpawnNext(A, plats, balls, { tier, idx: i, perTier, s, vitrine, showcase, budget }, s === n - 1)
+        }
         const chain = plats.slice(1)
 
         // Revalidation complète de la chaîne (garantie) — même budget DJ que
