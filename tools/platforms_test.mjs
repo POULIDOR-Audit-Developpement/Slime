@@ -59,12 +59,17 @@ const litecanvasStubs = {
   window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: noop },
   navigator: { userAgent: 'node' },
   document: { documentElement: {}, body: { appendChild: noop, removeChild: noop }, createElement: () => ({ style: {}, focus: noop, select: noop }) },
-  Image: class { set src(v) {} }
+  // Image stub : src posé -> onload en microtâche (permet à Sprites.ready de
+  // passer true après un await, pour tester le chemin « sprites » de drawPlat ;
+  // pas de width : les tuiles restent invisibles, seuls les appels comptent).
+  Image: class { set src(v) { if (this.onload) queueMicrotask(this.onload) } }
 }
 
 // Les checks vivent DANS le scope concaténé : accès direct aux internals de
 // game.js (land, execJump, updSlime, slime, platforms, gameT, ...).
-function driverFn() {
+// Async : la partie sprite de T7 attend un tour de microtâches (onload des
+// Image stubs -> Sprites.ready true) ; tout le reste reste synchrone.
+async function driverFn() {
   let fails = 0
   const check = (name, cond) => { if (!cond) { fails++; console.log('FAIL', name) } }
   // Une section = un lot de mécaniques ; une exception n'interrompt pas la suite.
@@ -509,6 +514,89 @@ function driverFn() {
     try { state = 'playing'; draw() } catch (e) { check('draw() avec bascule inclinée (' + e.message + ')', false) }
   })
 
+  // ================= T7 : rendu des 9 types (drawPlat + overlays) =================
+
+  // Dessine les 9 types avec la fixture du plan ; retourne le nb de types
+  // dessinés SANS exception (les échecs sont loggés un par un).
+  const draw9 = () => {
+    let n = 0
+    for (const t of Patterns.TYPES) {
+      try { drawPlat({ x: 100, y: 100, w: 96, type: t, tilt: 0, phase0: 0, spike: null, crackT: 0 }); n++ }
+      catch (e) { console.log('  exception ' + t + ' : ' + e.message) }
+    }
+    return n
+  }
+
+  section('T7 : drawPlat — 9 types sans crash (chemin fallback)', () => {
+    fresh()
+    check('harnais : sprites pas chargés (chemin fallback)', Sprites.ready === false)
+    check('fallback : 9 types dessinés sans exception', draw9() === 9)
+  })
+
+  // Chemin « sprites » : onload des Image stubs -> Sprites.ready. Les tuiles
+  // elles-mêmes restent invisibles (pas de width) ; on pinne le rendu via les
+  // clés demandées à Sprites.drawImage et les primitives (push = rotation
+  // litecanvas, shape/fill = chevrons, rect = contour).
+  await Promise.resolve()
+  section('T7 : drawPlat — 9 types sans crash (chemin sprites)', () => {
+    check('harnais : sprites chargés', Sprites.ready === true)
+    check('sprites : 9 types dessinés sans exception', draw9() === 9)
+  })
+
+  section('T7 : overlays sprites — clés de tuiles + chevrons/contour/rotation', () => {
+    fresh()
+    const keys = []
+    const origDI = Sprites.drawImage
+    Sprites.drawImage = (k, x, y, w, h) => { keys.push(k); return origDI(k, x, y, w, h) }
+    const origPush = push, origShape = shape, origFill = fill, origRect = rect
+    let rots = [], shapes = 0, fills = 0, rects = 0
+    push = (x, y, r, sx, sy) => { rots.push(r) }
+    shape = (...a) => { shapes++; origShape(...a) }
+    fill = (...a) => { fills++; origFill(...a) }
+    rect = (...a) => { rects++; origRect(...a) }
+    try {
+      // Turbo : chevrons » blancs (2 triangles par tuile, ici 3 tuiles).
+      drawPlat({ x: 100, y: 100, w: 96, type: 'turbo', tilt: 0, phase0: 0, spike: null, crackT: 0 })
+      check('turbo : tuile tileTurbo demandée', keys.indexOf('tileTurbo') >= 0)
+      check('turbo : chevrons dessinés (>= 2 triangles)', shapes >= 2 && fills >= 2)
+      // Dorée : contour pulsé (rect) + tuile tileGold.
+      rects = 0
+      drawPlat({ x: 100, y: 100, w: 96, type: 'gold', tilt: 0, phase0: 0, spike: null, crackT: 0 })
+      check('gold : tuile tileGold demandée', keys.indexOf('tileGold') >= 0)
+      check('gold : contour doré dessiné', rects >= 1)
+      // Bascule : rotation (push angle = tilt × 0.17) + tuile tileSeesaw.
+      rots = []
+      drawPlat({ x: 100, y: 100, w: 96, type: 'seesaw', tilt: -1, phase0: 0, spike: null, crackT: 0 })
+      check('seesaw : tuile tileSeesaw demandée', keys.indexOf('tileSeesaw') >= 0)
+      check('seesaw : rotation appliquée (angle -0.17)', rots.some(a => Math.abs(a + 0.17) < 0.001))
+    } finally {
+      Sprites.drawImage = origDI
+      push = origPush; shape = origShape; fill = origFill; rect = origRect
+    }
+  })
+
+  section('T7 : turbo — lignes de vitesse derrière le slime', () => {
+    fresh()
+    const rects0 = []
+    const origRectfill = rectfill
+    rectfill = (x, y, w, h, c) => { rects0.push([x, y, w, h, c]) }
+    try {
+      slime.grounded = false; slime.pull = null
+      slime.x = 200; slime.y = 200; slime.vx = 300; slime.turboT = 0.6
+      drawSlime()
+      check('turbo : lignes de vitesse dessinées (3 traits blancs)', rects0.filter(r => r[4] === C_WHITE).length >= 3)
+      // derrière le slime = opposé à vx (vx > 0 -> traits à gauche du slime)
+      check('turbo : traits DERRIÈRE le slime (vx > 0 -> à gauche)', rects0.filter(r => r[4] === C_WHITE).every(r => r[0] + r[2] <= slime.x))
+      // turboT épuisé : plus aucun trait
+      rects0.length = 0
+      slime.turboT = 0
+      drawSlime()
+      check('turbo inactif : aucune ligne de vitesse', rects0.filter(r => r[4] === C_WHITE).length === 0)
+    } finally {
+      rectfill = origRectfill
+    }
+  })
+
   console.log(fails === 0 ? '\nPLATFORMS OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('platforms_test failed')
 }
@@ -518,7 +606,7 @@ const fn = new Function(
   src + '\n;(' + driverFn.toString() + ')()'
 )
 try {
-  fn(...Object.values(litecanvasStubs))
+  await fn(...Object.values(litecanvasStubs))
 } catch (e) {
   console.error('EXCEPTION :', e.message)
   process.exit(1)

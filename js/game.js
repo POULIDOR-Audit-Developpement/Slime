@@ -153,6 +153,8 @@ const COLORS = [
   // « présentation » : C_PAGE/C_PANEL2/C_LOGO_D sont indexées depuis la fin.
   '#9ef2ff', '#2e9ed6',
   '#ffe066', '#d99e0b', '#fff3b0',
+  // Bascule : bois (face, flanc, pivot sombre).
+  '#c98d4e', '#8a5a2b', '#4a2e14',
   // Style « présentation » : fond vitrine, panneaux, ombre du logo.
   '#05050e', '#1c2148', '#12521d'
 ]
@@ -177,6 +179,8 @@ const C_S_HI = 41
 // « Plateformes fun » : turbo et dorée (cf. commentaire dans COLORS).
 const C_TURBO_TOP = 42, C_TURBO_SIDE = 43
 const C_GOLD_TOP = 44, C_GOLD_SIDE = 45, C_GOLD_L = 46
+// « Plateformes fun » : bascule en bois (cf. commentaire dans COLORS).
+const C_SW_TOP = 47, C_SW_SIDE = 48, C_SW_DARK = 49
 
 // ---------- Paliers score -> couleur (éditables dans settings.html) ----------
 // La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
@@ -1248,7 +1252,8 @@ function drawPlat(p) {
         Sprites.drawSrc('dynStrip', t, 0, pitch, 33, p.x + jx + i * CELL, p.y, CELL, 24)
       }
     } else {
-      const keys = { basic: 'tileGreen', crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange' }
+      const keys = { basic: 'tileGreen', crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange',
+        turbo: 'tileTurbo', gold: 'tileGold', seesaw: 'tileSeesaw' }
       // Bascule : tuiles pivotantes autour du centre de la plateforme
       // (inclinaison purement visuelle) — un seul translate/rotate, tuiles
       // dessinées en coordonnées relatives au pivot.
@@ -1268,8 +1273,21 @@ function drawPlat(p) {
           shape([tx + 15, ty + 14, tx + 21, ty + 7, tx + 27, ty + 14])
           fill(C_WHITE)
         }
+        if (p.type === 'turbo') {
+          // chevrons » blancs : sens du lancement horizontal (style bouncy)
+          shape([tx + 6, ty + 6, tx + 13, ty + 12, tx + 6, ty + 18])
+          fill(C_WHITE)
+          shape([tx + 15, ty + 6, tx + 22, ty + 12, tx + 15, ty + 18])
+          fill(C_WHITE)
+        }
       }
       if (sw) pop()
+      if (p.type === 'gold') {
+        // contour pulsé : rappel visuel du bonus actif (goldT posé au posé)
+        alpha(0.5 + 0.4 * Math.sin(T * 5))
+        rect(p.x + jx - 2, p.y - 2, p.w + 4, 28, C_GOLD_L, 6)
+        alpha(1)
+      }
     }
     if (p.type === 'phase') alpha(1)
     if (p.spike) {
@@ -1303,8 +1321,10 @@ function drawPlat(p) {
     for (let i = 0; i < n; i++) {
       const tx = sw ? -p.w / 2 + i * CELL : p.x + jx + i * CELL
       const ty = sw ? -12 : p.y
-      const tops = { basic: C_P_TOP, dynamic: C_D_TOP, crumble: C_CR_TOP, phase: C_GH_TOP, bouncy: C_ORANGE }
-      const sides = { basic: C_P_SIDE, dynamic: C_D_SIDE, crumble: C_CR_SIDE, phase: C_GH_SIDE, bouncy: C_BO_SIDE }
+      const tops = { basic: C_P_TOP, dynamic: C_D_TOP, crumble: C_CR_TOP, phase: C_GH_TOP, bouncy: C_ORANGE,
+        turbo: C_TURBO_TOP, gold: C_GOLD_TOP, seesaw: C_SW_TOP }
+      const sides = { basic: C_P_SIDE, dynamic: C_D_SIDE, crumble: C_CR_SIDE, phase: C_GH_SIDE, bouncy: C_BO_SIDE,
+        turbo: C_TURBO_SIDE, gold: C_GOLD_SIDE, seesaw: C_SW_SIDE }
       drawTile(tx, ty, tops[p.type] || C_P_TOP, sides[p.type] || C_P_SIDE)
       if (p.type === 'crumble') {
         rectfill(tx + 8, ty + 4, 2, 9, C_CR_DARK)
@@ -1317,8 +1337,27 @@ function drawPlat(p) {
         shape([tx + 14, ty + 10, tx + 20, ty + 4, tx + 26, ty + 10])
         fill(C_WHITE)
       }
+      if (p.type === 'turbo') {
+        // chevrons » blancs (tuile 32×32 en fallback, centre à ty+16)
+        shape([tx + 6, ty + 9, tx + 13, ty + 16, tx + 6, ty + 23])
+        fill(C_WHITE)
+        shape([tx + 15, ty + 9, tx + 22, ty + 16, tx + 15, ty + 23])
+        fill(C_WHITE)
+      }
+      if (p.type === 'seesaw') {
+        // pivot : cercle central (logement sombre + axe clair)
+        circfill(tx + 16, ty + 16, 6.5, C_BLACK)
+        circfill(tx + 16, ty + 16, 4.5, C_SW_DARK)
+        circfill(tx + 16, ty + 16, 2, C_SW_TOP)
+      }
     }
     if (sw) pop()
+    if (p.type === 'gold') {
+      // contour pulsé (comme le chemin sprites)
+      alpha(0.5 + 0.4 * Math.sin(T * 5))
+      rect(p.x + jx - 2, p.y - 2, p.w + 4, 36, C_GOLD_L, 6)
+      alpha(1)
+    }
   }
   if (p.type === 'phase') alpha(1)
   if (p.spike) {
@@ -1402,6 +1441,7 @@ function drawTrajectory() {
     if (vy >= 0) {
       for (const p2 of platforms) {
         if (p2.dead) continue
+        if (!solide(p2)) continue // phasante traversable : la trajectoire passe au travers
         if (x > p2.x - 6 && x < p2.x + p2.w + 6 && y + slime.r >= p2.y && y + slime.r <= p2.y + 14) { hit = true; break }
       }
     }
@@ -1419,6 +1459,8 @@ function drawSlime() {
   // Bas du sprite ancré 1 px sous le plan de collision (slime.y + r) :
   // contact visuel garanti avec la plateforme, couture d'AA masquée.
   const feet = slime.y + slime.r + 1
+  // Turbo : traits de vitesse derrière le slime (dessinés en premier = sous tout le reste).
+  if (slime.turboT > 0 && !slime.pull) drawTurboLines()
   const suffix = tierSuffix(scoreTierIdx())
   if (Sprites.ready) {
     // Ledge catch : remontée en 3 frames calées sur le canevas LEDGE_* (haut
@@ -1574,6 +1616,20 @@ function drawPumpFallback(ring) {
       const a = T * 14 + i * 0.9
       line(slime.x + Math.cos(a) * (rr + 3), slime.y + Math.sin(a) * (rr + 3), slime.x + Math.cos(a) * (rr + 7), slime.y + Math.sin(a) * (rr + 7), tierColL(scoreTierIdx()))
     }
+  }
+  alpha(1)
+}
+
+// Turbo : traits de vitesse derrière le slime, opacité liée au temps restant
+// (turboT 0.6 s au lancement). Dessinés côté opposé à vx.
+function drawTurboLines() {
+  const k = Math.min(1, slime.turboT / 0.6)
+  const dir = slime.vx >= 0 ? -1 : 1 // derrière = opposé au déplacement
+  alpha(0.25 + 0.45 * k)
+  for (let i = 0; i < 3; i++) {
+    const len = 9 + i * 5
+    const x0 = slime.x + dir * (slime.r + 2 + i * 5)
+    rectfill(Math.min(x0, x0 + dir * len), slime.y - slime.r * 0.6 + i * 5, len, 2, C_WHITE)
   }
   alpha(1)
 }

@@ -15,6 +15,11 @@ const Sprites = (() => {
     tileGray: 'tile_gray',
     tileGhost: 'tile_ghost',
     tileOrange: 'tile_orange',
+    // « Plateformes fun » : turbo, dorée, bascule (recolorées JAMAIS — hors
+    // VARIANT_BASES, règles perf AGENTS.md).
+    tileTurbo: 'tile_turbo',
+    tileGold: 'tile_gold',
+    tileSeesaw: 'tile_seesaw',
     sticky: 'sticky',
     dynStrip: 'dyn_strip',
     voidBand: 'void',
