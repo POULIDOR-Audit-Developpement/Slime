@@ -296,6 +296,70 @@ function driverFn() {
     applyLayout()
   })
 
+  // ================= T4 : phasante (collision cyclique) =================
+
+  section('T4 : phasante — posé à t=0.2, décroche à t=1.4 (sans killPlat)', () => {
+    fresh()
+    const pPh = { x: 400, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'phase', amp: 0, spd: 0, ph: 0, spike: null, phase0: 0 }
+    platforms.push(pPh)
+    gameT = 0.2 // phase0=0 : solide sur [0, 1.2) du cycle
+    slime.x = pPh.x + 40
+    slime.y = pPh.y - slime.r
+    slime.vx = 0
+    slime.vy = -50
+    land(pPh)
+    check('phase t=0.2 : posé', slime.grounded && slime.groundPlat === pPh)
+    let f = 0
+    while (gameT < 1.4 && f++ < 200) update(1 / 60)
+    check('phase t=1.4 : décroche et tombe, plateforme intacte', !slime.grounded && slime.groundPlat === null && !pPh.dead)
+  })
+
+  section('T4 : phasante — collision selon la fenêtre', () => {
+    fresh()
+    const pPh = { x: 400, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'phase', amp: 0, spd: 0, ph: 0, spike: null, phase0: 0 }
+    platforms.push(pPh)
+    // traversable (t=1.4) : le slime en chute LE TRAVERSE, aucun land
+    gameT = 1.4
+    slime.grounded = false; slime.groundPlat = null; slime.pull = null; slime.coyote = 0; slime.noCatchT = 0.5
+    slime.x = pPh.x + 40
+    slime.y = pPh.y - slime.r - 1
+    slime.vx = 0; slime.vy = 120
+    update(1 / 60)
+    check('traversable t=1.4 : aucune collision', !slime.grounded && slime.groundPlat !== pPh)
+    // solide (t=0.2) : même position -> land
+    gameT = 0.2
+    slime.grounded = false; slime.groundPlat = null; slime.coyote = 0; slime.noCatchT = 0.5
+    slime.y = pPh.y - slime.r - 1
+    slime.vy = 120
+    update(1 / 60)
+    check('solide t=0.2 : atterrit', slime.grounded && slime.groundPlat === pPh)
+  })
+
+  section('T4 : phasante — tryLedgeCatch ignore le traversable', () => {
+    fresh()
+    const pPh = { x: 400, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'phase', amp: 0, spd: 0, ph: 0, spike: null, phase0: 0 }
+    platforms.push(pPh)
+    slime.noCatchT = 0; slime.pull = null; slime.coyote = 0; slime.vx = 0; slime.vy = 120
+    slime.grounded = false; slime.groundPlat = null
+    gameT = 1.4
+    slime.x = pPh.x - 12
+    slime.y = pPh.y - slime.r - 14
+    let f = 0
+    while (!slime.pull && !slime.grounded && f++ < 30) update(1 / 60) // reste dans le traversable (< 2.0)
+    check('traversable : pas d\'accroche de bord', !slime.pull && !slime.grounded)
+    // contrôle positif : la même accroche réussit quand la phasante est solide
+    gameT = 0.2
+    slime.grounded = false; slime.groundPlat = null; slime.pull = null; slime.coyote = 0; slime.noCatchT = 0
+    slime.x = pPh.x - 12
+    slime.y = pPh.y - slime.r - 14
+    slime.vx = 0; slime.vy = 120
+    f = 0
+    while (!slime.pull && !slime.grounded && f++ < 60) update(1 / 60)
+    check('solide : accroche de bord (contrôle positif)', !!slime.pull)
+    slime.pull = null
+    try { state = 'playing'; draw() } catch (e) { check('draw() avec phasante (' + e.message + ')', false) }
+  })
+
   console.log(fails === 0 ? '\nPLATFORMS OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('platforms_test failed')
 }

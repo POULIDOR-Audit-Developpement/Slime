@@ -534,6 +534,11 @@ function land(p) {
   sfx(SFX_LAND, SFX_LAND_PITCH[p.type] || 0, 0.2)
 }
 
+// Phasante : solide uniquement pendant sa fenêtre du cycle (sinon traversable
+// — exclue des collisions, du posé au sol et de l'accroche de bord ; le rendu
+// la dessine estompée quand elle n'est pas solide).
+const solide = p => p.type !== 'phase' || Phys.phaseSolid(p, gameT)
+
 // ---------- Ledge catch ----------
 // Manqué une plateforme de justesse ? Si le bord est dépassé de quelques
 // pixels (fenêtre réglable) pendant que le bas du slime frôle le sommet,
@@ -544,7 +549,7 @@ function land(p) {
 function tryLedgeCatch(prevY) {
   const win = POWERS.ledge.window
   for (const p of platforms) {
-    if (p.dead) continue
+    if (p.dead || !solide(p)) continue
     // bas du slime à peine sous le sommet, en train de franchir le bord
     if (slime.y + slime.r < p.y || slime.y + slime.r > p.y + 12) continue
     if (prevY + slime.r > p.y + 6) continue
@@ -622,7 +627,8 @@ function updSlime(dt) {
   }
   if (slime.grounded) {
     const p = slime.groundPlat
-    if (!p || p.dead || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
+    // Phasante traversable : le slime décroche et TOMBE (pas de killPlat).
+    if (!p || p.dead || !solide(p) || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
       slime.grounded = false
       slime.groundPlat = null
       // Quitter le sol sans sauter : fenêtre de coyote encore disponible.
@@ -648,7 +654,7 @@ function updSlime(dt) {
     // indicateur en haut le signale, voir drawOffscreen).
     if (slime.vy >= 0) {
       for (const p of platforms) {
-        if (p.dead) continue
+        if (p.dead || !solide(p)) continue
         if (slime.x > p.x - 6 && slime.x < p.x + p.w + 6 && prevY + slime.r <= p.y + 8 && slime.y + slime.r >= p.y) {
           // Juice universel d'impact : shake sur gros choc + poussière (la
           // bouncy a déjà son squash/SFX : pas de poussière en plus).
@@ -1159,7 +1165,8 @@ function drawPlat(p) {
   const n = Math.round(p.w / CELL)
   const jx = p.type === 'crumble' && p.crackT > 0 ? rand(-1.5, 1.5) : 0
   if (Sprites.ready) {
-    if (p.type === 'ghost') alpha(0.5 + 0.25 * Math.sin(T * 6))
+    // Phasante : estompée pendant sa phase traversable (sprite tileGhost).
+    if (p.type === 'phase') alpha(solide(p) ? 0.9 : 0.25)
     if (p.type === 'sticky') {
       Sprites.drawImage('sticky', p.x + jx - 2, p.y - 4, p.w + 6, Math.min(54, (p.w + 6) * 0.5))
     } else if (p.type === 'dynamic') {
@@ -1173,7 +1180,7 @@ function drawPlat(p) {
         Sprites.drawSrc('dynStrip', t, 0, pitch, 33, p.x + jx + i * CELL, p.y, CELL, 24)
       }
     } else {
-      const keys = { basic: 'tileGreen', crumble: 'tileGray', ghost: 'tileGhost', bouncy: 'tileOrange' }
+      const keys = { basic: 'tileGreen', crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange' }
       for (let i = 0; i < n; i++) {
         const tx = p.x + jx + i * CELL
         Sprites.drawImage(keys[p.type] || 'tileGreen', tx, p.y, CELL, 24)
@@ -1189,7 +1196,7 @@ function drawPlat(p) {
         }
       }
     }
-    if (p.type === 'ghost') alpha(1)
+    if (p.type === 'phase') alpha(1)
     if (p.spike) {
       for (let sx = p.spike.x1; sx + 8 <= p.spike.x2 + 0.1; sx += 8) {
         shape([sx, p.y + 1, sx + 4, p.y - 10, sx + 8, p.y + 1])
@@ -1200,7 +1207,7 @@ function drawPlat(p) {
     }
     return
   }
-  if (p.type === 'ghost') alpha(0.5 + 0.25 * Math.sin(T * 6))
+  if (p.type === 'phase') alpha(solide(p) ? 0.9 : 0.25)
   if (p.type === 'sticky') {
     rectfill(p.x - 1, p.y - 1, p.w + 2, 34, C_BLACK, 8)
     rectfill(p.x + 1, p.y + 1, p.w - 2, 28, C_S_SIDE, 7)
@@ -1216,8 +1223,8 @@ function drawPlat(p) {
   } else {
     for (let i = 0; i < n; i++) {
       const tx = p.x + jx + i * CELL
-      const tops = { basic: C_P_TOP, dynamic: C_D_TOP, crumble: C_CR_TOP, ghost: C_GH_TOP, bouncy: C_ORANGE }
-      const sides = { basic: C_P_SIDE, dynamic: C_D_SIDE, crumble: C_CR_SIDE, ghost: C_GH_SIDE, bouncy: C_BO_SIDE }
+      const tops = { basic: C_P_TOP, dynamic: C_D_TOP, crumble: C_CR_TOP, phase: C_GH_TOP, bouncy: C_ORANGE }
+      const sides = { basic: C_P_SIDE, dynamic: C_D_SIDE, crumble: C_CR_SIDE, phase: C_GH_SIDE, bouncy: C_BO_SIDE }
       drawTile(tx, p.y, tops[p.type] || C_P_TOP, sides[p.type] || C_P_SIDE)
       if (p.type === 'crumble') {
         rectfill(tx + 8, p.y + 4, 2, 9, C_CR_DARK)
@@ -1232,7 +1239,7 @@ function drawPlat(p) {
       }
     }
   }
-  if (p.type === 'ghost') alpha(1)
+  if (p.type === 'phase') alpha(1)
   if (p.spike) {
     for (let sx = p.spike.x1; sx + 8 <= p.spike.x2 + 0.1; sx += 8) {
       shape([sx, p.y + 1, sx + 4, p.y - 10, sx + 8, p.y + 1])
