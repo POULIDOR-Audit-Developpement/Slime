@@ -75,7 +75,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 | Couleur | Type | Effet |
 |---|---|---|
 | Verte | Basique | Standard — parfois des pics rouges dessus (attention !) |
-| Brune | Collante | Booste ton prochain saut (×1.15) |
+| Brune | Collante | Transmet sa puissance à ton prochain saut (×0.8) |
 | Bleue (horloges) | Dynamique | Monte et descend sans limite de temps — saute pendant qu'elle monte pour un coup de pouce (×1.15) |
 | Grise fissurée | Cassable | Se casse 0,8 s après l'atterrissage — le craquement te prévient à mi-chemin |
 | Blanche translucide | Phasante | solide 60 % du temps, cycle 2 s — attendez votre moment |
@@ -101,7 +101,7 @@ Ouvrir **`editor.html`** — un mot de passe est demandé (défaut : `slime`, vo
 - Outils : flèche (déplacer), plateforme (touches **1-9** = type, **+/-** = largeur), **mur vertical (W)** : colonne au sol ou stalactite au plafond, largeur 1-3, **flancs piqués optionnels** (mortels) — le sommet d'une colonne est toujours atterrissable, bille, bille or, décor, gomme ; **Suppr** efface, **flèches** ajustent au pixel
 - **Multi-sélection** (outil flèche) : **Ctrl ou Shift+clic** ajoute/retire un élément, **Ctrl ou Shift+glisser sur le vide** trace un rectangle qui capture tout ce qu'il touche ; glisser un élément **déjà sélectionné** déplace **tout le groupe** (un clic simple sans glisser réduit la sélection à cet élément) ; plateformes/murs snappés à la grille, lignes 0-4
 - **Copier/coller d'éléments** : **Ctrl+C** copie la sélection, **Ctrl+X** coupe, **Ctrl+V** colle dans le pattern courant — ou dans un **autre pattern** — ancré sous la souris (sinon décalé d'une case) ; **Ctrl+A** sélectionne tout le pattern, **Suppr** efface la sélection entière, **flèches** la déplacent (Shift = pas de 8 px)
-- **Validation en direct** : la même physique que le jeu (`js/physics.js`) simule chaque saut **avec les pouvoirs du layout** — ✓ vert = faisable au saut visé simple, ✓ bleu (DJ/L) = faisable seulement via double saut ou rattrape de bord, ✗ rouge = impossible même avec les pouvoirs ; un saut qui traverse le corps d'un mur est invalidé, sauter **sur** le sommet d'une colonne reste valide. Budget fidèle au jeu : **un seul double saut par pattern** (cooldown 4 s) ; les plateformes collantes boostent le saut suivant (×1.15), les rebondissantes peuvent être corrigées en plein vol. Un pattern avec des ✗ ne bloque pas le jeu (il est juste joué tel quel, prudence !)
+- **Validation en direct** : la même physique que le jeu (`js/physics.js`) simule chaque saut **avec les pouvoirs du layout** — ✓ vert = faisable au saut visé simple, ✓ bleu (DJ/L) = faisable seulement via double saut ou rattrape de bord, ✗ rouge = impossible même avec les pouvoirs ; un saut qui traverse le corps d'un mur est invalidé, sauter **sur** le sommet d'une colonne reste valide. Budget fidèle au jeu : **un seul double saut par pattern** (budget volontairement conservateur) ; les plateformes collantes transmettent leur puissance (×0.8), les rebondissantes peuvent être corrigées en plein vol. Un pattern avec des ✗ ne bloque pas le jeu (il est juste joué tel quel, prudence !)
 - **▶ Playtest** : ouvre le jeu en boucle sur ce pattern seul (`index.html?pattern=<code>`, bannière « TEST » en haut)
 
 ### Onglet VUE
@@ -116,12 +116,12 @@ Pouvoirs du slime — réglés sur un **brouillon** puis validés par le bouton 
 
 | Pouvoir | Réglages (défaut) |
 |---|---|
-| Double saut | activé (oui), recharge (4 s), charges par atterrissage (1), puissance (×1) |
-| Slow-mo | activé (oui), échelle du temps (×0.35), durée max (0.6 s) |
-| Ledge catch | activé (oui), durée de la remontée (0.6 s), fenêtre (8 px) |
+| Double saut | activé (oui), recharge (0.5 s), charges par atterrissage (2), puissance (×1.15) |
+| Slow-mo | activé (oui), échelle du temps (×0.05), durée max (2 s) |
+| Ledge catch | activé (oui), durée de la remontée (0.3 s), fenêtre (5 px) |
 
 - En l'air, un appui déclenche la **visée du double saut** (et le ralenti si le slow-mo est activé) ; le ralenti ne concerne **que la visée** — au relâcher, le saut part à pleine vitesse
-- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il se hisse immédiatement sur la plateforme (le sommet d'un bord accroché se comporte comme un sol : la casse d'une friable démarre dès l'accroche, une collante transmet sa puissance ×1.15 — la phasante n'est accrochable que pendant sa fenêtre solide) ; un appui pendant la remontée permet de viser un saut, sinon il est posé au bout de la durée réglée
+- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il se hisse immédiatement sur la plateforme (le sommet d'un bord accroché se comporte comme un sol : la casse d'une friable démarre dès l'accroche, une collante transmet sa puissance ×0.8 — la phasante n'est accrochable que pendant sa fenêtre solide) ; un appui pendant la remontée permet de viser un saut, sinon il est posé au bout de la durée réglée
 - Le **cooldown** démarre à chaque utilisation ; les charges se rechargent à l'atterrissage
 - Tant que le brouillon diffère, le bouton passe en doré avec la note « modifications non appliquées »
 - « Réinitialiser les pouvoirs » remet les défauts et les applique immédiatement
@@ -131,20 +131,31 @@ Physique du jeu réglable pour de **micro-ajustements** du game feel — même m
 
 | Groupe | Réglages (défaut) |
 |---|---|
-| Slime | taille du rayon : hitbox + sprite + validation des sauts (14 px) |
-| Saut & visée | gravité (620), vitesse min/max (210/360), portée de visée min/max (24/140 px), chute max (520), traînée aérienne (0.6) |
-| Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×1.15) |
-| Dégâts | invincibilité après un coup (1.3 s), échelle des reculs infligés (×1) |
-| Caméra | vitesse de base (80), vitesse max (240), temps jusqu'au max en min (9 min = 3 musiques de 3 min ; paliers automatiques de +3 toutes les 10 s) |
-| Game feel | coyote time (0.08 s) — 0 = désactivé |
+| Slime | taille du rayon : hitbox + sprite + validation des sauts (11 px) |
+| Saut & visée | gravité (620), vitesse min/max (170/380), portée de visée min/max (30/90 px), chute max (520), traînée aérienne (0.6) |
+| Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×0.8) |
+| Dégâts | invincibilité après un coup (1.3 s), échelle des reculs infligés (×0.8) |
+| Caméra | vitesse de base (35), vitesse max (400), temps jusqu'au max en min (9 min = 3 musiques de 3 min ; paliers automatiques de +3 toutes les 10 s) |
+| Game feel | coyote time (0.07 s) — 0 = désactivé |
 
 - La validation ✓/✗ des patterns et le playtest utilisent les valeurs **appliquées** (aucun décalage éditeur/jeu)
 - « Réinitialiser la physique » remet les défauts et les applique immédiatement
 - Si tu augmentes la taille du slime au-delà du défaut, revalide tes patterns : quelques sauts du pool par défaut pourraient devenir serrés
 
 ### Difficulté & pool
+- **Courbe de découverte** : chaque type de plateforme apparaît à son moment, dans le pool par défaut comme dans un pool personnalisé (garde universelle sur le temps de run) — le joueur découvre les mouvements sur du basic, puis rencontre chaque nouveau type dans une **vitrine** (isolé, large, sans pics) avant que les tiers suivants ne les mélangent et ne durcissent :
+
+  | Tier | Fenêtre | Nouveaux types |
+  |---|---|---|
+  | T1 | 0–90 s | basic, dynamic (doux) |
+  | T2 | 90–210 s | crumble (90 s), phase (120 s) |
+  | T3 | 210–330 s | sticky (210 s), turbo (240 s) |
+  | T4 | 330–450 s | bouncy (330 s), seesaw (360 s) |
+  | T5 | 450 s+ | gold (420 s) + mélanges durs |
+
 - Le jeu pioche dans le pool selon une **courbe de poids** : T1 domine au début, les tiers durs prennent le dessus vers 9 min (calé sur la caméra : 3 BGM de 3 min) ; anti-répétition immédiate ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
-- **Ton pool remplace le pool par défaut dès qu'il contient au moins 1 pattern** (sinon le jeu joue les 20 sections embarquées) ; bouton « Pool par défaut » pour les copier et les éditer
+- **Ton pool remplace le pool par défaut dès qu'il contient au moins 1 pattern** (sinon le jeu joue les 30 sections embarquées) ; bouton « Pool par défaut » pour les copier et les éditer
+- **Pool LAN et remplacement** : l'état partagé peut porter un `poolTag` ; quand il change, chaque appareil **remplace** son pool par le distant au prochain pull (les anciens patterns locaux ne ressortent pas), puis la fusion « rien n'est perdu » reprend normalement pour les créations suivantes
 
 ### Portabilité (autre machine)
 - **Exporter .json** / **Importer .json** (ou glisser-déposer) : toutes tes créations + le layout de vue
@@ -205,5 +216,5 @@ du code restent disponibles.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `platforms_test` (plateformes fun : constantes, mécaniques des 9 types, règles du pool régénéré), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
+- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `progression_test` (courbe de découverte : UNLOCK_T, vitrines, fallback anti-pool-vide, bypass pinned), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `platforms_test` (plateformes fun : constantes, mécaniques des 9 types, règles du pool régénéré), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
 - Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame
