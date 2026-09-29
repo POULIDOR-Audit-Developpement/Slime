@@ -16,6 +16,11 @@ const Ed = (() => {
     crumble: '#9aa0ac', crumbleD: '#6b7280',
     ghost: '#d8e8f4', ghostD: '#a8bccb',
     bouncy: '#cc6d1a', bouncyD: '#8f4a0f',
+    // « Plateformes fun » : mêmes couleurs que la palette du jeu (turbo/dorée)
+    // et le bois de la bascule (pivot sombre, axe clair).
+    turbo: '#9ef2ff', turboD: '#2e9ed6',
+    goldT: '#ffe066', goldS: '#d99e0b',
+    wood: '#c98d4e', woodD: '#8a5a2b', woodPivot: '#4a2e14',
     spike: '#e23b3b', spikeD: '#8f1f1f',
     ball: '#ffd83d', gold: '#ffd700', ok: '#3ecb3e', ko: '#e23b3b', sel: '#ffd83d',
     pwr: '#38b6e8', slime: '#3ecb3e'
@@ -23,10 +28,12 @@ const Ed = (() => {
   const TIER_COLORS = ['#3ecb3e', '#a5f0a5', '#ffd83d', '#ff9d2e', '#e23b3b']
   const TYPE_LABEL = {
     basic: 'Basique', sticky: 'Collante', dynamic: 'Dynamique',
-    crumble: 'Cassable', ghost: 'Éphémère', bouncy: 'Rebondissante'
+    crumble: 'Cassable', phase: 'Phasante', bouncy: 'Rebondissante',
+    turbo: 'Turbo', gold: 'Dorée', seesaw: 'Bascule'
   }
   const DECOR_SPRITES = ['bgBig', 'bgPanel1', 'bgPanel2', 'bgPanel3', 'bgPanel4',
     'tileGreen', 'tileBlue', 'tileGray', 'tileGhost', 'tileOrange',
+    'tileTurbo', 'tileGold', 'tileSeesaw',
     'sticky', 'dynStrip', 'voidBand', 'hudHead', 'big', 'mid', 'small', 'splat']
 
   // ---------- état ----------
@@ -196,9 +203,23 @@ const Ed = (() => {
       c.fillStyle = COL.dynamic; c.fillRect(p.x + 1, y + 1, w - 2, 7)
       c.fillStyle = COL.white
       for (let dx = 8; dx < w - 8; dx += 22) c.fillRect(p.x + dx, y + 5, 5, 5)
+    } else if (p.type === 'seesaw') {
+      // Bascule : planche inclinée (tilt simulé ±10°, cf. jeu : tilt × 0.17 rad)
+      // pivotant autour du centre, cercle pivot dessiné au centre.
+      c.translate(p.x + w / 2, y + 12)
+      c.rotate(0.17)
+      for (let i = 0; i < p.cells; i++) drawTileAt(c, -w / 2 + i * CELL, -12, COL.wood, COL.woodD)
+      c.fillStyle = COL.black
+      c.beginPath(); c.arc(0, 0, 6.5, 0, 7); c.fill()
+      c.fillStyle = COL.woodPivot
+      c.beginPath(); c.arc(0, 0, 4.5, 0, 7); c.fill()
+      c.fillStyle = '#e8d5b5'
+      c.beginPath(); c.arc(0, 0, 2, 0, 7); c.fill()
     } else {
-      const tops = { basic: COL.basic, crumble: COL.crumble, ghost: COL.ghost, bouncy: COL.bouncy }
-      const sides = { basic: COL.basicD, crumble: COL.crumbleD, ghost: COL.ghostD, bouncy: COL.bouncyD }
+      const tops = { basic: COL.basic, crumble: COL.crumble, ghost: COL.ghost, phase: COL.ghost,
+        bouncy: COL.bouncy, turbo: COL.turbo, gold: COL.goldT }
+      const sides = { basic: COL.basicD, crumble: COL.crumbleD, ghost: COL.ghostD, phase: COL.ghostD,
+        bouncy: COL.bouncyD, turbo: COL.turboD, gold: COL.goldS }
       for (let i = 0; i < p.cells; i++) {
         drawTileAt(c, p.x + i * CELL, y, tops[p.type] || COL.basic, sides[p.type] || COL.basicD)
         if (p.type === 'crumble') {
@@ -213,6 +234,19 @@ const Ed = (() => {
           c.moveTo(p.x + i * CELL + 15, y + 14); c.lineTo(p.x + i * CELL + 21, y + 7); c.lineTo(p.x + i * CELL + 27, y + 14)
           c.fill()
         }
+        if (p.type === 'turbo') {
+          // chevrons » blancs : même motif que les tuiles/le jeu
+          c.fillStyle = COL.white
+          c.beginPath()
+          c.moveTo(p.x + i * CELL + 6, y + 6); c.lineTo(p.x + i * CELL + 13, y + 12); c.lineTo(p.x + i * CELL + 6, y + 18)
+          c.moveTo(p.x + i * CELL + 15, y + 6); c.lineTo(p.x + i * CELL + 22, y + 12); c.lineTo(p.x + i * CELL + 15, y + 18)
+          c.fill()
+        }
+      }
+      if (p.type === 'gold') {
+        // contour doré autour de la plateforme (identité « bonus » de la dorée)
+        c.strokeStyle = COL.goldT; c.lineWidth = 2
+        c.strokeRect(p.x - 2, y - 2, w + 4, 36)
       }
     }
     if (p.type === 'ghost') c.globalAlpha = 1
@@ -749,11 +783,6 @@ const Ed = (() => {
         html += `<div class="chk"><input type="checkbox" id="oCrG" ${p.crumbleT == null ? 'checked' : ''}/> casse après : réglage global (VUE)</div>
         <div class="row"><label>Casse après</label><input type="range" id="oCrT" min="2" max="20" value="${Math.round(gv * 10)}" ${p.crumbleT == null ? 'disabled' : ''}/><span class="val" id="oCrTV">${gv.toFixed(1)} s</span></div>`
       }
-      if (p.type === 'dynamic') {
-        const gv = p.dynLife != null ? p.dynLife : gPlat.dynLife
-        html += `<div class="chk"><input type="checkbox" id="oDlG" ${p.dynLife == null ? 'checked' : ''}/> vie après pose : réglage global (VUE)</div>
-        <div class="row"><label>Vie après</label><input type="range" id="oDl" min="10" max="100" step="5" value="${Math.round(gv * 10)}" ${p.dynLife == null ? 'disabled' : ''}/><span class="val" id="oDlV">${gv.toFixed(1)} s</span></div>`
-      }
       html += `<div class="chk"><input type="checkbox" id="oSpike" ${p.spike ? 'checked' : ''}/> pics rouges</div>`
       if (p.spike) {
         html += `<div class="row"><label>Début</label><input type="range" id="oSa" min="0" max="90" value="${Math.round(p.spike.a * 100)}"/><span class="val" id="oSaV">${Math.round(p.spike.a * 100)}%</span></div>
@@ -817,18 +846,6 @@ const Ed = (() => {
       const v = document.getElementById('oCrTV'); if (v) v.textContent = p.crumbleT.toFixed(1) + ' s'
       persistSilent()
     })
-    on('oDlG', 'change', e => {
-      const p = pat.platforms[selIdx]
-      if (e.target.checked) delete p.dynLife
-      else p.dynLife = Patterns.getLayout().plat.dynLife
-      persist(); renderProps()
-    })
-    on('oDl', 'input', e => {
-      const p = pat.platforms[selIdx]
-      p.dynLife = parseInt(e.target.value, 10) / 10
-      const v = document.getElementById('oDlV'); if (v) v.textContent = p.dynLife.toFixed(1) + ' s'
-      persistSilent()
-    })
     on('oSpike', 'change', e => {
       const p = pat.platforms[selIdx]
       p.spike = e.target.checked ? { a: 0.25, b: 0.75 } : null
@@ -883,9 +900,8 @@ const Ed = (() => {
     <div class="note">Optionnelle et non infaillible : le simulateur peut se tromper dans les deux sens. Coché, un pattern jugé injoignable depuis la plateforme précédente est retiré du tirage (repli : plateforme de sécurité). Décoché, tout le pool est joué tel quel. Les badges ✓/✗ de l'onglet PATTERNS restent un simple indicateur.</div>
     <h3>Plateformes (global)</h3>
     <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="8" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
-    <div class="row"><label>Dyn. vie</label><input type="range" id="pDynLife" min="10" max="70" step="5" value="${Math.round(L.plat.dynLife * 10)}"/><span class="val" id="pDynLifeV">${L.plat.dynLife.toFixed(1)} s</span></div>
     <div class="row"><label>Dyn. vit.</label><input type="range" id="pSpdMul" min="5" max="15" value="${Math.round(L.plat.spdMul * 10)}"/><span class="val" id="pSpdMulV">${L.plat.spdMul.toFixed(1)} ×</span></div>
-    <div class="note">Cassable : délai avant casse. Dynamique : durée de vie après atterrissage et vitesse d'oscillation globale. Une plateforme peut surcharger ces valeurs (onglet PATTERNS, case « réglage global »).</div>
+    <div class="note">Cassable : délai avant casse. Dynamique : vitesse d'oscillation globale. Une plateforme peut surcharger la casse (onglet PATTERNS, case « réglage global »).</div>
     <h3>Décor</h3>
     <div class="row"><label>Asset</label><select id="lDSprite">${DECOR_SPRITES.map(k => `<option value="${k}" ${decorSprite === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
     <div class="row">
@@ -934,16 +950,14 @@ const Ed = (() => {
     })
     const platUpd = () => {
       L.plat.crumbleT = parseInt(document.getElementById('pCrumb').value, 10) / 10
-      L.plat.dynLife = parseInt(document.getElementById('pDynLife').value, 10) / 10
       L.plat.spdMul = parseInt(document.getElementById('pSpdMul').value, 10) / 10
       Patterns.setLayout(L)
-      const vc = document.getElementById('pCrumbV'), vd = document.getElementById('pDynLifeV'), vs = document.getElementById('pSpdMulV')
+      const vc = document.getElementById('pCrumbV'), vs = document.getElementById('pSpdMulV')
       if (vc) vc.textContent = L.plat.crumbleT.toFixed(1) + ' s'
-      if (vd) vd.textContent = L.plat.dynLife.toFixed(1) + ' s'
       if (vs) vs.textContent = L.plat.spdMul.toFixed(1) + ' ×'
       persistSilent()
     }
-    on('pCrumb', 'input', platUpd); on('pDynLife', 'input', platUpd); on('pSpdMul', 'input', platUpd)
+    on('pCrumb', 'input', platUpd); on('pSpdMul', 'input', platUpd)
     on('lDSprite', 'change', e => { decorSprite = e.target.value })
     on('lToolSelect', 'click', () => setLTool('select'))
     on('lToolDecor', 'click', () => setLTool('decor'))
@@ -1624,7 +1638,7 @@ const Ed = (() => {
   function buildToolbar() {
     const tools = [
       ['select', 'Flèche', 'Sélectionner / déplacer (S)'],
-      ['plat', 'Plateforme', 'Poser une plateforme (A) — 1-6 : type'],
+      ['plat', 'Plateforme', 'Poser une plateforme (A) — 1-9 : type'],
       ['wall', 'Mur', 'Poser un mur vertical (W)'],
       ['ball', 'Bille', 'Poser une bille (B)'],
       ['gold', 'Bille or', 'Poser une bille dorée (G)'],
@@ -1679,7 +1693,7 @@ const Ed = (() => {
     grpDecor.style.display = (t === 'decor') ? 'flex' : 'none'
     const hints = {
       select: 'Clic : sélectionner · glisser : déplacer la sélection · Ctrl/Shift+clic : multi · Ctrl/Shift+glisser (vide) : rectangle · Ctrl+C/V : copier/coller · Suppr : effacer · flèches : ajuster',
-      plat: 'Clic : poser · 1-6 : type de plateforme',
+      plat: 'Clic : poser · 1-9 : type de plateforme',
       wall: 'Clic : poser · glisser : hauteur (ligne de la pointe) · piques réglables à droite',
       ball: 'Clic : poser une bille',
       gold: 'Clic : poser une bille dorée',
@@ -2069,8 +2083,8 @@ const Ed = (() => {
     }
     if (e.key === 'Escape') { clearSel(); renderProps(); return }
     if (mode !== 'patterns') return
-    const types = ['basic', 'sticky', 'dynamic', 'crumble', 'ghost', 'bouncy']
-    if (/^[1-6]$/.test(e.key)) { platType = types[parseInt(e.key, 10) - 1]; document.getElementById('tType').value = platType; if (tool !== 'plat') setTool('plat'); return }
+    // Source unique : le catalogue de patterns (9 types) — touches 1-9.
+    if (/^[1-9]$/.test(e.key)) { platType = Patterns.TYPES[parseInt(e.key, 10) - 1]; document.getElementById('tType').value = platType; if (tool !== 'plat') setTool('plat'); return }
     const toolKeys = { s: 'select', a: 'plat', w: 'wall', b: 'ball', g: 'gold', d: 'decor', e: 'erase' }
     if (!e.ctrlKey && !e.metaKey && toolKeys[e.key.toLowerCase()]) { setTool(toolKeys[e.key.toLowerCase()]); return }
     if (!pat) return

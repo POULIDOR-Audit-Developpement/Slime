@@ -372,6 +372,55 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
 
   Ed.setMode('patterns')
   check('retour patterns : classe colors retirée', !main.classList.contains('colors'))
+
+  // --- T8 : 9 types (touches 1-9), retrait du contrôle dynLife ---
+  // Toolbar : le select tType est rendu depuis Patterns.TYPES (source unique)
+  // libellé par TYPE_LABEL — 9 options, aucun « undefined ». (Le mini-DOM ne
+  // parse pas l'innerHTML : on épingle le markup rendu de la toolbar.)
+  const mSel = /<select id="tType">([\\s\\S]*?)<\\/select>/.exec(els.toolbar.innerHTML)
+  const opts = mSel ? mSel[1] : ''
+  check('tType : 9 options', (opts.match(/<option/g) || []).length === 9)
+  check('tType : aucun libellé undefined', opts.length > 0 && !opts.includes('undefined'))
+  check('tType : Phasante/Turbo/Dorée/Bascule', opts.includes('>Phasante<') && opts.includes('>Turbo<') && opts.includes('>Dorée<') && opts.includes('>Bascule<'))
+  // Touches 1-9 : onKey resynchronise le select avec platType (observable).
+  kd('7')
+  check('touche 7 -> turbo', els.tType.value === 'turbo')
+  kd('9')
+  check('touche 9 -> seesaw', els.tType.value === 'seesaw')
+  kd('1')
+  check('touche 1 -> basic', els.tType.value === 'basic')
+  // La pose consomme bien platType : 7 puis 9 posent turbo puis seesaw.
+  els.btnNew.handlers.click()
+  const pat2 = Patterns.getPatterns()[Patterns.getPatterns().length - 1]
+  kd('7')
+  els.cv.handlers.pointerdown({ clientX: sxOf(700), clientY: syOf(rowY(0) + 5), button: 0 })
+  win.fire('pointerup', {})
+  check('pose après touche 7 : plateforme turbo', pat2.platforms.some(p => p.type === 'turbo' && p.x === 704))
+  kd('9')
+  els.cv.handlers.pointerdown({ clientX: sxOf(700 + 4 * CELL), clientY: syOf(rowY(4) + 5), button: 0 })
+  win.fire('pointerup', {})
+  check('pose après touche 9 : plateforme seesaw', pat2.platforms.some(p => p.type === 'seesaw'))
+  // Sélection de la seesaw : propriétés rendues sans erreur, type présent.
+  els.cv.handlers.pointerdown({ clientX: sxOf(700 + 4 * CELL + 16), clientY: syOf(rowY(4) + 8), button: 0 })
+  win.fire('pointerup', {})
+  const pvSeesaw = els.props.innerHTML
+  check('propriétés seesaw : oType avec les 9 types', pvSeesaw.includes('id="oType"') && pvSeesaw.includes('value="seesaw"') && pvSeesaw.includes('value="turbo"') && pvSeesaw.includes('value="gold"') && pvSeesaw.includes('value="phase"'))
+  // Une dynamique n'expose plus le réglage « vie après » (dynLife supprimé).
+  kd('3')
+  els.cv.handlers.pointerdown({ clientX: sxOf(700 + 8 * CELL), clientY: syOf(rowY(1) + 5), button: 0 })
+  win.fire('pointerup', {})
+  els.cv.handlers.pointerdown({ clientX: sxOf(700 + 8 * CELL + 16), clientY: syOf(rowY(1) + 8), button: 0 })
+  win.fire('pointerup', {})
+  const pvDyn = els.props.innerHTML
+  check('propriétés dynamique : plus de « Vie après »', pvDyn.includes('id="oType"') && !pvDyn.includes('Vie après') && !pvDyn.includes('oDl'))
+  // Panneau VUE : plus aucun contrôle dynLife, cassable/spdMul conservés.
+  Ed.setMode('layout')
+  const lv = els.props.innerHTML
+  check('VUE : plus de slider Dyn. vie', !lv.includes('pDynLife') && !lv.includes('Dyn. vie'))
+  check('VUE : cassable et vitesse dynamique conservés', lv.includes('pCrumb') && lv.includes('pSpdMul'))
+  // VUE : les 3 nouvelles tuiles sont posables en décor.
+  check('VUE : tuiles turbo/gold/seesaw en décor', lv.includes('tileTurbo') && lv.includes('tileGold') && lv.includes('tileSeesaw'))
+  Ed.setMode('patterns')
 })()
 `)
 const store = {}
