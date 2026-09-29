@@ -12,7 +12,7 @@ function generateDefaultPool(opts) {
   const seed = opts.seed != null ? opts.seed : 20260921
 
   // Temps simulé par difficulté : reprend les paliers du générateur d'origine
-  // (D = elapsed/75, déblocages crumble/ghost à 12 s, bouncy à 25 s, pics à 20 s).
+  // (D = elapsed/75, déblocages progressifs des types — cf. seuils du roll).
   const TIER_T = [14, 26, 45, 62, 90]
 
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -47,7 +47,9 @@ function generateDefaultPool(opts) {
   }
 
   // --- port de spawnNext (game.js d'origine, sans branches ni billes dorées) ---
-  function simSpawnNext(A, plats, balls, simElapsed, budget) {
+  // lastOne : dernière plateforme du pattern en cours de génération (la
+  // bascule n'y est jamais tirée — voir les règles sous le roll).
+  function simSpawnNext(A, plats, balls, simElapsed, budget, lastOne) {
     const last = plats[plats.length - 1]
     const D = Math.min(simElapsed / 75, 1)
     for (let attempt = 0; attempt < 24; attempt++) {
@@ -55,17 +57,30 @@ function generateDefaultPool(opts) {
       let dRow = A.randi(-2, 2)
       const roll = A.rand()
       let type
-      if (roll < 0.38) type = 'basic'
-      else if (roll < 0.51) type = 'dynamic'
-      else if (roll < 0.62) type = simElapsed > 12 ? 'crumble' : 'basic'
-      else if (roll < 0.72) type = 'sticky'
-      else if (roll < 0.82) type = simElapsed > 12 ? 'ghost' : 'basic'
-      else if (roll < 0.92) type = simElapsed > 25 ? 'bouncy' : 'basic'
+      if (roll < 0.30) type = 'basic'
+      else if (roll < 0.42) type = 'dynamic'
+      else if (roll < 0.52) type = simElapsed > 12 ? 'crumble' : 'basic'
+      else if (roll < 0.60) type = 'sticky'
+      else if (roll < 0.69) type = simElapsed > 12 ? 'phase' : 'basic'
+      else if (roll < 0.79) type = simElapsed > 25 ? 'bouncy' : 'basic'
+      else if (roll < 0.87) type = simElapsed > 18 ? 'turbo' : 'basic'
+      else if (roll < 0.93) type = simElapsed > 25 ? 'seesaw' : 'basic'
+      else if (roll < 0.96) type = simElapsed > 30 ? 'gold' : 'basic'
       else type = 'basic'
+      // Règles de génération : gold ≤ 1 par pattern ; jamais plus de 2
+      // phasantes consécutives ; la bascule n'est jamais la dernière
+      // plateforme du pattern (elle propulse, rien ne doit la dépendre).
+      if (type === 'gold' && plats.some(p => p.type === 'gold')) type = 'basic'
+      if (type === 'phase' && plats.length >= 2 &&
+          plats[plats.length - 1].type === 'phase' && plats[plats.length - 2].type === 'phase') type = 'basic'
+      if (type === 'seesaw' && lastOne) type = 'basic'
       let cells
       if (type === 'basic') cells = A.randi(2, 5)
-      else if (type === 'dynamic' || type === 'sticky' || type === 'ghost') cells = A.randi(2, 3)
-      else if (type === 'crumble') cells = A.randi(2, 4)
+      else if (type === 'dynamic' || type === 'sticky') cells = A.randi(2, 3)
+      else if (type === 'crumble' || type === 'turbo') cells = A.randi(2, 4)
+      else if (type === 'seesaw') cells = A.randi(3, 4)
+      else if (type === 'phase') cells = A.randi(2, 3)
+      else if (type === 'gold') cells = A.randi(1, 2)
       else cells = 2
       if (simElapsed < 10) { gap = Math.min(gap, 2); dRow = clampN(dRow, -1, 1); type = 'basic'; cells = A.randi(3, 4) }
       if (dRow === -2 && gap > 2) dRow = -1
@@ -143,7 +158,7 @@ function generateDefaultPool(opts) {
         const balls = []
         const n = A.randi(7, 11)
         const budget = { dj: tier >= DJ_TIERS ? 1 : 0 }
-        for (let s = 0; s < n; s++) simSpawnNext(A, plats, balls, TIER_T[tier - 1], budget)
+        for (let s = 0; s < n; s++) simSpawnNext(A, plats, balls, TIER_T[tier - 1], budget, s === n - 1)
         const chain = plats.slice(1)
 
         // Revalidation complète de la chaîne (garantie) — même budget DJ que

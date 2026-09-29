@@ -158,6 +158,18 @@ async function driverFn() {
   check('TYPES a 9 types', Patterns.TYPES.length === 9 && Patterns.TYPES.indexOf('turbo') >= 0 && Patterns.TYPES.indexOf('gold') >= 0 && Patterns.TYPES.indexOf('seesaw') >= 0)
   check('layout normalisé : dynLife hérité borné (4)', Patterns.getLayout().plat.dynLife === 4)
 
+  // --- 8) T9 : pool régénéré — les 4 nouveaux types + règles de génération ---
+  // Tourne sur le pool chargé du disque (js/patterns-defaults.js) : les checks
+  // épinglent la SORTIE de tools/gen_defaults.mjs, pas l'ancien pool.
+  section('T9 : pool régénéré (nouveaux types, gold rare, phase <=2 consécutives)', () => {
+    // Le pool régénéré contient au moins 1 pattern avec chaque nouveau type
+    const pool = Patterns.defaults()
+    for (const t of ['phase', 'turbo', 'gold', 'seesaw']) check('pool contient ' + t, pool.some(p => p.platforms.some(q => q.type === t)))
+    check('gold rare (<= 2% des plateformes)', (() => { const all = pool.flatMap(p => p.platforms); return all.filter(q => q.type === 'gold').length / all.length <= 0.04 })())
+    check('phase jamais > 2 consécutives dans un pattern', pool.every(p => { let c = 0; for (const q of p.platforms) { c = q.type === 'phase' ? c + 1 : 0; if (c > 2) return false } return true }))
+    check('gold max 1 par pattern', pool.every(p => p.platforms.filter(q => q.type === 'gold').length <= 1))
+  })
+
   // ================= Lot 1 : mécaniques runtime (js/game.js) =================
   init()
 
