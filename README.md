@@ -74,13 +74,15 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 
 | Couleur | Type | Effet |
 |---|---|---|
-| Verte | Basique | Standard (parfois des pics rouges dessus) |
-| Brune | Collante | Affaiblit ton prochain saut (×0.8) |
-| Bleue (horloges) | Dynamique | Monte et descend — se désintègre 4 s après le premier contact (clignote en rouge pour prévenir) |
-| Grise fissurée | Cassable | Se casse 0,5 s après l'atterrissage |
-| Blanche translucide | Éphémère | Disparaît dès que tu la quittes |
-| Orange à chevrons | Rebondissante | Te relance automatiquement vers le haut |
-| Pics rouges | Danger | Perte de taille au contact |
+| Verte | Basique | Standard — parfois des pics rouges dessus (attention !) |
+| Brune | Collante | Booste ton prochain saut (×1.15) |
+| Bleue (horloges) | Dynamique | Monte et descend sans limite de temps — saute pendant qu'elle monte pour un coup de pouce (×1.15) |
+| Grise fissurée | Cassable | Se casse 0,8 s après l'atterrissage — le craquement te prévient à mi-chemin |
+| Blanche translucide | Phasante | solide 60 % du temps, cycle 2 s — attendez votre moment |
+| Orange à chevrons | Rebondissante | Te relance automatiquement vers le haut — chaque rebond consécutif est plus fort (jusqu'à ×1.5) |
+| Cyan à double chevron | Turbo | amplifie ta vitesse au départ |
+| Dorée à étoile | Dorée | rare : +1 saut aérien 10 s |
+| Bois à pivot | Bascule | te propulse du côté opposé |
 
 ### Musique & record
 
@@ -96,10 +98,10 @@ Ouvrir **`editor.html`** — un mot de passe est demandé (défaut : `slime`, vo
 ### Onglet PATTERNS
 - Chaque pattern est une **section** de plateformes/billes/murs/décor en coordonnées relatives, avec une **ligne d'entrée** (l'ancre verte : d'où le slime saute en arrivant) et une **difficulté T1→T5**
 - **Rangement automatique** : la liste (et le pool partagé LAN, ainsi que les exports) est triée en continu par **difficulté croissante** puis **ordre alphabétique** du nom (casse et accents ignorés) — inutile de classer à la main
-- Outils : flèche (déplacer), plateforme (touches **1-6** = type, **+/-** = largeur), **mur vertical (W)** : colonne au sol ou stalactite au plafond, largeur 1-3, **flancs piqués optionnels** (mortels) — le sommet d'une colonne est toujours atterrissable, bille, bille or, décor, gomme ; **Suppr** efface, **flèches** ajustent au pixel
+- Outils : flèche (déplacer), plateforme (touches **1-9** = type, **+/-** = largeur), **mur vertical (W)** : colonne au sol ou stalactite au plafond, largeur 1-3, **flancs piqués optionnels** (mortels) — le sommet d'une colonne est toujours atterrissable, bille, bille or, décor, gomme ; **Suppr** efface, **flèches** ajustent au pixel
 - **Multi-sélection** (outil flèche) : **Ctrl ou Shift+clic** ajoute/retire un élément, **Ctrl ou Shift+glisser sur le vide** trace un rectangle qui capture tout ce qu'il touche ; glisser un élément **déjà sélectionné** déplace **tout le groupe** (un clic simple sans glisser réduit la sélection à cet élément) ; plateformes/murs snappés à la grille, lignes 0-4
 - **Copier/coller d'éléments** : **Ctrl+C** copie la sélection, **Ctrl+X** coupe, **Ctrl+V** colle dans le pattern courant — ou dans un **autre pattern** — ancré sous la souris (sinon décalé d'une case) ; **Ctrl+A** sélectionne tout le pattern, **Suppr** efface la sélection entière, **flèches** la déplacent (Shift = pas de 8 px)
-- **Validation en direct** : la même physique que le jeu (`js/physics.js`) simule chaque saut **avec les pouvoirs du layout** — ✓ vert = faisable au saut visé simple, ✓ bleu (DJ/L) = faisable seulement via double saut ou rattrape de bord, ✗ rouge = impossible même avec les pouvoirs ; un saut qui traverse le corps d'un mur est invalidé, sauter **sur** le sommet d'une colonne reste valide. Budget fidèle au jeu : **un seul double saut par pattern** (cooldown 4 s) ; les plateformes collantes affaiblissent le 1er saut, les rebondissantes peuvent être corrigées en plein vol. Un pattern avec des ✗ ne bloque pas le jeu (il est juste joué tel quel, prudence !)
+- **Validation en direct** : la même physique que le jeu (`js/physics.js`) simule chaque saut **avec les pouvoirs du layout** — ✓ vert = faisable au saut visé simple, ✓ bleu (DJ/L) = faisable seulement via double saut ou rattrape de bord, ✗ rouge = impossible même avec les pouvoirs ; un saut qui traverse le corps d'un mur est invalidé, sauter **sur** le sommet d'une colonne reste valide. Budget fidèle au jeu : **un seul double saut par pattern** (cooldown 4 s) ; les plateformes collantes boostent le saut suivant (×1.15), les rebondissantes peuvent être corrigées en plein vol. Un pattern avec des ✗ ne bloque pas le jeu (il est juste joué tel quel, prudence !)
 - **▶ Playtest** : ouvre le jeu en boucle sur ce pattern seul (`index.html?pattern=<code>`, bannière « TEST » en haut)
 
 ### Onglet VUE
@@ -119,7 +121,7 @@ Pouvoirs du slime — réglés sur un **brouillon** puis validés par le bouton 
 | Ledge catch | activé (oui), durée de la remontée (0.6 s), fenêtre (8 px) |
 
 - En l'air, un appui déclenche la **visée du double saut** (et le ralenti si le slow-mo est activé) ; le ralenti ne concerne **que la visée** — au relâcher, le saut part à pleine vitesse
-- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il se hisse immédiatement sur la plateforme (le sommet d'un bord accroché se comporte comme un sol : crumble démarre, timer dynamique lancé, plateformes éphémères disparaissent) ; un appui pendant la remontée permet de viser un saut, sinon il est posé au bout de la durée réglée
+- Le **ledge catch** s'enclenche tout seul quand le slime frôle un bord en tombant : il se hisse immédiatement sur la plateforme (le sommet d'un bord accroché se comporte comme un sol : la casse d'une friable démarre dès l'accroche, une collante transmet sa puissance ×1.15 — la phasante n'est accrochable que pendant sa fenêtre solide) ; un appui pendant la remontée permet de viser un saut, sinon il est posé au bout de la durée réglée
 - Le **cooldown** démarre à chaque utilisation ; les charges se rechargent à l'atterrissage
 - Tant que le brouillon diffère, le bouton passe en doré avec la note « modifications non appliquées »
 - « Réinitialiser les pouvoirs » remet les défauts et les applique immédiatement
@@ -131,7 +133,7 @@ Physique du jeu réglable pour de **micro-ajustements** du game feel — même m
 |---|---|
 | Slime | taille du rayon : hitbox + sprite + validation des sauts (14 px) |
 | Saut & visée | gravité (620), vitesse min/max (210/360), portée de visée min/max (24/140 px), chute max (520), traînée aérienne (0.6) |
-| Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×0.8) |
+| Rebond & collant | vélocités du rebond orange (400/140), puissance après plateforme collante (×1.15) |
 | Dégâts | invincibilité après un coup (1.3 s), échelle des reculs infligés (×1) |
 | Caméra | vitesse de base (80), vitesse max (240), temps jusqu'au max en min (9 min = 3 musiques de 3 min ; paliers automatiques de +3 toutes les 10 s) |
 | Game feel | coyote time (0.08 s) — 0 = désactivé |
@@ -203,5 +205,5 @@ du code restent disponibles.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
+- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `platforms_test` (plateformes fun : constantes, mécaniques des 9 types, règles du pool régénéré), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
 - Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame
