@@ -25,7 +25,7 @@ Patterns.load()
 
 // 1. Pool par défaut présent et valide
 const defs = Patterns.defaults()
-check('pool par défaut >= 20 sections', defs.length >= 20)
+check('pool par défaut >= 30 sections', defs.length >= 30)
 check('default pool valide', defs.every(p => Patterns.validatePattern(p).length === 0))
 check('chaînage interne valide', defs.every(p => Patterns.validatePatternJumps(p).ok))
 
