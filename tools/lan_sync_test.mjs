@@ -210,6 +210,66 @@ try {
   assert.deepStrictEqual(mirC.patterns.map(p => p.id), ['t3', 't1'], 'miroir local = fusion')
   console.log('ok   conflit client : 409 -> pull + fusion, création locale repoussée')
 
+  // ---- 6) poolTag : le remplacement s'impose, la fusion reprend ensuite ----
+  // a) PUT avec poolTag -> servi tel quel ; PUT sans poolTag -> tag préservé.
+  const S1 = { format: 'slime-patterns@1', patterns: [JSON.parse(JSON.stringify(store.patterns[0]))], layout: null, poolTag: 'tag-a' }
+  await fetch(BASE + '/api/state', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
+    body: JSON.stringify({ state: S1 })
+  })
+  let stT = await (await fetch(BASE + '/api/state')).json()
+  assert.strictEqual(stT.state.poolTag, 'tag-a', 'PUT avec poolTag -> servi tel quel')
+  await fetch(BASE + '/api/state', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
+    body: JSON.stringify({ state: { format: S1.format, patterns: S1.patterns, layout: null } })
+  })
+  stT = await (await fetch(BASE + '/api/state')).json()
+  assert.strictEqual(stT.state.poolTag, 'tag-a', 'PUT sans poolTag -> tag préservé')
+
+  // b) appareil resté hors ligne (pool local 'local-only', sans tag) : au
+  // premier pull le remplacement s'applique — local-only abandonné, tag
+  // mémorisé, rien du local repoussé.
+  const store2 = { slime_key: 'slime' }
+  const localOnly = JSON.parse(JSON.stringify(store.patterns[0])); localOnly.id = 'local-only'; localOnly.name = 'local'
+  store2['slime_patterns_v1'] = JSON.stringify({ format: 'slime-patterns@1', patterns: [localOnly], layout: null })
+  let lanPoll2 = null
+  const sandbox2 = {
+    console,
+    setTimeout, clearTimeout,
+    setInterval: (fn, ms) => { lanPoll2 = fn; return 2 },
+    clearInterval: () => {},
+    localStorage: {
+      getItem: k => (k in store2 ? store2[k] : null),
+      setItem: (k, v) => { store2[k] = String(v) },
+      removeItem: k => { delete store2[k] }
+    },
+    fetch: (url, opts) => fetch(BASE + url, opts),
+    location: { protocol: 'http:', origin: BASE },
+    window: null
+  }
+  sandbox2.window = { location: sandbox2.location }
+  const P2 = vm.runInContext(src + '\nPatterns', vm.createContext(sandbox2), { filename: 'patterns-bundle-2.js' })
+  await sleep(300)
+  assert.deepStrictEqual(P2.getPatterns().map(p => p.id), ['t1'], 'remplacement : pool = distant seul (local-only abandonné)')
+  assert.strictEqual(store2['slime_pool_tag'], 'tag-a', 'tag mémorisé localement')
+  stT = await (await fetch(BASE + '/api/state')).json()
+  assert.strictEqual(stT.state.patterns.length, 1, 'rien du local remplacé n\'est repoussé')
+
+  // c) même tag ensuite : la création locale survit au pull (fusion union).
+  const t9 = JSON.parse(JSON.stringify(S1.patterns[0])); t9.id = 't9'; t9.name = 'neuf'
+  P2.setPatternsRaw([S1.patterns[0], t9])
+  await sleep(300)
+  stT = await (await fetch(BASE + '/api/state')).json()
+  assert.deepStrictEqual(stT.state.patterns.map(p => p.id).sort(), ['t1', 't9'], 'création locale poussée')
+  // autre appareil : PUT direct (même tag), t9 absent du distant
+  await fetch(BASE + '/api/state', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Slime-Key': 'slime' },
+    body: JSON.stringify({ state: { format: S1.format, patterns: S1.patterns, layout: null, poolTag: 'tag-a' } })
+  })
+  await lanPoll2()
+  assert.deepStrictEqual(P2.getPatterns().map(p => p.id).sort(), ['t1', 't9'], 'même tag : fusion union, création locale conservée')
+  console.log('ok   poolTag : remplacement imposé au premier pull, fusion ensuite')
+
   console.log('TOUS LES TESTS PASSENT')
 } finally {
   srv.kill('SIGKILL')

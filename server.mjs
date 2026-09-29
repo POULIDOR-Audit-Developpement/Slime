@@ -160,7 +160,15 @@ export async function createHandler({ dataDir, writeKey }) {
           return send(res, 409, { error: 'revision perimee', rev: pool.rev })
         }
         pool.rev++
+        // poolTag : jeton de remplacement du pool (spec découverte). Une
+        // poussée qui ne le porte pas le préserve — seul un tag explicite
+        // change le jeton, et avec lui le mode d'adoption côté clients.
+        // Absent tant qu'aucun tag n'existe : la forme de l'état reste
+        // identique à l'avant (compat clients/tests).
+        const prevTag = pool.state && pool.state.poolTag
+        const tag = (typeof state.poolTag === 'string' && state.poolTag) || prevTag || null
         pool.state = { format: state.format, patterns: state.patterns, layout: state.layout || null }
+        if (tag) pool.state.poolTag = tag
         await savePool()
         console.log('[pool] rev ' + pool.rev + ' — ' + state.patterns.length + ' patterns (' + req.socket.remoteAddress + ')')
         return send(res, 200, { ok: true, rev: pool.rev })

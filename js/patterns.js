@@ -531,6 +531,30 @@ const Patterns = (() => {
     return { patterns: sortPool(patterns), added }
   }
 
+  // Jeton de remplacement du pool (spec découverte) : quand le poolTag
+  // distant change, le remplacement doit s'imposer AUX appareils — la fusion
+  // « rien n'est perdu » ressusciterait sinon les anciens patterns depuis
+  // leur miroir localStorage. Tag identique (ou absent) : union normale, les
+  // créations locales sont préservées.
+  const TAG_KEY = 'slime_pool_tag'
+  function storedTag() {
+    try { return localStorage.getItem(TAG_KEY) } catch (e) { return null }
+  }
+  function adoptRemote(state) {
+    const tag = typeof state.poolTag === 'string' && state.poolTag ? state.poolTag : null
+    const replaced = !!tag && tag !== storedTag()
+    let patterns, added = 0
+    if (replaced) patterns = state.patterns.slice()
+    else { const u = mergeRemoteUnion(state); patterns = u.patterns; added = u.added }
+    // store peut être null (premier pull avant tout load) : comparaison null-safe.
+    const changed = JSON.stringify([store ? store.patterns : null, layout]) !==
+      JSON.stringify([patterns, normalizeLayout(state.layout)])
+    installState(patterns, state.layout)
+    if (replaced) { try { localStorage.setItem(TAG_KEY, tag) } catch (e) {} }
+    if (changed) lanNotify('conflict')
+    return { replaced, added }
+  }
+
   async function lanApi(pathname, opts) {
     const res = await fetch(pathname, opts)
     if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -546,7 +570,7 @@ const Patterns = (() => {
     lan.rev = d.rev
     if (!validRemoteState(d.state)) return false
     if (!d.state.patterns.length && store && store.patterns.length) return false
-    installState(mergeRemoteUnion(d.state).patterns, d.state.layout)
+    adoptRemote(d.state)
     return true
   }
 
@@ -559,13 +583,8 @@ const Patterns = (() => {
     lan.rev = d.rev
     if (!validRemoteState(d.state)) return 0
     if (!d.state.patterns.length) return (store && store.patterns.length) || 0
-    const u = mergeRemoteUnion(d.state)
-    const changed = JSON.stringify([u.patterns, normalizeLayout(d.state.layout)]) !== JSON.stringify([store.patterns, layout])
-    if (changed) {
-      installState(u.patterns, d.state.layout)
-      lanNotify('conflict')
-    }
-    return u.added
+    const r = adoptRemote(d.state)
+    return r.replaced ? 0 : r.added
   }
 
   async function pushState(attempt) {
