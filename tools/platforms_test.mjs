@@ -237,7 +237,14 @@ function driverFn() {
     const viser = () => { aim = { on: true, x: slime.x, y: slime.y - PH().aimMax, id: -1, air: false } }
     fresh()
     const pd = platforms[0]
-    pd.type = 'dynamic'; pd.amp = 20; pd.spd = 1; pd.ph = 0; pd.baseY = pd.y // montante à gameT=0 (cos>0)
+    // Montante à l'écran à gameT=0 : cos(π) < 0 (repère y-vers-le-bas,
+    // d(y)/dt ∝ cos(θ) < 0 → y diminue → la plateforme monte).
+    pd.type = 'dynamic'; pd.amp = 20; pd.spd = 1; pd.ph = Math.PI; pd.baseY = pd.y
+    // Sanity : la fixture « montante » MONTE bien à l'écran (y diminue).
+    const y0 = pd.y
+    pd.y = pd.baseY + Math.sin((gameT + 0.1) * pd.spd * PLAT.spdMul + pd.ph) * pd.amp
+    check('fixture montante : y diminue (monte à l\'écran)', pd.y < y0)
+    pd.y = pd.baseY
     slime.grounded = true; slime.groundPlat = pd; slime.jumpMul = 1
     gameT = 0
     viser(); execJump()
@@ -247,14 +254,15 @@ function driverFn() {
     gameT = 0
     viser(); execJump()
     const vyBasic = slime.vy
-    check('dynamic montante : vy ×RHYTHM_MUL vs basic', Math.abs(vyMontante / (vyBasic * RHYTHM_MUL) - 1) < 0.001)
+    check('dynamic montante (cos<0) : vy ×RHYTHM_MUL vs basic', Math.abs(vyMontante / (vyBasic * RHYTHM_MUL) - 1) < 0.001)
     fresh()
     const pd2 = platforms[0]
-    pd2.type = 'dynamic'; pd2.amp = 20; pd2.spd = 1; pd2.ph = Math.PI; pd2.baseY = pd2.y // descendante (cos<0)
+    // Descendante à l'écran : cos(0) > 0 (d(y)/dt > 0 → y augmente).
+    pd2.type = 'dynamic'; pd2.amp = 20; pd2.spd = 1; pd2.ph = 0; pd2.baseY = pd2.y
     slime.grounded = true; slime.groundPlat = pd2; slime.jumpMul = 1
     gameT = 0
     viser(); execJump()
-    check('dynamic descendante : vy ×1', Math.abs(slime.vy / vyBasic - 1) < 0.001)
+    check('dynamic descendante (cos>0) : vy ×1', Math.abs(slime.vy / vyBasic - 1) < 0.001)
   })
 
   // --- T3 : SFX d'atterrissage par type ---

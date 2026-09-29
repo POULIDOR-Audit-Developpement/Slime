@@ -500,9 +500,9 @@ function execJump() {
     return
   }
   let mul = Phys.aimVel(dist(slime.x, slime.y, aim.x, aim.y)) * slime.jumpMul * (aim.air ? dj.powerMul : 1)
-  // Rythme des dynamiques : plateforme montante = saut amplifié (le cos est
-  // le signe de la dérive verticale de l'oscillation).
-  if (gp && gp.type === 'dynamic' && gp.amp > 0 && Math.cos(gameT * gp.spd * PLAT.spdMul + gp.ph) > 0) {
+  // Rythme des dynamiques : plateforme qui MONTE à l'écran = saut amplifié.
+  // Repère y-vers-le-bas : d(y)/dt ∝ cos(θ), donc « monte à l'écran » = cos(θ) < 0.
+  if (gp && gp.type === 'dynamic' && gp.amp > 0 && Math.cos(gameT * gp.spd * PLAT.spdMul + gp.ph) < 0) {
     mul *= RHYTHM_MUL
     burst(slime.x, slime.y - 10, C_BLUE_L, 8, 120)
   }
