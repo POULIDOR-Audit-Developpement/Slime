@@ -205,7 +205,10 @@ const Ed = (() => {
       for (let dx = 8; dx < w - 8; dx += 22) c.fillRect(p.x + dx, y + 5, 5, 5)
     } else if (p.type === 'seesaw') {
       // Bascule : planche inclinée (tilt simulé ±10°, cf. jeu : tilt × 0.17 rad)
-      // pivotant autour du centre, cercle pivot dessiné au centre.
+      // pivotant autour du centre, cercle pivot dessiné au centre. Save/restore
+      // interne : piques et rect de sélection (repère monde) ne doivent PAS
+      // hériter de la rotation.
+      c.save()
       c.translate(p.x + w / 2, y + 12)
       c.rotate(0.17)
       for (let i = 0; i < p.cells; i++) drawTileAt(c, -w / 2 + i * CELL, -12, COL.wood, COL.woodD)
@@ -215,6 +218,7 @@ const Ed = (() => {
       c.beginPath(); c.arc(0, 0, 4.5, 0, 7); c.fill()
       c.fillStyle = '#e8d5b5'
       c.beginPath(); c.arc(0, 0, 2, 0, 7); c.fill()
+      c.restore()
     } else {
       const tops = { basic: COL.basic, crumble: COL.crumble, ghost: COL.ghost, phase: COL.ghost,
         bouncy: COL.bouncy, turbo: COL.turbo, gold: COL.goldT }

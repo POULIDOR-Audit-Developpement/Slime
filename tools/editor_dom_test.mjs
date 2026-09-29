@@ -427,5 +427,20 @@ const store = {}
 const done = fn(documentStub, windowStub, { getItem: k => ls[k] ?? null, setItem: (k, v) => { ls[k] = String(v) }, removeItem: k => { delete ls[k] } }, () => false, class { set src(v) {} }, () => 0, els, check, windowStub)
 if (done && typeof done.then === 'function') await done
 
+// --- Régression fix review : transform scopé dans la preview bascule ---
+// Le mini-DOM n'exécute jamais drawPlatEditor (pas de boucle rAF) : on épingle
+// statiquement le scope de la branche seesaw — c.save() AVANT le
+// translate/rotate, c.restore() en fin de branche, une seule fois chacun —
+// sinon piques et rect de sélection seraient dessinés dans le repère tourné.
+{
+  const mSw = /p\.type === 'seesaw'\) \{([\s\S]*?)\n    \} else \{/.exec(src)
+  const body = mSw ? mSw[1] : ''
+  const nSave = (body.match(/c\.save\(\)/g) || []).length
+  const nRestore = (body.match(/c\.restore\(\)/g) || []).length
+  const okSw = !!mSw && /c\.save\(\)\s*c\.translate/.test(body) && /c\.restore\(\)\s*$/.test(body) && nSave === 1 && nRestore === 1
+  if (okSw) console.log('ok   preview seesaw : transform scopé (save/restore interne)')
+  else { failed++; console.log('FAIL preview seesaw : transform scopé (save/restore interne)') }
+}
+
 if (failed) { console.error(failed + ' ÉCHEC(S)'); process.exit(1) }
 console.log('\nDOM OK — panneaux PHYS et COULEURS fonctionnels')
