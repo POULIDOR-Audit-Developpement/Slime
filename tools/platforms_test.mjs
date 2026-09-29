@@ -360,6 +360,91 @@ function driverFn() {
     try { state = 'playing'; draw() } catch (e) { check('draw() avec phasante (' + e.message + ')', false) }
   })
 
+  // ================= T5 : turbo et dorée =================
+
+  section('T5 : turbo — execJump amplifie vx (borné)', () => {
+    // Visée horizontale de distance 93.6 -> aimVel = 300 -> turbo ×1.5 = 450.
+    fresh()
+    const pTb = { x: 100, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
+    platforms.push(pTb)
+    slime.grounded = true; slime.groundPlat = pTb; slime.jumpMul = 1
+    slime.x = pTb.x + 40; slime.y = pTb.y - slime.r; slime.vx = 0; slime.vy = 0
+    aim = { on: true, x: slime.x + 93.6, y: slime.y, id: -1, air: false }
+    execJump()
+    check('turbo : vx 300 -> 450 (×TURBO_MUL)', Math.abs(slime.vx - 300 * TURBO_MUL) < 0.001 && slime.turboT === 0.6)
+    // vmin = 100 (layout) : visée courte -> vx 100 -> plancher TURBO_MIN.
+    fresh({ vmin: 100 })
+    const pTb2 = { x: 100, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
+    platforms.push(pTb2)
+    slime.grounded = true; slime.groundPlat = pTb2; slime.jumpMul = 1
+    slime.x = pTb2.x + 40; slime.y = pTb2.y - slime.r; slime.vx = 0; slime.vy = 0
+    aim = { on: true, x: slime.x + 10, y: slime.y, id: -1, air: false } // < aimMin -> vmin
+    execJump()
+    check('turbo : vx 100 -> 180 (plancher TURBO_MIN)', Math.abs(slime.vx - TURBO_MIN) < 0.001)
+    check('couleurs turbo/dorée définies', typeof C_TURBO_TOP === 'number' && typeof C_TURBO_SIDE === 'number' && typeof C_GOLD_TOP === 'number' && typeof C_GOLD_SIDE === 'number' && typeof C_GOLD_L === 'number')
+  })
+
+  section('T5 : turbo — quitter le bord lance le slime', () => {
+    // Plateforme en haut à droite du cadre : la sortie de bord (x > bord+10)
+    // reste loin des murs de damage et au-dessus de toute autre plateforme.
+    const pTw = { x: 200, y: rowY(0), baseY: rowY(0), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
+    // dragAir 1 : sans cela, une frame de traînée aérienne dégrade vx (le check
+    // exact 540/180 serait frotté à ~0.99 par le dragAir par défaut 0.6).
+    // noCatchT 0.5 : isole le lancement — sinon le ledge catch de la propre
+    // plateforme peut rattraper le slime à la 1re frame (voir rapport).
+    fresh({ dragAir: 1 })
+    platforms.push(pTw)
+    slime.grounded = true; slime.groundPlat = pTw
+    slime.x = pTw.x + pTw.w + 11 // déjà hors du bord (+10 de tolérance)
+    slime.y = pTw.y - slime.r
+    slime.vx = 500; slime.vy = 0; slime.face = 1; slime.noCatchT = 0.5
+    update(1 / 60)
+    check('walk-off rapide : vx 500 -> 540 (cap vmax×TURBO_MUL)', Math.abs(slime.vx - 540) < 0.001 && !slime.grounded && slime.turboT === 0.6)
+    fresh({ dragAir: 1 })
+    platforms.push(pTw)
+    slime.grounded = true; slime.groundPlat = pTw
+    slime.x = pTw.x + pTw.w + 11
+    slime.y = pTw.y - slime.r
+    slime.vx = 0; slime.vy = 0; slime.face = 1; slime.noCatchT = 0.5
+    update(1 / 60)
+    check('walk-off à l\'arrêt : lancement >= 180 selon la face', slime.vx >= TURBO_MIN && slime.face === 1 && slime.turboT > 0)
+    // turboT s'épuise (décompte simple)
+    slime.turboT = 0.6
+    slime.grounded = true; slime.groundPlat = platforms[0]
+    slime.x = platforms[0].x + 80; slime.y = platforms[0].y - slime.r; slime.vx = 0; slime.vy = 0
+    for (let f = 0; f < 40; f++) update(1 / 60)
+    check('turboT s\'épuise', slime.turboT <= 0)
+  })
+
+  section('T5 : dorée — +1 saut aérien pendant 10 s', () => {
+    fresh()
+    const pGold = { x: 340, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'gold', amp: 0, spd: 0, ph: 0, spike: null }
+    platforms.push(pGold)
+    slime.x = pGold.x + 40
+    slime.y = pGold.y - slime.r
+    slime.vx = 0; slime.vy = -100
+    land(pGold)
+    check('gold : goldT = GOLD_AIRJUMP_T au posé', slime.goldT === GOLD_AIRJUMP_T)
+    check('gold : airJumps = charges + 1 dès le posé', slime.airJumps === POWERS.doubleJump.charges + 1)
+    // le saut aérien bonus est consommable
+    slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
+    aim = { on: true, x: slime.x + 30, y: slime.y - 40, id: -1, air: true }
+    execJump()
+    check('gold : le double saut consomme la charge bonus', slime.airJumps === POWERS.doubleJump.charges && slime.djCd > 0)
+    // atterrissage sur basic pendant goldT : recharge charges+1
+    const pb = { x: 0, y: 100, baseY: 100, w: CELL, type: 'basic', amp: 0, spd: 0, ph: 0, spike: null }
+    land(pb)
+    check('gold actif : land sur basic recharge charges+1', slime.airJumps === POWERS.doubleJump.charges + 1)
+    // expiration : goldT -> 0 (airJumps rabotés aux charges) puis land basic = charges
+    slime.grounded = true; slime.groundPlat = pGold
+    slime.x = pGold.x + 40; slime.y = pGold.y - slime.r; slime.vx = 0; slime.vy = 0
+    let f = 0
+    while (slime.goldT > 0 && f++ < 700) update(1 / 60)
+    check('gold : goldT expire après 10 s', slime.goldT === 0 && f > 500)
+    land(pb)
+    check('gold expiré : land sur basic recharge charges', slime.airJumps === POWERS.doubleJump.charges)
+  })
+
   console.log(fails === 0 ? '\nPLATFORMS OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('platforms_test failed')
 }

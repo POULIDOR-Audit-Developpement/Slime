@@ -148,6 +148,11 @@ const COLORS = [
   '#4a5ed7', '#5f74e3', '#4152c8', '#3946a8', '#6b83ec',
   '#131735', '#20264f',
   '#6b1d1d', '#c98d4b',
+  // « Plateformes fun » : turbo (cyan électrique) et dorée (or clair/sombre +
+  // doré très clair pour les traînées). Insérées AVANT les 3 couleurs
+  // « présentation » : C_PAGE/C_PANEL2/C_LOGO_D sont indexées depuis la fin.
+  '#9ef2ff', '#2e9ed6',
+  '#ffe066', '#d99e0b', '#fff3b0',
   // Style « présentation » : fond vitrine, panneaux, ombre du logo.
   '#05050e', '#1c2148', '#12521d'
 ]
@@ -169,6 +174,9 @@ const C_GOLD = 32
 const C_BLUE = 33, C_BLUE_L = 34, C_BLUE_D = 35, C_BLUE_XD = 36, C_BLUE_HI = 37
 const C_FRAME = 38, C_FRAME_L = 39, C_LIFE_EMPTY = 40
 const C_S_HI = 41
+// « Plateformes fun » : turbo et dorée (cf. commentaire dans COLORS).
+const C_TURBO_TOP = 42, C_TURBO_SIDE = 43
+const C_GOLD_TOP = 44, C_GOLD_SIDE = 45, C_GOLD_L = 46
 
 // ---------- Paliers score -> couleur (éditables dans settings.html) ----------
 // La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
@@ -481,6 +489,14 @@ function execJump() {
   const ang = Math.atan2(aim.y - slime.y, aim.x - slime.x)
   slime.vx = Math.cos(ang) * mul
   slime.vy = Math.sin(ang) * mul
+  // Turbo : lancement horizontal amplifié (signe conservé, vy intact) — lu sur
+  // gp AVANT que groundPlat soit annulé plus bas.
+  if (gp && gp.type === 'turbo') {
+    const d = slime.vx >= 0 ? 1 : -1
+    slime.vx = d * Math.max(TURBO_MIN, Math.min(Math.abs(slime.vx) * TURBO_MUL, PH().vmax * TURBO_MUL))
+    slime.turboT = 0.6
+    sfx(SFX_WHOOSH)
+  }
   slime.face = aim.x >= slime.x ? 1 : -1
   // Saut pendant la remontée : interrompt le pull-up proprement (pas de glissade).
   if (slime.pull) {
@@ -512,7 +528,14 @@ function land(p) {
   // de double saut en cours devient une visée de saut au sol (slow-mo coupé).
   // Combo de rebonds : tout atterrissage non-orange remet le compteur à zéro.
   if (p.type !== 'bouncy') slime.bounceCombo = 0
-  slime.airJumps = POWERS.doubleJump.charges
+  // Dorée : goldT posé AVANT la ligne de recharge -> le +1 de saut aérien
+  // s'applique dès le premier atterrissage doré (ruling controller).
+  if (p.type === 'gold') {
+    slime.goldT = GOLD_AIRJUMP_T
+    burst(p.x + p.w / 2, p.y - 8, C_GOLD_L, 14, 160)
+    sfx(SFX_GOLD)
+  }
+  slime.airJumps = POWERS.doubleJump.charges + (slime.goldT > 0 ? 1 : 0)
   if (aim.on && aim.air) { aim.air = false; slowmoT = 0 }
   if (p.type === 'bouncy') {
     const P = PH()
@@ -621,6 +644,18 @@ function updSlime(dt) {
   const prevY = slime.y
   if (slime.noCatchT > 0) slime.noCatchT -= dt
   if (slime.pumpT > 0) slime.pumpT -= dt
+  // Dorée : le bonus de saut s'efface avec goldT (raboté aux charges normales,
+  // jamais en dessous) ; traînée dorée épisodique (événement ~8/s, pas un
+  // coût fixe par frame). Turbo : simple décompte.
+  if (slime.goldT > 0) {
+    slime.goldT -= dt
+    if (slime.goldT <= 0) {
+      slime.goldT = 0
+      slime.airJumps = Math.min(slime.airJumps, POWERS.doubleJump.charges)
+    }
+    if (Math.random() < dt * 8) burst(slime.x, slime.y, C_GOLD_L, 1, 30)
+  }
+  if (slime.turboT > 0) slime.turboT -= dt
   if (slime.pull) {
     updPull(dt)
     return
@@ -629,6 +664,13 @@ function updSlime(dt) {
     const p = slime.groundPlat
     // Phasante traversable : le slime décroche et TOMBE (pas de killPlat).
     if (!p || p.dead || !solide(p) || slime.x < p.x - 10 || slime.x > p.x + p.w + 10) {
+      // Turbo : quitter le bord LANCE le slime (même à l'arrêt, selon la face).
+      if (p && !p.dead && p.type === 'turbo') {
+        const d = slime.face
+        slime.vx = d * Math.max(TURBO_MIN, Math.min(Math.abs(slime.vx) * TURBO_MUL, PH().vmax * TURBO_MUL))
+        slime.turboT = 0.6
+        sfx(SFX_WHOOSH)
+      }
       slime.grounded = false
       slime.groundPlat = null
       // Quitter le sol sans sauter : fenêtre de coyote encore disponible.
