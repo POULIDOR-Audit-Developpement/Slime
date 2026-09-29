@@ -477,8 +477,29 @@ function makeDeathCode() {
 function execJump() {
   const dj = POWERS.doubleJump
   // Ref locale : la plateforme de départ est annulée plus bas (saut au sol)
-  // mais ses bonus (rythme des dynamiques, turbo) se lisent avant.
+  // mais ses spécificités (bascule, rythme des dynamiques, turbo) se lisent
+  // avant.
   const gp = slime.groundPlat
+  // Bascule : lancement fixe opposé à l'inclinaison (famille rebond), UNIQUEMENT
+  // posé au sol — ne touche ni airJumps ni djCd et n'utilise jamais la visée
+  // (le double saut aérien reste un saut standard).
+  if (gp && gp.type === 'seesaw' && !aim.air) {
+    slime.vx = -gp.tilt * BASCULE_VX
+    slime.vy = -PH().bounceVy * BASCULE_VY_MUL
+    slime.face = slime.vx >= 0 ? 1 : -1
+    slime.grounded = false
+    slime.groundPlat = null
+    gp.tilt = 0
+    slime.squashT = 0.12
+    sfx(SFX_LAND, 5, 0.8)
+    runStarted = true
+    Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
+    aim.on = false
+    aimPad = null
+    slowmoT = 0
+    slime.coyote = 0
+    return
+  }
   let mul = Phys.aimVel(dist(slime.x, slime.y, aim.x, aim.y)) * slime.jumpMul * (aim.air ? dj.powerMul : 1)
   // Rythme des dynamiques : plateforme montante = saut amplifié (le cos est
   // le signe de la dérive verticale de l'oscillation).
@@ -489,8 +510,7 @@ function execJump() {
   const ang = Math.atan2(aim.y - slime.y, aim.x - slime.x)
   slime.vx = Math.cos(ang) * mul
   slime.vy = Math.sin(ang) * mul
-  // Turbo : lancement horizontal amplifié (signe conservé, vy intact) — lu sur
-  // gp AVANT que groundPlat soit annulé plus bas.
+  // Turbo : lancement horizontal amplifié (signe conservé, vy intact).
   if (gp && gp.type === 'turbo') {
     const d = slime.vx >= 0 ? 1 : -1
     slime.vx = d * Math.max(TURBO_MIN, Math.min(Math.abs(slime.vx) * TURBO_MUL, PH().vmax * TURBO_MUL))
@@ -553,6 +573,9 @@ function land(p) {
   slime.y = p.y - slime.r
   slime.squashT = 0.1
   slime.jumpMul = p.type === 'sticky' ? PH().stickyMul : 1
+  // Bascule : l'inclinaison suit le côté du posé (purement visuelle — la
+  // collision reste plate) ; remise à 0 au lancement (execJump).
+  if (p.type === 'seesaw') p.tilt = slime.x < p.x + p.w / 2 ? -1 : 1
   if (p.type === 'crumble' && !p.crackT) p.crackT = p.crumbleT || PLAT.crumbleT
   sfx(SFX_LAND, SFX_LAND_PITCH[p.type] || 0, 0.2)
 }
@@ -1223,20 +1246,27 @@ function drawPlat(p) {
       }
     } else {
       const keys = { basic: 'tileGreen', crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange' }
+      // Bascule : tuiles pivotantes autour du centre de la plateforme
+      // (inclinaison purement visuelle) — un seul translate/rotate, tuiles
+      // dessinées en coordonnées relatives au pivot.
+      const sw = p.type === 'seesaw'
+      if (sw) push(p.x + jx + p.w / 2, p.y + 12, (p.tilt || 0) * 0.17, 1, 1)
       for (let i = 0; i < n; i++) {
-        const tx = p.x + jx + i * CELL
-        Sprites.drawImage(keys[p.type] || 'tileGreen', tx, p.y, CELL, 24)
+        const tx = sw ? -p.w / 2 + i * CELL : p.x + jx + i * CELL
+        const ty = sw ? -12 : p.y
+        Sprites.drawImage(keys[p.type] || 'tileGreen', tx, ty, CELL, 24)
         if (p.type === 'crumble') {
-          rectfill(tx + 9, p.y + 6, 2, 8, C_CR_DARK)
-          rectfill(tx + 20, p.y + 10, 2, 6, C_CR_DARK)
+          rectfill(tx + 9, ty + 6, 2, 8, C_CR_DARK)
+          rectfill(tx + 20, ty + 10, 2, 6, C_CR_DARK)
         }
         if (p.type === 'bouncy') {
-          shape([tx + 7, p.y + 14, tx + 13, p.y + 7, tx + 19, p.y + 14])
+          shape([tx + 7, ty + 14, tx + 13, ty + 7, tx + 19, ty + 14])
           fill(C_WHITE)
-          shape([tx + 15, p.y + 14, tx + 21, p.y + 7, tx + 27, p.y + 14])
+          shape([tx + 15, ty + 14, tx + 21, ty + 7, tx + 27, ty + 14])
           fill(C_WHITE)
         }
       }
+      if (sw) pop()
     }
     if (p.type === 'phase') alpha(1)
     if (p.spike) {
@@ -1263,23 +1293,29 @@ function drawPlat(p) {
     }
     for (let c = 8; c < p.w - 8; c += 24) rectfill(p.x + c, p.y + 4, 9, 4, C_S_HI)
   } else {
+    // Bascule : pivot au centre, tuiles en coordonnées relatives (cf. chemin
+    // sprites) — push/pop une fois, boucle de cellules relative.
+    const sw = p.type === 'seesaw'
+    if (sw) push(p.x + jx + p.w / 2, p.y + 12, (p.tilt || 0) * 0.17, 1, 1)
     for (let i = 0; i < n; i++) {
-      const tx = p.x + jx + i * CELL
+      const tx = sw ? -p.w / 2 + i * CELL : p.x + jx + i * CELL
+      const ty = sw ? -12 : p.y
       const tops = { basic: C_P_TOP, dynamic: C_D_TOP, crumble: C_CR_TOP, phase: C_GH_TOP, bouncy: C_ORANGE }
       const sides = { basic: C_P_SIDE, dynamic: C_D_SIDE, crumble: C_CR_SIDE, phase: C_GH_SIDE, bouncy: C_BO_SIDE }
-      drawTile(tx, p.y, tops[p.type] || C_P_TOP, sides[p.type] || C_P_SIDE)
+      drawTile(tx, ty, tops[p.type] || C_P_TOP, sides[p.type] || C_P_SIDE)
       if (p.type === 'crumble') {
-        rectfill(tx + 8, p.y + 4, 2, 9, C_CR_DARK)
-        rectfill(tx + 18, p.y + 7, 2, 7, C_CR_DARK)
-        rectfill(tx + 13, p.y + 13, 2, 5, C_CR_DARK)
+        rectfill(tx + 8, ty + 4, 2, 9, C_CR_DARK)
+        rectfill(tx + 18, ty + 7, 2, 7, C_CR_DARK)
+        rectfill(tx + 13, ty + 13, 2, 5, C_CR_DARK)
       }
       if (p.type === 'bouncy') {
-        shape([tx + 6, p.y + 10, tx + 12, p.y + 4, tx + 18, p.y + 10])
+        shape([tx + 6, ty + 10, tx + 12, ty + 4, tx + 18, ty + 10])
         fill(C_WHITE)
-        shape([tx + 14, p.y + 10, tx + 20, p.y + 4, tx + 26, p.y + 10])
+        shape([tx + 14, ty + 10, tx + 20, ty + 4, tx + 26, ty + 10])
         fill(C_WHITE)
       }
     }
+    if (sw) pop()
   }
   if (p.type === 'phase') alpha(1)
   if (p.spike) {

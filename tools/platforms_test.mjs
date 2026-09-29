@@ -445,6 +445,59 @@ function driverFn() {
     check('gold expiré : land sur basic recharge charges', slime.airJumps === POWERS.doubleJump.charges)
   })
 
+  // ================= T6 : bascule =================
+
+  section('T6 : bascule — tilt au posé, lancement opposé', () => {
+    fresh()
+    const pSw = { x: 100, y: rowY(2), baseY: rowY(2), w: 4 * CELL, type: 'seesaw', amp: 0, spd: 0, ph: 0, spike: null }
+    platforms.push(pSw)
+    slime.x = pSw.x + 20 // côté gauche (centre = x + 64)
+    slime.y = pSw.y - slime.r
+    slime.vx = 0; slime.vy = -100
+    land(pSw)
+    check('land à gauche -> tilt -1', pSw.tilt === -1)
+    check('seesaw : jumpMul neutre (pas la branche sticky)', slime.jumpMul === 1)
+    slime.x = pSw.x + pSw.w - 20 // côté droit
+    land(pSw)
+    check('land à droite -> tilt +1', pSw.tilt === 1)
+    // lancement opposé à l'inclinaison (visée posée mais IGNORÉE)
+    slime.x = pSw.x + 20
+    land(pSw) // tilt -1
+    const ch = POWERS.doubleJump.charges
+    check('charges pleines avant le lancement', slime.airJumps === ch && slime.djCd === 0)
+    aim = { on: true, x: slime.x + 200, y: slime.y - 80, id: -1, air: false }
+    execJump()
+    check('lancement : vx = +BASCULE_VX (tilt -1 -> vers la droite)', slime.vx === BASCULE_VX)
+    check('lancement : vy = -bounceVy × BASCULE_VY_MUL', Math.abs(slime.vy + PH().bounceVy * BASCULE_VY_MUL) < 0.001)
+    check('lancement : tilt remis à 0', pSw.tilt === 0)
+    check('lancement : ni charge aérienne ni cooldown consommés', slime.airJumps === ch && slime.djCd === 0)
+    check('lancement : visée fermée, slime décollé', !slime.grounded && slime.groundPlat === null && aim.on === false)
+    check('lancement : face vers le sens du départ', slime.face === 1)
+  })
+
+  section('T6 : bascule — visée aérienne = double saut, jamais bascule', () => {
+    fresh()
+    const pSw2 = { x: 100, y: rowY(2), baseY: rowY(2), w: 4 * CELL, type: 'seesaw', amp: 0, spd: 0, ph: 0, spike: null }
+    platforms.push(pSw2)
+    // en l'air au-dessus de la bascule (artifice : groundPlat encore branché)
+    slime.grounded = false; slime.groundPlat = pSw2; slime.pull = null; slime.coyote = 0
+    slime.airJumps = POWERS.doubleJump.charges; slime.djCd = 0
+    pSw2.tilt = -1
+    aim = { on: true, x: slime.x + 30, y: slime.y - 40, id: -1, air: true }
+    execJump()
+    check('en l\'air : double saut standard (charge + cooldown)', slime.airJumps === POWERS.doubleJump.charges - 1 && slime.djCd > 0)
+    check('en l\'air : vy visé (pas le lancement fixe -360)', Math.abs(slime.vy + PH().bounceVy * BASCULE_VY_MUL) > 50)
+    check('en l\'air : tilt intact', pSw2.tilt === -1)
+  })
+
+  section('T6 : bascule — rendu pivot sans exception', () => {
+    fresh()
+    const pSw3 = { x: 100, y: rowY(2), baseY: rowY(2), w: 4 * CELL, type: 'seesaw', amp: 0, spd: 0, ph: 0, spike: null }
+    platforms.push(pSw3)
+    pSw3.tilt = -1
+    try { state = 'playing'; draw() } catch (e) { check('draw() avec bascule inclinée (' + e.message + ')', false) }
+  })
+
   console.log(fails === 0 ? '\nPLATFORMS OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('platforms_test failed')
 }
