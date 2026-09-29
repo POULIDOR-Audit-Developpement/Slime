@@ -245,11 +245,12 @@ const Patterns = (() => {
     const noLedge = { catchable: opts.catchable }
     if (a.type === 'bouncy' || a.type === 'seesaw') {
       // Bascule : même famille rebond (bounce, bounce+dj) mais avec la
-      // vitesse de lancement qui lui est propre (BASCULE_VX, -BOUNCE_VY
-      // × BASCULE_VY_MUL) — cf. execJump côté jeu.
+      // vitesse de lancement qui lui est propre (BASCULE_VX, -phys().bounceVy
+      // × BASCULE_VY_MUL — réglage live de l'onglet PHYS, cf. execJump côté
+      // jeu). Le bounce standard garde les défauts live de Phys (physCfg).
       const bascule = a.type === 'seesaw'
       const vx = bascule ? BASCULE_VX : undefined
-      const vy = bascule ? -BOUNCE_VY * BASCULE_VY_MUL : undefined
+      const vy = bascule ? -Phys.phys().bounceVy * BASCULE_VY_MUL : undefined
       if (Phys.canReachBounce(a, tgt, walls, opts, vx, vy)) return { ok: true, via: 'bounce', okSimple: true }
       if (budget && budget.dj > 0 && dj.enabled &&
           Phys.canReachBounceExt(a, tgt, walls, dj, opts, vx, vy)) {

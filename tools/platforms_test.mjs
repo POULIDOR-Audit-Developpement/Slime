@@ -165,7 +165,7 @@ async function driverFn() {
     // Le pool régénéré contient au moins 1 pattern avec chaque nouveau type
     const pool = Patterns.defaults()
     for (const t of ['phase', 'turbo', 'gold', 'seesaw']) check('pool contient ' + t, pool.some(p => p.platforms.some(q => q.type === t)))
-    check('gold rare (<= 2% des plateformes)', (() => { const all = pool.flatMap(p => p.platforms); return all.filter(q => q.type === 'gold').length / all.length <= 0.04 })())
+    check('gold rare (<= 4 % des plateformes)', (() => { const all = pool.flatMap(p => p.platforms); return all.filter(q => q.type === 'gold').length / all.length <= 0.04 })())
     check('phase jamais > 2 consécutives dans un pattern', pool.every(p => { let c = 0; for (const q of p.platforms) { c = q.type === 'phase' ? c + 1 : 0; if (c > 2) return false } return true }))
     check('gold max 1 par pattern', pool.every(p => p.platforms.filter(q => q.type === 'gold').length <= 1))
   })

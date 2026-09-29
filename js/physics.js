@@ -122,8 +122,9 @@ const Phys = (() => {
   //   grandes vitesses de chute).
   // - Accroche (ledge catch) : même fenêtre que tryLedgeCatch (game.js) — en
   //   descente, bas du slime franchissant le bord de la plateforme de quelques
-  //   pixels (opts.ledge = fenêtre en px) ; les éphémères (ghost) ne sont pas
-  //   rattrapables (opts.catchable).
+  //   pixels (opts.ledge = fenêtre en px). opts.catchable = false retire
+  //   l'accroche (le jeu l'utilise pour la phasante, qu'il exclut lui-même des
+  //   collisions quand elle est traversable).
   // `walls` : murs verticaux optionnels [{ x, y1, y2, w, spiked }] — la
   // trajectoire qui les traverse est invalidée (le sommet, lui, reste
   // atteignable : l'atterrissage est testé avant l'obstacle).

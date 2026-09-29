@@ -594,7 +594,8 @@ const solide = p => p.type !== 'phase' || Phys.phaseSolid(p, gameT)
 // il s'y agrippe in-extremis et se hisse immédiatement dessus : la remontée
 // dure pullT secondes (« pulled up time »), à la fin il est posé. Un appui
 // pendant la remontée permet de viser un saut. Les effets « atterrissage »
-// s'appliquent dès l'accroche (casse, timer, disparition éphémère).
+// s'appliquent dès l'accroche (casse de la friable) ; la phasante en phase
+// traversable n'est pas accrochable (non solide, cf. solide()).
 function tryLedgeCatch(prevY) {
   const win = POWERS.ledge.window
   for (const p of platforms) {
@@ -878,8 +879,9 @@ function update_(dt) {
   for (const p of platforms) {
     if (p.type === 'dynamic') p.y = p.baseY + Math.sin(gameT * p.spd * PLAT.spdMul + p.ph) * p.amp
     // Cassable télégraphée : à mi-crise, craquement + flag de rendu (le
-    // décompte continue en dessous jusqu'à la casse).
-    if (p.crackT > 0 && !p.crackWarn && p.crackT <= CRUMBLE_T / 2) {
+    // décompte continue en dessous jusqu'à la casse). Seuil = délai live
+    // (éditable 0.2-2 s par plateforme, sinon réglage global VUE).
+    if (p.crackT > 0 && !p.crackWarn && p.crackT <= (p.crumbleT || PLAT.crumbleT) / 2) {
       p.crackWarn = true
       sfx(SFX_CRACK, 0, 0.5)
     }

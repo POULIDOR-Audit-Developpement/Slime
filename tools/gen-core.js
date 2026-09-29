@@ -12,7 +12,8 @@ function generateDefaultPool(opts) {
   const seed = opts.seed != null ? opts.seed : 20260921
 
   // Temps simulé par difficulté : reprend les paliers du générateur d'origine
-  // (D = elapsed/75, déblocages progressifs des types — cf. seuils du roll).
+  // (D = elapsed/75, déblocages progressifs des types — cf. seuils du roll ;
+  // pics sur les basic larges posés à partir de 20 s — cf. roll spike).
   const TIER_T = [14, 26, 45, 62, 90]
 
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v))
