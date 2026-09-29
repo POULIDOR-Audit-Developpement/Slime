@@ -96,7 +96,7 @@ async function driverFn() {
   Patterns.load()
 
   // --- 1) constantes du plan (valeurs exactes) ---
-  check('STICKY_MUL 1.15', typeof STICKY_MUL !== 'undefined' && STICKY_MUL === 1.15)
+  check('STICKY_MUL 0.8', typeof STICKY_MUL !== 'undefined' && STICKY_MUL === 0.8)
   check('CRUMBLE_T 0.8', typeof CRUMBLE_T !== 'undefined' && CRUMBLE_T === 0.8)
   check('PHASE_CYCLE 2.0', typeof PHASE_CYCLE !== 'undefined' && PHASE_CYCLE === 2.0)
   check('PHASE_SOLID 0.6', typeof PHASE_SOLID !== 'undefined' && PHASE_SOLID === 0.6)
@@ -119,7 +119,7 @@ async function driverFn() {
 
   // --- 3) normPhys : le défaut stickyMul ne doit pas être écrasé par la borne ---
   const np = Phys.normalize(null)
-  check('normPhys garde stickyMul 1.15', np.stickyMul === 1.15)
+  check('normPhys garde stickyMul défaut 0.8', np.stickyMul === 0.8)
 
   // --- 4) canReachBounce : surcharges vx/vy (ruling : l'appel à 6 arguments
   // fonctionne) — la surcharge est réellement consommée : la cible ci-dessous
@@ -209,7 +209,7 @@ async function driverFn() {
     fresh()
     const ps = { x: 0, y: 100, baseY: 100, w: 3 * CELL, type: 'sticky', amp: 0, spd: 0, ph: 0, spike: null }
     land(ps)
-    check('sticky : land -> jumpMul 1.15', slime.jumpMul === PH().stickyMul && PH().stickyMul === 1.15)
+    check('sticky : land -> jumpMul défaut 0.8', slime.jumpMul === PH().stickyMul && PH().stickyMul === 0.8)
   })
 
   // --- T3 : crumble télégraphé puis cassé ---
@@ -388,15 +388,15 @@ async function driverFn() {
   // ================= T5 : turbo et dorée =================
 
   section('T5 : turbo — execJump amplifie vx (borné)', () => {
-    // Visée horizontale de distance 93.6 -> aimVel = 300 -> turbo ×1.5 = 450.
+    // Visée horizontale à l'aimMax (90 px) -> aimVel = vmax (380) -> turbo ×1.5 = 570.
     fresh()
     const pTb = { x: 100, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
     platforms.push(pTb)
     slime.grounded = true; slime.groundPlat = pTb; slime.jumpMul = 1
     slime.x = pTb.x + 40; slime.y = pTb.y - slime.r; slime.vx = 0; slime.vy = 0
-    aim = { on: true, x: slime.x + 93.6, y: slime.y, id: -1, air: false }
+    aim = { on: true, x: slime.x + 90, y: slime.y, id: -1, air: false }
     execJump()
-    check('turbo : vx 300 -> 450 (×TURBO_MUL)', Math.abs(slime.vx - 300 * TURBO_MUL) < 0.001 && slime.turboT === 0.6)
+    check('turbo : vx 380 -> 570 (×TURBO_MUL)', Math.abs(slime.vx - 380 * TURBO_MUL) < 0.001 && slime.turboT === 0.6)
     // vmin = 100 (layout) : visée courte -> vx 100 -> plancher TURBO_MIN.
     fresh({ vmin: 100 })
     const pTb2 = { x: 100, y: rowY(2), baseY: rowY(2), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
@@ -414,7 +414,7 @@ async function driverFn() {
     // reste loin des murs de damage et au-dessus de toute autre plateforme.
     const pTw = { x: 200, y: rowY(0), baseY: rowY(0), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
     // dragAir 1 : sans cela, une frame de traînée aérienne dégrade vx (le check
-    // exact 540/180 serait frotté à ~0.99 par le dragAir par défaut 0.6).
+    // exact 570/180 serait frotté à ~0.99 par le dragAir par défaut 0.6).
     // noCatchT laissé à 0 : le walk-off doit LUI-MÊME fermer la fenêtre
     // d'accroche (ruling) — sinon le ledge catch du propre bord rattrape le
     // slime à la 1re frame (à l'arrêt : vx 180 -> x fin de frame = bord+14,
@@ -426,7 +426,7 @@ async function driverFn() {
     slime.y = pTw.y - slime.r
     slime.vx = 500; slime.vy = 0; slime.face = 1; slime.noCatchT = 0
     update(1 / 60)
-    check('walk-off rapide : vx 500 -> 540 (cap vmax×TURBO_MUL)', Math.abs(slime.vx - 540) < 0.001 && !slime.grounded && slime.turboT === 0.6)
+    check('walk-off rapide : vx 500 -> 570 (cap vmax×TURBO_MUL)', Math.abs(slime.vx - 570) < 0.001 && !slime.grounded && slime.turboT === 0.6)
     check('walk-off turbo : fenêtre d\'accroche fermée (noCatchT > 0)', slime.noCatchT > 0)
     fresh({ dragAir: 1 })
     platforms.push(pTw)

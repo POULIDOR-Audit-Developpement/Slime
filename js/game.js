@@ -49,7 +49,7 @@ function drawOuterFrame() {
 const VERSION = '4.0'
 // Murs de damage latéraux issus du layout éditable (onglet VUE de l'éditeur).
 // Plus de plafond : le haut du monde est ouvert (grands sauts autorisés).
-let WALL = { left: TIP_L, right: SPIKE_W }
+let WALL = { left: WALL_DEF.left, right: WALL_DEF.right }
 // Réglages globaux des plateformes (onglet VUE), surchargés par plateforme.
 // (plus de dynLife : les dynamiques n'ont plus de timer de disparition)
 let PLAT = { crumbleT: CRUMBLE_T, spdMul: 1 }

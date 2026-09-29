@@ -79,7 +79,7 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   // reset
   els.btnResetPhys.handlers.click()
   check('reset -> grav défaut 620', Patterns.getLayout().phys.grav === 620 && Phys.phys().grav === 620)
-  check('reset -> slimeR défaut 14', Patterns.getLayout().phys.slimeR === 14)
+  check('reset -> slimeR défaut 11', Patterns.getLayout().phys.slimeR === 11)
   // retour PATTERNS : classe retirée
   Ed.setMode('patterns')
   check('retour patterns : classe phys retirée', !main.classList.contains('phys'))
@@ -186,7 +186,7 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   L0.walls.left = 40; L0.phys.grav = 777
   Patterns.setLayout(L0)
   els.btnResetL.handlers.click()
-  check('reset murs : gauche défaut 11, pas de plafond', Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.ceil === undefined)
+  check('reset murs : gauche défaut 4, pas de plafond', Patterns.getLayout().walls.left === 4 && Patterns.getLayout().walls.ceil === undefined)
   check('reset murs : phys préservée (grav 777)', Patterns.getLayout().phys.grav === 777)
   check('reset murs : plat préservée', Patterns.getLayout().plat.crumbleT === 0.8)
   Phys.setPhys(Patterns.getLayout().phys)

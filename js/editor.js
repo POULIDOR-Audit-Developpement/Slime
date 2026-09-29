@@ -972,7 +972,7 @@ const Ed = (() => {
     on('oDW', 'change', e => { L.decor[selIdx].w = Math.max(10, parseInt(e.target.value, 10) || 60); Patterns.setLayout(L); persistSilent() })
     on('oDel', 'click', () => { L.decor.splice(selIdx, 1); selKind = null; selIdx = -1; Patterns.setLayout(L); persistSilent(); renderProps() })
     on('btnResetL', 'click', () => {
-      Patterns.setLayout({ walls: { left: TIP_L, right: SPIKE_W }, plat: L.plat, phys: L.phys, powers: L.powers, view: null, decor: L.decor })
+      Patterns.setLayout({ walls: { left: WALL_DEF.left, right: WALL_DEF.right }, plat: L.plat, phys: L.phys, powers: L.powers, view: null, decor: L.decor })
       const L2 = Patterns.getLayout()
       Phys.setWalls(L2.walls)
       renderProps(); flash('Murs et vue réinitialisés')

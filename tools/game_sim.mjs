@@ -71,7 +71,7 @@ function driverFn() {
 
   // --- état initial : physique par défaut (slime réduit 14) ---
   check('état playing', state === 'playing')
-  check('slime.r = 14 (défaut réduit)', slime.r === 14)
+  check('slime.r = 11 (défaut réduit)', slime.r === 11)
 
   // --- 1) saut visé vers le haut-droite (distance moyenne) ---
   {

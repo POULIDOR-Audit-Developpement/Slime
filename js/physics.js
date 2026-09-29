@@ -4,8 +4,9 @@
 
 const VW = 480, VH = 270
 const CELL = 32, RS = 38, ROW0 = 88, CEIL = 16, GRAV = 620
-const TIP_L = 11
-const VMIN = 210, VMAX = 360, AIM_MIN = 24, AIM_MAX = 140, STICKY_MUL = 1.15, SPIKE_W = 14
+// Murs latéraux par défaut (layout.walls, onglet VUE) : fins, le feeling validé.
+const WALL_DEF = { left: 4, right: 4 }
+const VMIN = 170, VMAX = 380, AIM_MIN = 30, AIM_MAX = 90, STICKY_MUL = 0.8
 const BOUNCE_VY = 400, BOUNCE_VX = 140, CRUMBLE_T = 0.8, GOLD_PTS = 50
 // Constantes « plateformes fun » (spec 2026-09-29) : phasante (cycle
 // solide/traversable), turbo, dorée, bascule, combo de rebonds et rythme
@@ -30,16 +31,16 @@ const COMBO_STEP = 1.12, COMBO_MAX = 1.5, RHYTHM_MUL = 1.15
 //   (base, plafond, durée en secondes pour atteindre le plafond — 540 s = 9 min,
 //   soit 3 BGM de 3 min). Les paliers sont un détail interne : pas fixe de
 //   CAM_PALIER_S s (game.js), taille du pas déduite de camRampDur).
-//   Base ×2 (80/240) : nouvelle base officielle — l'ancienne (40/120) stockée
-//   dans d'anciens saves est migrée automatiquement dans normPhys().
+//   Défauts « feeling » (35/400) : les anciennes bases stockées dans d'anciens
+//   saves (40/120, puis 80/240) sont migrées automatiquement dans normPhys().
 const PHYS_DEF = {
-  slimeR: 14,
+  slimeR: 11,
   grav: GRAV, vmin: VMIN, vmax: VMAX, aimMin: AIM_MIN, aimMax: AIM_MAX,
   fallMax: 520, dragAir: 0.6,
   bounceVy: BOUNCE_VY, bounceVx: BOUNCE_VX, stickyMul: STICKY_MUL,
-  invuln: 1.3, hurtRecoil: 1,
-  coyote: 0.08,
-  camBase: 80, camMax: 240, camRampDur: 540
+  invuln: 1.3, hurtRecoil: 0.8,
+  coyote: 0.07,
+  camBase: 35, camMax: 400, camRampDur: 540
 }
 
 // Borne une valeur numérique ; hors bornes ou non numérique -> défaut.
@@ -64,25 +65,25 @@ function normPhys(n) {
     dragAir: physBound(n.dragAir, d.dragAir, 0.2, 1),
     bounceVy: physBound(n.bounceVy, d.bounceVy, 200, 650),
     bounceVx: physBound(n.bounceVx, d.bounceVx, 20, 300),
-    // Borne haute 1.5 : le défaut 1.15 doit survivre à la normalisation
-    // (l'ancienne borne 1.1 le ramenait silencieusement à 1.1).
+    // Borne haute 1.5 : les défauts passés (1.15) et les réglages vifs doivent
+    // survivre à la normalisation (l'ancienne borne 1.1 écrêtait en silence).
     stickyMul: physBound(n.stickyMul, d.stickyMul, 0.4, 1.5),
     invuln: physBound(n.invuln, d.invuln, 0.3, 3),
     hurtRecoil: physBound(n.hurtRecoil, d.hurtRecoil, 0.25, 2),
     coyote: physBound(n.coyote, d.coyote, 0, 0.25),
-    // Caméra : bornes élargies pour couvrir la nouvelle base ×2 (80/240)
-    // avec de la marge dans les deux sens. camRampDur : 1 à 17 min,
+    // Caméra : bornes couvrant les plages de sliders de l'éditeur (base 20-50,
+    // plafond 240-560) avec de la marge. camRampDur : 1 à 17 min,
     // défaut 540 s = milieu exact du slider de l'éditeur.
     camBase: physBound(n.camBase, d.camBase, 20, 200),
-    camMax: physBound(n.camMax, d.camMax, 60, 400),
+    camMax: physBound(n.camMax, d.camMax, 60, 600),
     camRampDur: physBound(n.camRampDur, d.camRampDur, 60, 1020)
   }
-  // Migration : l'ancienne base (40/120) stockée dans des saves antérieurs
-  // au passage à la base ×2 est considérée non personnalisée -> nouvelle base.
+  // Migrations : les anciennes bases stockées dans des saves (40/120, puis
+  // 80/240) sont considérées non personnalisées -> défauts feeling courants.
   // L'ancien réglage camRampT (intervalle entre paliers) est abandonné sans
   // migration : sémantique incompatible avec la durée jusqu'au max.
-  if (out.camBase === 40) out.camBase = d.camBase
-  if (out.camMax === 120) out.camMax = d.camMax
+  if (out.camBase === 40 || out.camBase === 80) out.camBase = d.camBase
+  if (out.camMax === 120 || out.camMax === 240) out.camMax = d.camMax
   // Garde-fou : la puissance max doit rester discriminante face au min.
   if (out.vmax < out.vmin + 50) out.vmax = Math.min(600, out.vmin + 50)
   // Garde-fou : la portée max de visée doit dépasser la portée min.
@@ -96,13 +97,13 @@ const Phys = (() => {
   // Murs de damage paramétrables (édités dans l'onglet VUE, appliqués au jeu).
   // (renommé wallsCfg pour libérer le nom `walls` = murs verticaux des patterns)
   // Pas de plafond : le haut du monde est ouvert (grands sauts autorisés).
-  let wallsCfg = { left: TIP_L, right: SPIKE_W }
+  let wallsCfg = { left: WALL_DEF.left, right: WALL_DEF.right }
 
   function setWalls(next) {
     if (!next) return
     wallsCfg = {
-      left: Math.max(4, Math.min(60, +next.left || TIP_L)),
-      right: Math.max(4, Math.min(60, +next.right || SPIKE_W))
+      left: Math.max(4, Math.min(60, +next.left || WALL_DEF.left)),
+      right: Math.max(4, Math.min(60, +next.right || WALL_DEF.right))
     }
   }
 

@@ -74,9 +74,9 @@ const oldExport = JSON.stringify({
 const resOld = Patterns.importData(oldExport)
 check('ancien export accepté, layout strippé', resOld.ok && resOld.data.patterns.length === 1 && resOld.data.layout === undefined)
 check('applyImport replace : pool remplacé', Patterns.applyImport(resOld, 'replace') === 1 && Patterns.getPatterns()[0].id === defs[1].id)
-check('réglages intacts après import (grav 777, murs défaut)', Patterns.getLayout().phys.grav === 777 && Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.right === 14)
+check('réglages intacts après import (grav 777, murs défaut)', Patterns.getLayout().phys.grav === 777 && Patterns.getLayout().walls.left === 4 && Patterns.getLayout().walls.right === 4)
 check('applyImport merge : pattern ajouté', Patterns.applyImport(Patterns.importData(Patterns.patternToCode(defs[2])), 'merge') === 1)
-check('installDefaults remplace par les 20 défauts', Patterns.installDefaults() === defs.length && Patterns.getPatterns().length === defs.length && Patterns.getPatterns()[0].id === defs[0].id)
+check('installDefaults remplace par les défauts', Patterns.installDefaults() === defs.length && Patterns.getPatterns().length === defs.length && Patterns.getPatterns()[0].id === defs[0].id)
 
 // 3c. Tri canonique : difficulté croissante puis nom (casse/accents ignorés).
 const shuffled = [
@@ -102,22 +102,25 @@ const bad = JSON.parse(JSON.stringify(defs[0])); bad.platforms[0].row = 9
 check('pattern invalide détecté', Patterns.validatePattern(bad).length > 0)
 
 // 6. Layout par défaut + applyLayout via Phys
-check('layout par défaut (murs latéraux, pas de plafond)', Patterns.getLayout().walls.left === 11 && Patterns.getLayout().walls.right === 14 && Patterns.getLayout().walls.ceil === undefined)
+check('layout par défaut (murs latéraux, pas de plafond)', Patterns.getLayout().walls.left === 4 && Patterns.getLayout().walls.right === 4 && Patterns.getLayout().walls.ceil === undefined)
 
 // 6b. Physique réglable : défauts, setPhys, bornes, garde vmax >= vmin + 50
 const phDef = Phys.phys()
-check('phys défauts (slime 14, grav 620)', phDef.slimeR === 14 && phDef.grav === 620 && phDef.vmax === 360)
-check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 14 && Patterns.getLayout().phys.aimMin === 24 && Patterns.getLayout().phys.aimMax === 140)
+check('phys défauts (slime 11, grav 620)', phDef.slimeR === 11 && phDef.grav === 620 && phDef.vmin === 170 && phDef.vmax === 380)
+check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 11 && Patterns.getLayout().phys.aimMin === 30 && Patterns.getLayout().phys.aimMax === 90)
 
-// 6b''. Caméra : nouvelle base ×2 (80/240), migration de l'ancienne base (40/120)
-check('caméra : nouvelle base par défaut (80/240)', phDef.camBase === 80 && phDef.camMax === 240)
+// 6b''. Caméra : défauts feeling (35/400), migrations des anciennes bases
+// (40/120 puis 80/240) vers les défauts courants.
+check('caméra : défauts feeling (35/400)', phDef.camBase === 35 && phDef.camMax === 400)
 check('caméra : durée jusqu\'au max par défaut (540 s = 9 min)', phDef.camRampDur === 540)
 Phys.setPhys({ camBase: 40, camMax: 120 })
-check('caméra : ancienne base migrée vers la nouvelle', Phys.phys().camBase === 80 && Phys.phys().camMax === 240)
-Phys.setPhys({ camBase: 200, camMax: 400 })
-check('caméra : bornes hautes accessibles (200/400)', Phys.phys().camBase === 200 && Phys.phys().camMax === 400)
+check('caméra : ancienne base (40/120) migrée vers 35/400', Phys.phys().camBase === 35 && Phys.phys().camMax === 400)
+Phys.setPhys({ camBase: 80, camMax: 240 })
+check('caméra : base officielle précédente (80/240) migrée vers 35/400', Phys.phys().camBase === 35 && Phys.phys().camMax === 400)
+Phys.setPhys({ camBase: 200, camMax: 600 })
+check('caméra : bornes hautes accessibles (200/600)', Phys.phys().camBase === 200 && Phys.phys().camMax === 600)
 Phys.setPhys({ camBase: 300, camMax: 900 })
-check('caméra : hors bornes écrêté (200/400)', Phys.phys().camBase === 200 && Phys.phys().camMax === 400)
+check('caméra : hors bornes écrêté (200/600)', Phys.phys().camBase === 200 && Phys.phys().camMax === 600)
 Phys.setPhys({ camRampDur: 9999 })
 check('caméra : durée jusqu\'au max écrêtée (1020 s)', Phys.phys().camRampDur === 1020)
 Phys.setPhys({ camRampDur: 5 })
@@ -125,14 +128,14 @@ check('caméra : durée jusqu\'au max plancher (60 s)', Phys.phys().camRampDur =
 Phys.setPhys({ camRampT: 12 })
 check('caméra : ancien camRampT abandonné -> défaut camRampDur', Phys.phys().camRampDur === 540 && !('camRampT' in Phys.phys()))
 Phys.setPhys(null)
-check('caméra : retour à la nouvelle base', Phys.phys().camBase === 80 && Phys.phys().camMax === 240)
+check('caméra : retour aux défauts feeling', Phys.phys().camBase === 35 && Phys.phys().camMax === 400)
 
 Phys.setPhys({ grav: 800, slimeR: 10 })
-check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 210)
+check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 170)
 Phys.setPhys({ vmin: 400, vmax: 200, grav: 99999 })
 check('bornes + garde vmax', Phys.phys().grav === 1000 && Phys.phys().vmin === 400 && Phys.phys().vmax >= 450)
 Phys.setPhys(null)
-check('setPhys(null) -> défauts', Phys.phys().grav === 620 && Phys.phys().slimeR === 14)
+check('setPhys(null) -> défauts', Phys.phys().grav === 620 && Phys.phys().slimeR === 11)
 
 // 6b'. Pouvoirs : cooldown 0 est une valeur valide (pas de fallback défaut)
 Patterns.setLayout({ powers: { doubleJump: { cooldown: 0 } } })
@@ -164,7 +167,7 @@ check('layout.phys persisté', Patterns.getLayout().phys.slimeR === 16 && Patter
 Phys.setPhys(Patterns.getLayout().phys)
 check('simu utilise le layout', Phys.phys().slimeR === 16 && Phys.phys().grav === 700)
 Patterns.setLayout(null)
-check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 14)
+check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 11)
 
 // 6d. Ancien save éditeur (layout persisté avec l'ancienne base caméra 40/120
 // et l'ancien réglage camRampT) -> migré vers la nouvelle base au chargement,
@@ -172,7 +175,7 @@ check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 14)
 // saves de l'éditeur appliquent l'ancienne vitesse » qui doit disparaître.
 storeStub[storeKey] = JSON.stringify({ format: Patterns.FORMAT, patterns: [], layout: { phys: { camBase: 40, camMax: 120, camRampT: 10 } } })
 Patterns.load()
-check('ancien save éditeur : caméra migrée (80/240)', Patterns.getLayout().phys.camBase === 80 && Patterns.getLayout().phys.camMax === 240)
+check('ancien save éditeur : caméra migrée (35/400)', Patterns.getLayout().phys.camBase === 35 && Patterns.getLayout().phys.camMax === 400)
 check('ancien save éditeur : camRampT abandonné (camRampDur 540)', !('camRampT' in Patterns.getLayout().phys) && Patterns.getLayout().phys.camRampDur === 540)
 Patterns.setLayout(null)
 

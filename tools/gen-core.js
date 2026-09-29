@@ -127,7 +127,7 @@ function generateDefaultPool(opts) {
 
   function reachOk(a, b, budget) {
     const t = targetOfRaw(b)
-    const mul = a.type === 'sticky' ? STICKY_MUL : 1
+    const mul = a.type === 'sticky' ? Phys.phys().stickyMul : 1
     if (a.type === 'bouncy') {
       if (Phys.canReachBounce(a, t)) return true
       if (budget && budget.dj > 0 && Phys.canReachBounceExt(a, t, null, DJ_CFG)) {

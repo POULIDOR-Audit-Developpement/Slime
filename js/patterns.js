@@ -40,8 +40,8 @@ const Patterns = (() => {
     const w = out.walls && typeof out.walls === 'object' ? out.walls : {}
     const p = out.plat && typeof out.plat === 'object' ? out.plat : {}
     delete w.ceil
-    w.left = clampN(+w.left || TIP_L, 4, 60)
-    w.right = clampN(+w.right || SPIKE_W, 4, 60)
+    w.left = clampN(+w.left || WALL_DEF.left, 4, 60)
+    w.right = clampN(+w.right || WALL_DEF.right, 4, 60)
     out.walls = w
     p.crumbleT = clampN(+p.crumbleT || DEFAULT_PLAT.crumbleT, 0.2, 2)
     // dynLife : champ hérité des anciens saves/layouts (timer des dynamiques,
