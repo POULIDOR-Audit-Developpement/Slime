@@ -367,7 +367,7 @@ async function driverFn() {
     slime.noCatchT = 0; slime.pull = null; slime.coyote = 0; slime.vx = 0; slime.vy = 120
     slime.grounded = false; slime.groundPlat = null
     gameT = 1.4
-    slime.x = pPh.x - 12
+    slime.x = pPh.x - 10
     slime.y = pPh.y - slime.r - 14
     let f = 0
     while (!slime.pull && !slime.grounded && f++ < 30) update(1 / 60) // reste dans le traversable (< 2.0)
@@ -375,7 +375,7 @@ async function driverFn() {
     // contrôle positif : la même accroche réussit quand la phasante est solide
     gameT = 0.2
     slime.grounded = false; slime.groundPlat = null; slime.pull = null; slime.coyote = 0; slime.noCatchT = 0
-    slime.x = pPh.x - 12
+    slime.x = pPh.x - 10
     slime.y = pPh.y - slime.r - 14
     slime.vx = 0; slime.vy = 120
     f = 0

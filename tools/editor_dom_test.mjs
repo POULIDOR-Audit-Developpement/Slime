@@ -94,12 +94,12 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   // slider cooldown -> brouillon uniquement
   els['pw_doubleJump_cooldown'].value = '7.5'
   els['pw_doubleJump_cooldown'].handlers.input()
-  check('slider cooldown -> brouillon, layout inchangé', Patterns.getLayout().powers.doubleJump.cooldown === 4)
+  check('slider cooldown -> brouillon, layout inchangé', Patterns.getLayout().powers.doubleJump.cooldown === 0.5)
   check('bouton Appliquer POWER dirty', els.btnApplyPow.classList.contains('dirty'))
   // slider échelle slow-mo (cumulé au brouillon)
   els['pw_slowmo_scale'].value = '0.25'
   els['pw_slowmo_scale'].handlers.input()
-  check('slider échelle slow-mo -> brouillon', Patterns.getLayout().powers.slowmo.scale === 0.35)
+  check('slider échelle slow-mo -> brouillon', Patterns.getLayout().powers.slowmo.scale === 0.05)
   // désactivation dans le brouillon
   els['pw_doubleJump_enabled'].checked = false
   els['pw_doubleJump_enabled'].handlers.change()
@@ -110,15 +110,21 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('appliquer -> échelle slow-mo 0.25', Patterns.getLayout().powers.slowmo.scale === 0.25)
   check('appliquer -> pouvoir désactivé', Patterns.getLayout().powers.doubleJump.enabled === false)
   check('appliquer POWER -> bouton plus dirty', !els.btnApplyPow.classList.contains('dirty'))
+  // slow-mo durée 2 s : hors de l'ancienne plage de slider (0.2-1), dedans
+  // depuis l'élargissement — valeur par défaut, doit passer sans écrêtage.
+  els['pw_slowmo_duration'].value = '2'
+  els['pw_slowmo_duration'].handlers.input()
+  els.btnApplyPow.handlers.click()
+  check('slow-mo durée 2 s appliquée (slider élargi)', Patterns.getLayout().powers.slowmo.duration === 2)
   // cooldown 0 est une valeur valide (pas de fallback défaut)
   els['pw_doubleJump_cooldown'].value = '0'
   els['pw_doubleJump_cooldown'].handlers.input()
   els.btnApplyPow.handlers.click()
   check('cooldown 0 appliqué tel quel', Patterns.getLayout().powers.doubleJump.cooldown === 0)
   els.btnResetPow.handlers.click()
-  check('reset pouvoirs : cooldown défaut 4', Patterns.getLayout().powers.doubleJump.cooldown === 4)
+  check('reset pouvoirs : cooldown défaut 0.5', Patterns.getLayout().powers.doubleJump.cooldown === 0.5)
   check('reset pouvoirs : réactivé', Patterns.getLayout().powers.doubleJump.enabled === true)
-  check('reset pouvoirs : slow-mo échelle défaut', Patterns.getLayout().powers.slowmo.scale === 0.35)
+  check('reset pouvoirs : slow-mo échelle défaut', Patterns.getLayout().powers.slowmo.scale === 0.05)
   Ed.setMode('patterns')
   check('retour patterns : classe power retirée', !main.classList.contains('power'))
 

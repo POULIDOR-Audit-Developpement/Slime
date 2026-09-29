@@ -103,6 +103,10 @@ check('pattern invalide détecté', Patterns.validatePattern(bad).length > 0)
 
 // 6. Layout par défaut + applyLayout via Phys
 check('layout par défaut (murs latéraux, pas de plafond)', Patterns.getLayout().walls.left === 4 && Patterns.getLayout().walls.right === 4 && Patterns.getLayout().walls.ceil === undefined)
+const pwDef = Patterns.getLayout().powers
+check('pouvoirs défauts (DJ 0.5s/2/×1.15, slowmo ×0.05/2s, ledge 5/0.3s)',
+  pwDef.doubleJump.cooldown === 0.5 && pwDef.doubleJump.charges === 2 && pwDef.doubleJump.powerMul === 1.15 &&
+  pwDef.slowmo.scale === 0.05 && pwDef.slowmo.duration === 2 && pwDef.ledge.window === 5 && pwDef.ledge.pullT === 0.3)
 
 // 6b. Physique réglable : défauts, setPhys, bornes, garde vmax >= vmin + 50
 const phDef = Phys.phys()
@@ -140,7 +144,7 @@ check('setPhys(null) -> défauts', Phys.phys().grav === 620 && Phys.phys().slime
 // 6b'. Pouvoirs : cooldown 0 est une valeur valide (pas de fallback défaut)
 Patterns.setLayout({ powers: { doubleJump: { cooldown: 0 } } })
 check('cooldown 0 normalisé tel quel', Patterns.getLayout().powers.doubleJump.cooldown === 0)
-check('défauts pouvoirs sinon', Patterns.getLayout().powers.slowmo.scale === 0.35 && Patterns.getLayout().view.zoom === 1)
+check('défauts pouvoirs sinon', Patterns.getLayout().powers.slowmo.scale === 0.05 && Patterns.getLayout().view.zoom === 1)
 Patterns.setLayout(null)
 
 // 6c. Résilience du stockage : backup (_bak) + récupération au chargement

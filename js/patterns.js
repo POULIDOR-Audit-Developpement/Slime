@@ -16,9 +16,9 @@ const Patterns = (() => {
   // ledge.pullT : durée de la remontée (« pulled up time ») — le slime ne
   // s'accroche plus, il se hisse sur la plateforme.
   const POWERS_DEF = {
-    doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
-    slowmo: { enabled: true, scale: 0.35, duration: 0.6 },
-    ledge: { enabled: true, pullT: 0.6, window: 8 }
+    doubleJump: { enabled: true, cooldown: 0.5, charges: 2, powerMul: 1.15 },
+    slowmo: { enabled: true, scale: 0.05, duration: 2 },
+    ledge: { enabled: true, pullT: 0.3, window: 5 }
   }
   const VIEW_DEF = { zoom: 1, showTrajectory: true, shake: true }
 

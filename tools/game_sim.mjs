@@ -170,7 +170,7 @@ function driverFn() {
     tap(p.x, p.y, 0); untap(p.x, p.y, 0)
     let f = 0; while (slime.grounded && f++ < 30) update(1 / 60)
     check('en l\'air après le 1er saut', !slime.grounded)
-    check('charges aériennes pleines', slime.airJumps === 1)
+    check('charges aériennes pleines', slime.airJumps === 2)
     // appui en l'air : visée de double saut + slow-mo
     updateCam()
     p = w2px(slime.x + 40, slime.y - 60)
@@ -179,16 +179,25 @@ function driverFn() {
     update(1 / 60); update(1 / 60)
     check('slow-mo actif pendant la visée', slowmoT > 0 && ts < 0.9)
     untap(p.x, p.y, 0)
-    check('double saut exécuté', !slime.grounded && slime.airJumps === 0 && slime.vy < 0)
+    check('double saut exécuté', !slime.grounded && slime.airJumps === 1 && slime.vy < 0)
     check('cooldown démarré', slime.djCd > 0)
     check('slow-mo coupé au relâcher', slowmoT === 0)
     update(1 / 60); update(1 / 60)
     check('retour fluide à la vitesse normale', ts > 0.5)
-    // deuxième appui en l'air : plus de charge -> ignoré
+    // deuxième appui en l'air : il reste une charge. Le cooldown (0.5 s)
+    // bloque encore — on simule son écoulement avant de re-presser.
+    slime.djCd = 0
     updateCam()
     p = w2px(slime.x + 40, slime.y - 60)
     tap(p.x, p.y, 0)
-    check('cooldown : appui ignoré', aim.on === false)
+    check('visée du 2e double saut (2 charges)', aim.on === true && aim.air === true)
+    untap(p.x, p.y, 0)
+    check('2e double saut exécuté, charges épuisées', !slime.grounded && slime.airJumps === 0)
+    // troisième appui : plus de charge -> ignoré
+    updateCam()
+    p = w2px(slime.x + 40, slime.y - 60)
+    tap(p.x, p.y, 0)
+    check('plus de charge : appui ignoré', aim.on === false)
     // repose le slime au-dessus de la plateforme de départ : l'atterrissage
     // recharge la charge aérienne
     const p0 = platforms[0]
@@ -198,7 +207,7 @@ function driverFn() {
       slime.x = p0.x + p0.w / 2
       update(1 / 60)
     }
-    check('atterrissage : charge aérienne restaurée', slime.grounded && slime.airJumps === 1)
+    check('atterrissage : charges aériennes restaurées', slime.grounded && slime.airJumps === 2)
   }
 
   // --- 5) pouvoir désactivé (layout.powers) -> appui en l'air ignoré ---
@@ -251,7 +260,7 @@ function driverFn() {
   check('migration hangT -> pullT (layout normalisé)', !('hangT' in Patterns.getLayout().powers.ledge))
   Patterns.setLayout(null)
   applyLayout()
-  check('pullT par défaut (0.6 s)', POWERS.ledge.pullT === 0.6)
+  check('pullT par défaut (0.3 s)', POWERS.ledge.pullT === 0.3)
   startGame()
 
   // --- 5d) ledge catch : bord manqué de justesse -> remontée -> resaut ---
@@ -260,12 +269,12 @@ function driverFn() {
   for (let i = 0; i < 3; i++) update(1 / 60)
   {
     const pL = slime.groundPlat
-    // centre 12 px à gauche du bord (hors tolérance d'atterrissage de 6,
-    // dans la fenêtre d'accroche de 8) : le bas frôle le sommet en tombant
+    // centre 10 px à gauche du bord (hors tolérance d'atterrissage de 6,
+    // dans la fenêtre d'accroche de 5) : le bas frôle le sommet en tombant
     slime.grounded = false
     slime.groundPlat = null
     slime.coyote = 0
-    slime.x = pL.x - 12
+    slime.x = pL.x - 10
     slime.y = pL.y - slime.r - 14
     slime.vx = 0
     slime.vy = 120
@@ -289,13 +298,13 @@ function driverFn() {
   {
     const pL2 = slime.groundPlat
     slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
-    slime.x = pL2.x - 12; slime.y = pL2.y - slime.r - 14; slime.vx = 0; slime.vy = 120
+    slime.x = pL2.x - 10; slime.y = pL2.y - slime.r - 14; slime.vx = 0; slime.vy = 120
     let hf2 = 0
     while (!slime.pull && state === 'playing' && hf2++ < 120) update(1 / 60)
     check('remontée : accroché avant la fin', !!slime.pull)
     let rf = 0
     while (slime.pull && state === 'playing' && rf++ < 300) update(1 / 60)
-    check('remontée : posé à la fin de la durée', !slime.pull && slime.grounded && slime.vy === 0 && rf >= 30)
+    check('remontée : posé à la fin de la durée', !slime.pull && slime.grounded && slime.vy === 0 && rf >= 10)
     check('remontée : debout sur la plateforme', slime.groundPlat === pL2 && Math.abs(slime.y - (pL2.y - slime.r)) < 1 && slime.x > pL2.x)
   }
   startGame()
@@ -309,7 +318,7 @@ function driverFn() {
   {
     const pL3 = slime.groundPlat
     slime.grounded = false; slime.groundPlat = null; slime.coyote = 0
-    slime.x = pL3.x - 12; slime.y = pL3.y - slime.r - 14; slime.vx = 0; slime.vy = 120
+    slime.x = pL3.x - 10; slime.y = pL3.y - slime.r - 14; slime.vx = 0; slime.vy = 120
     let hf3 = 0
     while (!slime.grounded && !slime.pull && state === 'playing' && hf3++ < 120) update(1 / 60)
     check('ledge désactivé : pas d\'accroche', !slime.pull)

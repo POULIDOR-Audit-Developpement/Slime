@@ -986,14 +986,14 @@ const Ed = (() => {
   // est le milieu exact du slider.
   const PHYS_SLIDERS = [
     ['Slime', [
-      ['slimeR', 'Taille', 9, 19, 1, v => Math.round(v)]
+      ['slimeR', 'Taille', 6, 16, 1, v => Math.round(v)]
     ]],
     ['Saut & visée', [
       ['grav', 'Gravité', 270, 970, 10, v => Math.round(v)],
-      ['vmin', 'Saut min', 60, 360, 5, v => Math.round(v)],
-      ['vmax', 'Saut max', 160, 560, 5, v => Math.round(v)],
-      ['aimMin', 'Portée min', 0, 48, 1, v => Math.round(v)],
-      ['aimMax', 'Portée max', 50, 230, 5, v => Math.round(v)],
+      ['vmin', 'Saut min', 60, 280, 5, v => Math.round(v)],
+      ['vmax', 'Saut max', 200, 560, 5, v => Math.round(v)],
+      ['aimMin', 'Portée min', 12, 48, 1, v => Math.round(v)],
+      ['aimMax', 'Portée max', 50, 130, 5, v => Math.round(v)],
       ['fallMax', 'Chute max', 220, 820, 10, v => Math.round(v)],
       ['dragAir', 'Traînée air', 0.2, 1, 0.05, v => (+v).toFixed(2)]
     ]],
@@ -1004,15 +1004,15 @@ const Ed = (() => {
     ]],
     ['Dégâts', [
       ['invuln', 'Invincible', 0.3, 2.3, 0.1, v => (+v).toFixed(1) + ' s'],
-      ['hurtRecoil', 'Recul', 0.25, 1.75, 0.05, v => '×' + (+v).toFixed(2)]
+      ['hurtRecoil', 'Recul', 0.3, 1.3, 0.05, v => '×' + (+v).toFixed(2)]
     ]],
     ['Caméra', [
-      ['camBase', 'Vitesse base', 20, 140, 5, v => Math.round(v)],
-      ['camMax', 'Vitesse max', 80, 400, 5, v => Math.round(v)],
+      ['camBase', 'Vitesse base', 20, 50, 5, v => Math.round(v)],
+      ['camMax', 'Vitesse max', 240, 560, 5, v => Math.round(v)],
       ['camRampDur', "Temps jusqu'au max", 60, 1020, 30, v => (v % 60 ? (v / 60).toFixed(1) : v / 60) + ' min']
     ]],
     ['Game feel', [
-      ['coyote', 'Coyote', 0, 0.16, 0.01, v => (+v).toFixed(2) + ' s']
+      ['coyote', 'Coyote', 0, 0.14, 0.01, v => (+v).toFixed(2) + ' s']
     ]]
   ]
   const physDef = key => { for (const [, rows] of PHYS_SLIDERS) { const r = rows.find(r => r[0] === key); if (r) return r } return null }
@@ -1095,7 +1095,7 @@ const Ed = (() => {
     ['slowmo', 'Slow-mo (bullet time)', [
       ['enabled', 'Activé'],
       ['scale', 'Échelle temps', 0.05, 0.65, 0.05, v => '×' + (+v).toFixed(2)],
-      ['duration', 'Durée', 0.2, 1, 0.1, v => (+v).toFixed(1) + ' s']
+      ['duration', 'Durée', 0.2, 2, 0.1, v => (+v).toFixed(1) + ' s']
     ]],
     ['ledge', 'Ledge catch (remontée)', [
       ['enabled', 'Activé'],
