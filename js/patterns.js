@@ -325,9 +325,27 @@ const Patterns = (() => {
 
   // ---------- pool pondéré ----------
   // Poids par difficulté (1..5) : début de partie -> fin de partie (9 min,
-  // calé sur la caméra : 3 BGM de 3 min).
-  const W0 = [100, 26, 6, 0, 0]
+  // calé sur la caméra : 3 BGM de 3 min). W0 pur T1 : les premières secondes
+  // ne font que du basic/dynamic (découverte des mouvements).
+  const W0 = [120, 20, 0, 0, 0]
   const W1 = [2, 12, 30, 55, 80]
+
+  // Courbe de découverte : temps (s) d'apparition de chaque type dans une
+  // run. La garde s'applique au tirage quel que soit le pool (défaut,
+  // éditeur, LAN) : un pattern contenant un type non débloqué n'est pas
+  // joué avant ce temps. Calé sur les tiers du pool pédagogique (T2 commence
+  // à 90 s, T3 à 210, T4 à 330, T5 vers 420-450).
+  const UNLOCK_T = { basic: 0, dynamic: 0, crumble: 90, phase: 120, sticky: 210, turbo: 240, bouncy: 330, seesaw: 360, gold: 420 }
+
+  // Un pattern est jouable à `elapsed` si tous ses types sont débloqués.
+  // 'ghost' : alias legacy des anciens patterns -> phasante.
+  function typeUnlockOk(p, elapsed) {
+    for (const q of p.platforms || []) {
+      const t = UNLOCK_T[q.type === 'ghost' ? 'phase' : q.type]
+      if ((t || 0) > elapsed) return false
+    }
+    return true
+  }
 
   function currentPool() {
     if (pinned) return [pinned]
@@ -335,12 +353,13 @@ const Patterns = (() => {
     return user && user.length ? user : defaults()
   }
 
-  function weights(pool, elapsed) {
+  function weights(pool, elapsed, ignoreGate) {
     const t = Math.min(elapsed / 540, 1)
     return pool.map(p => {
       const d = clampN((p.difficulty | 0) - 1, 0, 4)
       let w = W0[d] + (W1[d] - W0[d]) * t
       if (!pinned && p.id === lastId) w *= 0.12
+      if (!ignoreGate && !pinned && !typeUnlockOk(p, elapsed)) w = 0
       return Math.max(w, 0)
     })
   }
@@ -359,8 +378,14 @@ const Patterns = (() => {
   function spawnSection(last, elapsed) {
     const pool = currentPool()
     if (!pool.length) return safety(last)
-    const ws = weights(pool, elapsed)
-    const total = ws.reduce((a, b) => a + b, 0)
+    let ws = weights(pool, elapsed, !!pinned)
+    let total = ws.reduce((a, b) => a + b, 0)
+    // Garde trop stricte pour ce pool (petit pool 100 % exotique) : on
+    // relâche plutôt que d'enchaîner les plateformes de sécurité.
+    if (total <= 0 && !pinned) {
+      ws = weights(pool, elapsed, true)
+      total = ws.reduce((a, b) => a + b, 0)
+    }
     if (total <= 0) return safety(last)
     // Filtre optionnel (layout.checkJumps, décidé par l'admin dans l'éditeur) :
     // coupé, le premier pattern tiré est joué tel quel.
@@ -711,6 +736,7 @@ const Patterns = (() => {
     getPatterns, setPatterns, setPatternsRaw, getLayout, setLayout,
     usingDefaults, installDefaults, resetUser,
     defaults, sortPool, validatePattern, validatePatternJumps,
+    UNLOCK_T, typeUnlockOk,
     patternWidth, entryRow, emptyPattern, uid,
     instantiate, jumpOk, targetOf,
     spawnSection, pin, getPinned,
