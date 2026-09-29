@@ -220,11 +220,10 @@ const SFX_HURT = [,,537,.02,.02,.22,1,1.59,-6.98,4.97]
 const SFX_DIE = [,,333,.01,0,.9,4,1.9,,,,,,.5,,.6]
 const SFX_LAND = [2,.8,999,,,,,1.5,,.3,-99,.1,1.63,,,.11,.22]
 // « Plateformes fun » : craquement (crumble télégraphé), souffle (turbo),
-// carillon (dorée) et tic sec (réservé phasante/UI).
+// carillon (dorée).
 const SFX_CRACK = [2,.4,90,,.03,.2,4,,,,-.1,,.05,.3]
 const SFX_WHOOSH = [1.5,.3,240,.01,.09,.22,1,2.2,,-.6,-5,.05]
 const SFX_GOLD = [1.5,.05,1318,,.04,.18,1,1.8,,,660,.05]
-const SFX_TIC = [1,.15,880,,.015,.06,2,,,,,,,,.1]
 // Hauteur du « plouf » par type de plateforme (repérage audio au posé).
 const SFX_LAND_PITCH = { basic: 0, sticky: 1, dynamic: -1, crumble: 2, phase: 3, turbo: 4, gold: 5, seesaw: 6 }
 
@@ -692,6 +691,10 @@ function updSlime(dt) {
         const d = slime.face
         slime.vx = d * Math.max(TURBO_MIN, Math.min(Math.abs(slime.vx) * TURBO_MUL, PH().vmax * TURBO_MUL))
         slime.turboT = 0.6
+        // Le lancement prime : fenêtre d'accroche fermée, sinon le ledge catch
+        // du propre bord ré-attrape le slime à la 1re frame (même convention
+        // que l'interruption de pull-up dans execJump).
+        slime.noCatchT = 0.3
         sfx(SFX_WHOOSH)
       }
       slime.grounded = false

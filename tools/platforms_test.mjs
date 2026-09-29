@@ -390,24 +390,27 @@ function driverFn() {
     const pTw = { x: 200, y: rowY(0), baseY: rowY(0), w: 3 * CELL, type: 'turbo', amp: 0, spd: 0, ph: 0, spike: null }
     // dragAir 1 : sans cela, une frame de traînée aérienne dégrade vx (le check
     // exact 540/180 serait frotté à ~0.99 par le dragAir par défaut 0.6).
-    // noCatchT 0.5 : isole le lancement — sinon le ledge catch de la propre
-    // plateforme peut rattraper le slime à la 1re frame (voir rapport).
+    // noCatchT laissé à 0 : le walk-off doit LUI-MÊME fermer la fenêtre
+    // d'accroche (ruling) — sinon le ledge catch du propre bord rattrape le
+    // slime à la 1re frame (à l'arrêt : vx 180 -> x fin de frame = bord+14,
+    // pile dans la fenêtre 6+8) et annule le lancement.
     fresh({ dragAir: 1 })
     platforms.push(pTw)
     slime.grounded = true; slime.groundPlat = pTw
     slime.x = pTw.x + pTw.w + 11 // déjà hors du bord (+10 de tolérance)
     slime.y = pTw.y - slime.r
-    slime.vx = 500; slime.vy = 0; slime.face = 1; slime.noCatchT = 0.5
+    slime.vx = 500; slime.vy = 0; slime.face = 1; slime.noCatchT = 0
     update(1 / 60)
     check('walk-off rapide : vx 500 -> 540 (cap vmax×TURBO_MUL)', Math.abs(slime.vx - 540) < 0.001 && !slime.grounded && slime.turboT === 0.6)
+    check('walk-off turbo : fenêtre d\'accroche fermée (noCatchT > 0)', slime.noCatchT > 0)
     fresh({ dragAir: 1 })
     platforms.push(pTw)
     slime.grounded = true; slime.groundPlat = pTw
     slime.x = pTw.x + pTw.w + 11
     slime.y = pTw.y - slime.r
-    slime.vx = 0; slime.vy = 0; slime.face = 1; slime.noCatchT = 0.5
+    slime.vx = 0; slime.vy = 0; slime.face = 1; slime.noCatchT = 0
     update(1 / 60)
-    check('walk-off à l\'arrêt : lancement >= 180 selon la face', slime.vx >= TURBO_MIN && slime.face === 1 && slime.turboT > 0)
+    check('walk-off à l\'arrêt : lancement >= 180 selon la face, pas de ré-accroche', slime.vx >= TURBO_MIN && slime.face === 1 && slime.turboT > 0 && slime.noCatchT > 0)
     // turboT s'épuise (décompte simple)
     slime.turboT = 0.6
     slime.grounded = true; slime.groundPlat = platforms[0]
