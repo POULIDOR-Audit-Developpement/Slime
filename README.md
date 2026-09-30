@@ -172,10 +172,12 @@ ou visuellement : `tools/gen_default_pool.html` (aperçu validé saut par saut, 
 ## Scores sécurisés (côté créateur)
 
 À la mort, le jeu génère un **code signé en HMAC-SHA256** (le score n'est jamais calculé côté lecteur).
-Le **format v3** embarque aussi les **stats anti-triche** du run : les **points théoriques** (total
-possible des collectibles spawnés : billes 10 / or 50 / bonus 30) et le **nombre de patterns joués**.
+Le **format v3** embarque aussi les **stats anti-triche** du run : les **points théoriques**
+(collectibles spawnés : billes 10 / or 50 / bonus 30) et le **nombre de patterns joués**.
 Côté créateur, un score honnête vérifie `score ≤ théorique + distance max` (caméra à fond = 40 pts/s
-par défaut) — `decode.html` signale ⚠️ tout code dépassant ce maximum.
+par défaut) — `decode.html` affiche ce plafond comme **« Possible »** (théorique + distance max,
+décomposition en clair) et signale ⚠️ tout code le dépassant : score ≤ possible est toujours vrai
+à la lecture comme au calcul.
 Si le joueur a renseigné son **contact** (Instagram ou email — demandé à la 1re mort avec un score,
 éditable sur l'écran de fin via ✏), il est **embarqué dans le code** : c'est ce qui permet
 de contacter le gagnant. L'écran de fin affiche le code en **QR code** (plus le bouton **COPIER LE CODE**
