@@ -89,6 +89,21 @@ check('2 patterns distincts tirés', drawnPats.length === 2)
 check('dernier tiré pénalisé (×0.1)', Patterns.weightOf(drawnPats[1], 200) <= beforeW[drawnPats[1].id] * 0.1 + 1e-9)
 check('précédent tiré pénalisé (×0.2)', Patterns.weightOf(drawnPats[0], 200) <= beforeW[drawnPats[0].id] * 0.2 + 1e-9)
 
+// --- 2d) transposition verticale à l'instanciation (T1 n'est plus tout en bas) ---
+const t1v = pool.find(p => p.difficulty === 1)
+const anchorV = { x: -4 * 32, row: 2, y: rowY(2), baseY: rowY(2), w: 4 * 32, type: 'basic', amp: 0, spd: 0, ph: 0 }
+let baseLevels = new Set(), relSpan = null
+for (let i = 0; i < 30; i++) {
+  const inst = Patterns.instantiate(t1v, { x: 0, row: 2, y: rowY(2), w: 4 * 32 })
+  const rows = inst.platforms.map(p => p.row)
+  const mn = Math.min(...rows), mx = Math.max(...rows)
+  baseLevels.add(mn)
+  if (relSpan === null) relSpan = mx - mn
+  check('transposition : lignes dans 0-4', mn >= 0 && mx <= 4)
+  check('transposition : géométrie relative intacte', mx - mn === relSpan)
+}
+check('transposition : le niveau de base varie (>= 2 niveaux vus)', baseLevels.size >= 2)
+
 // --- 3) ensemble éligible jamais vide sur la run (pool par défaut) ---
 let vide = -1
 for (let s = 0; s < 540 && vide < 0; s++) {

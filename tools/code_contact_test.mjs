@@ -55,6 +55,40 @@ check('code avec email : contact restitué', C.verifyCode(v2b).contact === 'Mari
 // 2c) deux codes v2 de contacts différents -> payloads différents (pas de collision)
 check('contacts différents -> codes différents', v2 !== v2b && C.verifyCode(v2).contact !== C.verifyCode(v2b).contact)
 
+// 2d) v3 : stats anti-triche (points théoriques + patterns spawnés) signées
+const v3 = C.makeCode(1234, 65, '', { theo: 5000, patterns: 42 })
+const d3 = C.verifyCode(v3)
+check('code v3 sans contact : vérifiable', !!d3)
+check('code v3 : version 3', d3 && d3.v === 3)
+check('code v3 : score + temps décodés', d3 && d3.score === 1234 && d3.elapsed === 65)
+check('code v3 : theo + patterns décodés', d3 && d3.theo === 5000 && d3.patterns === 42)
+check('code v3 : pas de champ contact', d3 && d3.contact === undefined)
+
+// 2e) v3 avec contact : les deux vivent dans le même payload signé
+const v3c = C.makeCode(777, 130, '@slime.fan', { theo: 900, patterns: 12 })
+const d3c = C.verifyCode(v3c)
+check('code v3 avec contact : vérifiable', !!d3c)
+check('code v3 avec contact : stats décodées', d3c && d3c.theo === 900 && d3c.patterns === 12)
+check('code v3 avec contact : contact restitué', d3c && d3c.contact === '@slime.fan')
+check('code v3 ≠ v2 même entrée (payloads distincts)', v3c !== v2)
+
+// 2f) v3 : garde-fous (stats négatives/garbage -> bornées, pas de crash)
+const v3g = C.makeCode(10, 1, '', { theo: -5, patterns: 'x' })
+const d3g = C.verifyCode(v3g)
+check('code v3 : stats garbage bornées à 0', d3g && d3g.v === 3 && d3g.theo === 0 && d3g.patterns === 0)
+check('code v3 sans stats -> format historique v1', C.verifyCode(C.makeCode(5, 1)).v === undefined)
+check('code v3 sans stats avec contact -> v2', C.verifyCode(C.makeCode(5, 1, '@x')).v === 2)
+
+// 2g) v3 : falsification -> rejet
+const flip3 = c => (c === 'A' ? 'B' : 'A')
+const v3t = flip3(v3[0]) + v3.slice(1)
+check('code v3 falsifié (payload modifié) : rejeté', v3t !== v3 && C.verifyCode(v3t) === null)
+check('code v3 tronqué : rejeté', C.verifyCode(v3.slice(0, v3.length - 3)) === null)
+
+// 2h) rétro-compat : v1 et v2 d'avant l'évolution restent décodables
+check('rétro-compat v1 : score/temps intacts', d1 && d1.score === 1234 && d1.elapsed === 65 && d1.v === undefined)
+check('rétro-compat v2 : contact intact', d2 && d2.contact === '@slime.fan' && d2.v === 2)
+
 // 3) compat : un code historique reste décodable (même structure v1)
 check('code historique : la signature tient toujours', C.verifyCode(v1) !== null)
 // et un v2 n'est PAS confondu avec un v1 (le contact ne fuit pas dans score)

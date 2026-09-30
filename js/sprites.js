@@ -219,6 +219,20 @@ const Sprites = (() => {
     return imgs[key]
   }
 
+  // Fond par piste musicale : game.js recolore bg_big/bg_panel* UNE fois par
+  // bascule (jamais par frame — règles perf AGENTS.md) et remplace la base.
+  // setBase n'accepte qu'un canvas réel (largeur > 0) ; les clés inconnues et
+  // les valeurs vides sont refusées — la base reste alors l'PNG d'origine.
+  function base(key) {
+    return imgs[key]
+  }
+
+  function setBase(key, cv) {
+    if (!key || !imgs[key] || !cv || !cv.width) return false
+    imgs[key] = cv
+    return true
+  }
+
   return {
     load,
     setTiers,
@@ -231,6 +245,8 @@ const Sprites = (() => {
     natW,
     natH,
     get,
+    base,
+    setBase,
     get ready() { return ready }
   }
 })()

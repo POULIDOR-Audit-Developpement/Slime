@@ -172,17 +172,22 @@ ou visuellement : `tools/gen_default_pool.html` (aperçu validé saut par saut, 
 ## Scores sécurisés (côté créateur)
 
 À la mort, le jeu génère un **code signé en HMAC-SHA256** (le score n'est jamais calculé côté lecteur).
+Le **format v3** embarque aussi les **stats anti-triche** du run : les **points théoriques** (total
+possible des collectibles spawnés : billes 10 / or 50 / bonus 30) et le **nombre de patterns joués**.
+Côté créateur, un score honnête vérifie `score ≤ théorique + distance max` (caméra à fond = 40 pts/s
+par défaut) — `decode.html` signale ⚠️ tout code dépassant ce maximum.
 Si le joueur a renseigné son **contact** (Instagram ou email — demandé à la 1re mort avec un score,
-éditable sur l'écran de fin via ✏), il est **embarqué dans le code** (format v2) : c'est ce qui permet
+éditable sur l'écran de fin via ✏), il est **embarqué dans le code** : c'est ce qui permet
 de contacter le gagnant. L'écran de fin affiche le code en **QR code** (plus le bouton **COPIER LE CODE**
-et **REJOUER**) ; un joueur sans contact a quand même un QR valide (code v1).
+et **REJOUER**) ; un joueur sans contact a quand même un QR valide.
 
 Côté créateur, `decode.html` :
 - **📷 Scanner (caméra)** : lecture live du QR à l'écran du joueur (caméra = localhost/HTTPS uniquement) ;
 - **🖼 Depuis une photo** : lecture d'un QR photographié (marche partout, même en `file://`) ;
 - **Coller un code** à la main (secours) ;
 - chaque code vérifié alimente le **classement local** (meilleur score par joueur, persisté en
-  localStorage) avec **export/import JSON** pour sauvegarde ou transfert entre appareils.
+  localStorage, avec points possibles · patterns pour les codes v3) et **export/import JSON** pour
+  sauvegarde ou transfert entre appareils.
 
 Le contact vit DANS le code : quiconque décode un QR lit le contact de CE joueur seulement —
 c'est assumé pour le giveaway.
@@ -216,5 +221,5 @@ du code restent disponibles.
 - Pas de plafond : le haut du monde est ouvert (indicateur hors-écran en haut)
 - Génération **100 % patterns** : pool embarqué (généré puis validé par simulation physique de chaque saut) ou pool du créateur — `js/physics.js` garantit l'atteignabilité au chaînage
 - SHA-256 + HMAC embarqués (fonctionne hors-ligne, sans dépendance)
-- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `progression_test` (courbe de découverte : UNLOCK_T, vitrines, fallback anti-pool-vide, bypass pinned), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `platforms_test` (plateformes fun : constantes, mécaniques des 9 types, règles du pool régénéré), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes), `sprites_test` (variantes canvas acceptées par les gardes de dessin), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (code v2 : contact embarqué/signé, compat v1, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
+- Tests de régression (`node tools/<test>.mjs`) : `smoke_test` (génération/validation du pool), `progression_test` (courbe de découverte : UNLOCK_T, vitrines, fallback anti-pool-vide, bypass pinned), `game_sim` (partie simulée : saut, coyote, jump buffer, physique live), `platforms_test` (plateformes fun : constantes, mécaniques des 9 types, règles du pool régénéré), `editor_dom_test` (onglets PHYS et COULEURS de l'éditeur avec mini-DOM), `music_test` (logique BGM mp3 : idempotence start, mute, enchaînement des pistes, getter Music.track), `sprites_test` (variantes canvas acceptées par les gardes de dessin, recolorBlue du fond, base/setBase), `server_test` (API pool : GET/PUT /api/state, concurrence optimiste 409, clé X-Slime-Key), `code_contact_test` (codes signés v1/v2/v3 : contact et stats anti-triche embarqués/signés, compat ascendante, sanitize Contact), `qr_test` (round-trip génération/lecture QR avec les libs vendorées), `ranking_test` (classement local : meilleur par joueur, merge/import, stockage corrompu), `tls_test` (cert auto-signé : SAN IP LAN, réutilisation, openssl absent -> null), `lan_sync_test` (sync LAN du pool : fusion, conflits 409, polling)
 - Diagnostic perf : `play.html?fps` (compteur), `?prof` (chronométrage par frame : sim/draw/rAF + sections), `?sim=N` (cadence de simulation) — et voir `AGENTS.md` pour les règles perf (sprites/effets animés, musique, mobile) à respecter avant d'ajouter couleurs, animations ou tout travail par frame

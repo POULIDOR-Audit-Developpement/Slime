@@ -251,6 +251,33 @@ const SlimeColors = (() => {
     return cv
   }
 
+  // Recoloration des pixels BLEUS (b dominant) : même préservation de
+  // luminance que recolor, sélection inverse. Sert au fond par piste musicale
+  // (bg_big/bg_panel sont bleus ; fenêtres claires, contours et pixels neutres
+  // restent intacts). Retourne un canvas — la recoloration est faite UNE fois
+  // par bascule de piste, jamais par frame (règles perf AGENTS.md).
+  function recolorBlue(im, hex) {
+    const target = hex2rgb(typeof hex === 'string' && hex ? hex : DEFAULTS[0].hex)
+    const cv = document.createElement('canvas')
+    cv.width = im.naturalWidth || im.width
+    cv.height = im.naturalHeight || im.height
+    const c = cv.getContext('2d')
+    c.imageSmoothingEnabled = false
+    c.drawImage(im, 0, 0)
+    const a = c.getImageData(0, 0, cv.width, cv.height)
+    const d = a.data
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2]
+      if (d[i + 3] === 0 || !(b > r + 10 && b > g + 10)) continue
+      const k = 0.55 + 0.65 * (0.30 * r + 0.59 * g + 0.11 * b) / 255
+      d[i] = Math.min(255, target[0] * k)
+      d[i + 1] = Math.min(255, target[1] * k)
+      d[i + 2] = Math.min(255, target[2] * k)
+    }
+    c.putImageData(a, 0, 0)
+    return cv
+  }
+
   // Éclaircit (f > 0, vers blanc) ou assombrit (f < 0, vers noir) un hex.
   function shade(hex, f) {
     const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16)
@@ -258,5 +285,5 @@ const SlimeColors = (() => {
     return '#' + [mx(r), mx(g), mx(b)].map(v => v.toString(16).padStart(2, '0')).join('')
   }
 
-  return { KEY, DEFAULTS, MAX_STOPS, EFFECTS, EFFECT_LIST, EFFECT_DEFAULTS, load, save, clear, normalize, sanitizeTier, tierIndex, isAnimated, primary, recolor, shade }
+  return { KEY, DEFAULTS, MAX_STOPS, EFFECTS, EFFECT_LIST, EFFECT_DEFAULTS, load, save, clear, normalize, sanitizeTier, tierIndex, isAnimated, primary, recolor, recolorBlue, shade }
 })()

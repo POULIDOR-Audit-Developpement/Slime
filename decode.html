@@ -42,6 +42,8 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
   <h1>SLIME — SCAN &amp; CLASSEMENT</h1>
   <p>Scanne le QR affiché sur l'écran de fin du joueur (ou colle son code) : le score est
   vérifié par signature HMAC puis ajouté au <b>classement local</b> — meilleur score par joueur.
+  Les codes v3 embarquent en plus les <b>points théoriques</b> du run (total possible) et le
+  <b>nombre de patterns joués</b> : tout score supérieur au possible est signalé ⚠️.
   La clé secrète (<code>SECRET</code> de <code>js/crypto.js</code>) doit être celle du jeu.
   <b>Caméra = HTTPS uniquement</b> : sur le LAN, ouvre cette page via
   <code>https://&lt;IP-du-PC&gt;:8472/decode.html</code> (port TLS affiché au lancement du serveur)
@@ -70,9 +72,9 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
     <button id="btnReset" class="danger">🗑 Vider</button>
   </div>
 </div>
-<script src="js/crypto.js?v=20260929a"></script>
+<script src="js/crypto.js?v=20260930b"></script>
 <script src="vendor/jsQR.js?v=1"></script>
-<script src="js/ranking.js?v=1"></script>
+<script src="js/ranking.js?v=20260930b"></script>
 <script>
 (function () {
   'use strict'
@@ -100,6 +102,8 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
       score: out.score,
       elapsed: out.elapsed || 0,
       date: out.date instanceof Date ? out.date.getTime() : 0,
+      theo: out.theo || 0,
+      patterns: out.patterns || 0,
       code
     }
     const r = Ranking.add(Ranking.load(), entry)
@@ -108,6 +112,19 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
     const bits = ['<b>Code authentique</b>', 'Score : <b>' + out.score + '</b>']
     bits.push('Temps : <b>' + fmtTime(entry.elapsed) + '</b>')
     bits.push('Contact : <b>' + (entry.contact ? esc(entry.contact) : '— (pas de contact)') + '</b>')
+    // Stats anti-triche (code v3) : le jeu embarque les points théoriques
+    // (total possible des collectibles spawnés) et le nb de patterns joués.
+    // Un score honnête vérifie : score ≤ théorique + distance max (caméra à
+    // fond du départ = 40 pts/s par défaut).
+    if (out.v === 3) {
+      const maxDist = 40 * Math.max(0, entry.elapsed)
+      bits.push('Possible : <b>' + out.theo + '</b> pts · patterns : <b>' + out.patterns + '</b>')
+      if (out.score > out.theo + maxDist) {
+        bits.push('⚠️ <b>Score douteux</b> : ' + out.score + ' > maximum possible (' + out.theo + ' + ' + maxDist + ' de distance) — à vérifier !')
+      } else {
+        bits.push('✅ cohérent : score ≤ possible (' + out.theo + ' + ' + maxDist + ' de distance max).')
+      }
+    }
     bits.push('Partie du ' + (entry.date ? new Date(entry.date).toLocaleString('fr-FR') : '?'))
     if (!r.accepted) bits.push('ℹ️ déjà enregistré — le meilleur score est conservé.')
     else if (r.replaced) bits.push('✅ <b>nouveau meilleur score</b> pour ce joueur.')
@@ -128,7 +145,7 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
     if (!list.length) { host.innerHTML = '<div class="empty">Aucun scan pour l\'instant — le classement se remplit ici.</div>'; return }
     const table = document.createElement('table')
     const thead = table.appendChild(document.createElement('thead'))
-    thead.innerHTML = '<tr><th>#</th><th>CONTACT</th><th>SCORE</th><th>TEMPS</th><th>DATE</th></tr>'
+    thead.innerHTML = '<tr><th>#</th><th>CONTACT</th><th>SCORE</th><th>TEMPS</th><th>POSSIBLE</th><th>DATE</th></tr>'
     const tbody = table.appendChild(document.createElement('tbody'))
     list.forEach((x, i) => {
       const tr = tbody.appendChild(document.createElement('tr'))
@@ -137,6 +154,7 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
         x.contact || '—',
         String(x.score),
         fmtTime(x.elapsed),
+        x.theo ? x.theo + ' · ' + x.patterns + ' pat' : '—',
         x.date ? new Date(x.date).toLocaleDateString('fr-FR') : '?'
       ]
       cells.forEach((v, j) => {
@@ -144,6 +162,7 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
         td.textContent = v
         if (j === 1) td.className = 'ct'
         if (j === 2) td.className = 'sc'
+        if (j === 4 && !x.theo) td.className = 'ct'
       })
     })
     host.innerHTML = ''

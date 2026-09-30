@@ -24,15 +24,20 @@ class ImageStub {
 }
 
 // Canvas : PAS de propriété complete (comportement navigateur réel).
-const makeCanvas = () => ({
-  width: 0, height: 0,
-  getContext: () => ({
+// Le stub fait l'aller-retour putImageData/getImageData (et copie les pixels
+// d'un canvas source dans drawImage) : la recoloration est testable au pixel.
+const makeCanvas = () => {
+  const cv = { width: 0, height: 0, _d: null }
+  cv.getContext = () => ({
     imageSmoothingEnabled: false,
-    drawImage() {},
-    getImageData: (x, y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
-    putImageData() {}
+    drawImage(src) {
+      if (src && src._d) cv._d = src._d // copie brute canvas -> canvas
+    },
+    getImageData: (x, y, w, h) => cv._d || { data: new Uint8ClampedArray(w * h * 4), width: w, height: h },
+    putImageData(a) { cv._d = a }
   })
-})
+  return cv
+}
 
 const store = {}
 globalThis.localStorage = {
@@ -189,6 +194,54 @@ const frozen = Sprites.get('idle0_t1')
 Sprites.tickAnimated(5.0)
 Sprites.tickAnimated(6.0)
 check('sans anim : variantes stables (coût nul)', Sprites.get('idle0_t1') === frozen)
+
+// ---------- fond par piste musicale : base() / setBase() ----------
+// game.js remplace les PNG de fond par des canvas recolorés UNE fois par
+// bascule de piste (jamais par frame — règles perf AGENTS.md).
+{
+  const bg0 = Sprites.base('bgBig')
+  check('base : le PNG de fond est accessible', !!bg0 && bg0.width === 64)
+  const bgCv = makeCanvas()
+  bgCv.width = 64; bgCv.height = 32
+  check('setBase : le canvas recoloré remplace la base', Sprites.setBase('bgBig', bgCv) === true && Sprites.base('bgBig') === bgCv)
+  check('setBase : le canvas passe les gardes de dessin', Sprites.drawImage('bgBig', 0, 0, 10) === true)
+  check('setBase : restauration de la base d\'origine', Sprites.setBase('bgBig', bg0) === true && Sprites.base('bgBig') === bg0)
+  check('setBase : clé inconnue refusée', Sprites.setBase('inconnu', bgCv) === false)
+  check('setBase : canvas vide/sans largeur refusé', Sprites.setBase('bgBig', makeCanvas()) === false && Sprites.base('bgBig') === bg0)
+  check('setBase : null refusé, base conservée', Sprites.setBase('bgBig', null) === false && Sprites.base('bgBig') === bg0)
+  // un draw entre les deux ne remet PAS la base (pas de rechargement par frame)
+  Sprites.setBase('bgBig', bgCv)
+  Sprites.drawImage('bgBig', 0, 0, 10)
+  check('draw : ne restaure pas la base (override stable)', Sprites.base('bgBig') === bgCv)
+  Sprites.setBase('bgBig', bg0)
+}
+
+// ---------- recolorBlue : teinte des pixels bleus (fond par piste) ----------
+// Même mécanisme que recolor (luminance préservée), sélection bleu-dominant :
+// bg_big/bg_panel sont bleus — seuls ces pixels doivent bouger.
+{
+  const px = (data, w, h) => {
+    const cv = makeCanvas()
+    cv.width = w; cv.height = h
+    cv.getContext().putImageData({ data, width: w, height: h })
+    return cv
+  }
+  const out = SlimeColors.recolorBlue(px(new Uint8ClampedArray([0, 0, 200, 255, 0, 200, 0, 255]), 2, 1), '#e05fbf')
+  const d = out.getContext().getImageData(0, 0, 2, 1).data
+  check('recolorBlue : pixel bleu teinté (R et B bougent)', d[0] > 100 && Math.abs(d[2] - 200) > 20)
+  check('recolorBlue : bleu tire vers la cible sans être plat', !(d[0] === 224 && d[1] === 95 && d[2] === 191))
+  check('recolorBlue : pixel vert intact', d[4] === 0 && d[5] === 200 && d[6] === 0 && d[7] === 255)
+  const out2 = SlimeColors.recolorBlue(px(new Uint8ClampedArray([0, 0, 60, 255, 0, 0, 250, 255]), 2, 1), '#e05fbf')
+  const d2 = out2.getContext().getImageData(0, 0, 2, 1).data
+  check('recolorBlue : ombrage conservé (sombre < clair)', d2[2] < d2[6])
+  const outT = SlimeColors.recolorBlue(px(new Uint8ClampedArray([0, 0, 200, 0]), 1, 1), '#e05fbf')
+  const dT = outT.getContext().getImageData(0, 0, 1, 1).data
+  check('recolorBlue : pixel transparent intact', dT[3] === 0)
+  // pixel non bleu-dominant (contour sombre) : intact
+  const outK = SlimeColors.recolorBlue(px(new Uint8ClampedArray([10, 10, 12, 255]), 1, 1), '#e05fbf')
+  const dK = outK.getContext().getImageData(0, 0, 1, 1).data
+  check('recolorBlue : contour sombre non bleu intact', dK[0] === 10 && dK[1] === 10 && dK[2] === 12)
+}
 
 console.log(failed === 0 ? '\nSPRITES OK — les canvas passent les gardes de dessin' : `\n${failed} ÉCHEC(S)`)
 process.exit(failed ? 1 : 0)

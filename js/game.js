@@ -184,6 +184,18 @@ const C_GOLD_TOP = 44, C_GOLD_SIDE = 45, C_GOLD_L = 46
 // « Plateformes fun » : bascule en bois (cf. commentaire dans COLORS).
 const C_SW_TOP = 47, C_SW_SIDE = 48, C_SW_DARK = 49
 
+// ---------- Fond par piste BGM ----------
+// Le fond suit la musique : à chaque bascule de piste (bgm1 -> bgm2 -> bgm3,
+// ~3 min), palette procédurale + sprites de fond recolorés UNE fois (jamais
+// par frame — règles perf AGENTS.md). P1 bleu (art d'origine), p2 violet
+// crépuscule, p3 braise. Ordre : BLUE, BLUE_L, BLUE_D, BLUE_XD, BLUE_HI.
+const TRACK_PALETTES = [
+  ['#4a5ed7', '#5f74e3', '#4152c8', '#3946a8', '#6b83ec'],
+  ['#7a3fd4', '#9a63ec', '#5c2bb0', '#421d8c', '#b78af5'],
+  ['#d74a3b', '#ec6f5f', '#b02d22', '#8c1c14', '#f5978a']
+]
+const TRACK_FX_DUR = 2 // transition ponctuelle (onde + flash + bannière), s
+
 // ---------- Paliers score -> couleur (éditables dans settings.html) ----------
 // La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
 // d'origine (vert) ; les teintes suivantes sont recolorées au chargement.
@@ -264,6 +276,12 @@ const AIM_SENS = 1.1
 const CAM_PALIER_S = 10
 let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
+// Anti-triche : points théoriques spawnés (bille 10 / or 50 / bonus 30) et
+// nombre de sections jouées — embarqués dans le code signé v3 à la mort.
+let theoPts = 0, patternsSpawned = 0
+// Fond par piste BGM : piste appliquée, timer de la transition ponctuelle,
+// et PNG de fond d'origine (capturés une fois, recoloration toujours depuis eux).
+let bgTrack = 0, trackFxT = 0, bgOriginals = null
 let best = 0, newRecord = false
 let testMode = false, testSecT = 0
 // Code de fin de partie : le contact (Instagram/email, js/contact.js) est
@@ -325,9 +343,15 @@ function spawnNext() {
   const last = platforms[platforms.length - 1]
   const sec = Patterns.spawnSection(last, elapsed)
   for (const p of sec.platforms) platforms.push(p)
-  for (const b of sec.balls) balls.push(b)
+  for (const b of sec.balls) {
+    balls.push(b)
+    // Théorique anti-triche : tout collectible spawné compte dans le total
+    // possible (mêmes valeurs que currentScore : 10 / GOLD_PTS / 30).
+    theoPts += b.gold ? GOLD_PTS : (b.life ? 30 : 10)
+  }
   for (const d of sec.decor) decors.push(d)
   for (const wl of sec.walls || []) wallsArr.push(wl)
+  patternsSpawned++
   if (sec.platforms.length && sec.platforms[0].safety && Patterns.usingDefaults()) {
     console.warn('SLIME : pool vide, plateforme de sécurité utilisée')
   }
@@ -376,6 +400,9 @@ function startGame() {
   ballsCollected = 0
   goldsCollected = 0
   bonusCollected = 0
+  theoPts = 0
+  patternsSpawned = 0
+  resetMusicTrack() // nouvelle partie : fond piste 1, sans bannière
   newRecord = false
   scoreCode = null
   deathT = 0
@@ -448,11 +475,12 @@ function die() {
   }
 }
 
-// Génère le code v2 (contact s'il existe) + le canvas du QR. Une seule fois
-// par mort/édition : le QR est mis en cache, jamais reconstruit par frame.
+// Génère le code v3 (stats anti-triche + contact s'il existe) + le canvas du
+// QR. Une seule fois par mort/édition : le QR est mis en cache, jamais
+// reconstruit par frame.
 function makeDeathCode() {
   const c = CONTACT && CONTACT.get ? CONTACT.get() : ''
-  scoreCode = Crypto.makeCode(pendingCodeScore, elapsed, c)
+  scoreCode = Crypto.makeCode(pendingCodeScore, elapsed, c, { theo: theoPts, patterns: patternsSpawned })
   qrCv = null
   if (typeof qrcode === 'undefined' || typeof document === 'undefined') return
   try {
@@ -865,6 +893,10 @@ function update_(dt) {
     return
   }
   elapsed += dts
+  // Fond par piste BGM : poll gratuit (lecture de Music.track) + timer de la
+  // transition ponctuelle, décrémenté comme les autres timers de jeu.
+  pollMusicTrack()
+  if (trackFxT > 0) { trackFxT -= dts; if (trackFxT < 0) trackFxT = 0 }
   const P = PH()
   // Caméra : paliers tous les CAM_PALIER_S s ; le pas est déduit de camRampDur
   // (réglage éditeur « Temps jusqu'au max ») pour atteindre le plafond en
@@ -1002,6 +1034,89 @@ function drawBG() {
     if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
     if (h > 0.86) rectfill(x + h2 * 40, 100 + h * 90, 18, 3, C_BLUE_HI)
   })
+}
+
+// ---------- fond par piste BGM : palette + sprites recolorés ----------
+// La bascule suit l'audio réel (Music.track lu chaque frame — lecture
+// gratuite) : bgm2 -> violet, bgm3 -> braise. Coût par frame : un if.
+// La recoloration des sprites (SlimeColors.recolorBlue) et le swap de palette
+// sont faits UNE fois par bascule, jamais dans une boucle de dessin.
+function applyTrackPalette(t) {
+  const p = TRACK_PALETTES[t] || TRACK_PALETTES[0]
+  for (let i = 0; i < 5; i++) COLORS[C_BLUE + i] = p[i]
+  pal(COLORS, C_WHITE)
+}
+
+function recolorBgSprites(t) {
+  try {
+    if (typeof SlimeColors === 'undefined' || !Sprites.ready) return
+    if (!bgOriginals) {
+      bgOriginals = {}
+      for (const k of ['bgBig', 'bgPanel1', 'bgPanel2', 'bgPanel3', 'bgPanel4']) bgOriginals[k] = Sprites.base(k)
+    }
+    for (const k of Object.keys(bgOriginals)) {
+      const im = bgOriginals[k]
+      if (!im || !im.width) continue
+      // piste 1 : PNG d'origine ; sinon teinte bleue -> palette de la piste
+      Sprites.setBase(k, t === 0 ? im : SlimeColors.recolorBlue(im, TRACK_PALETTES[t][0]))
+    }
+  } catch (e) {} // hors navigateur / images absentes : palette seule, jamais bloquant
+}
+
+// Bascule explicite (0, 1, 2) : no-op si déjà appliquée (idempotent).
+function applyMusicTrack(t) {
+  t = (t | 0) || 0
+  if (t === bgTrack) return
+  bgTrack = t
+  applyTrackPalette(t)
+  recolorBgSprites(t)
+  trackFxT = TRACK_FX_DUR // transition ponctuelle : onde + flash + bannière
+}
+
+// Nouvelle partie : retour piste 1 SILENCIEUX (palette d'origine, pas de
+// bannière — la musique repart de bgm1 via Music.stop()).
+function resetMusicTrack() {
+  bgTrack = 0
+  trackFxT = 0
+  applyTrackPalette(0)
+  recolorBgSprites(0)
+}
+
+// Poll par frame pendant le run : applique la piste BGM courante.
+function pollMusicTrack() { applyMusicTrack(Music.track) }
+
+// Transition ponctuelle (~2 s, vectorielle : anneaux/rects/texte — aucun
+// canvas régénéré, coût par frame quasi nul) : flash bref, onde depuis le
+// slime, bannière « MUSIQUE 2/3 » dans le style de « RECORD ».
+function drawTrackFx() {
+  if (trackFxT <= 0 || state !== 'playing') return
+  const u = 1 - trackFxT / TRACK_FX_DUR // 0 -> 1 sur la durée
+  // Flash plein écran bref (premier cinquième).
+  if (u < 0.2) {
+    alpha(0.38 * (1 - u / 0.2))
+    rectfill(0, 0, VW, VH, C_WHITE)
+    alpha(1)
+  }
+  // Onde : anneaux qui s'étendent depuis le slime (première moitié).
+  if (u < 0.5 && slime) {
+    const kx = camW / VW, ky = camH / VH
+    const sx = VW / 2 + (slime.x - camCx) / kx
+    const sy = VH / 2 + (slime.y - camCy) / ky
+    const r = 10 + (u / 0.5) * 130
+    alpha(0.55 * (1 - u / 0.5))
+    circ(sx, sy, r, C_WHITE)
+    circ(sx, sy, r * 0.8, TRACK_PALETTES[bgTrack][4] || C_BLUE_HI)
+    alpha(1)
+  }
+  // Bannière : fondu entrée/sortie, ombre noire + couleur de la piste.
+  const fade = Math.min(1, u / 0.15, (1 - u) / 0.25)
+  if (fade > 0) {
+    const msg = I18N.t('music') + ' ' + (bgTrack + 1)
+    alpha(fade)
+    text(VW / 2, 84, msg, C_BLACK, 'bold')
+    text(VW / 2, 80, msg, TRACK_PALETTES[bgTrack][4] || C_BLUE_HI, 'bold')
+    alpha(1)
+  }
 }
 
 function drawVignette() {
@@ -2307,6 +2422,7 @@ function draw_() {
     const q3 = diagProf ? performance.now() : 0
     drawOffscreen()
     drawSlowmoOverlay()
+    drawTrackFx()
     drawFrameEdges()
     if (state === 'playing' && !runStarted) drawReadyHint()
     drawHUD()

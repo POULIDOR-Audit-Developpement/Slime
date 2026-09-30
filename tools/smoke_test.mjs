@@ -252,7 +252,7 @@ check('stalactite : détectée impossible', Patterns.validatePatternJumps(murCei
 // 8d. instanciation : le sommet devient une plateforme wallTop, les murs sortent
 {
   const anchor = { x: -128, row: 2, y: rowY(2), baseY: rowY(2), w: 128, type: 'basic', amp: 0, spd: 0, ph: 0 }
-  const inst = Patterns.instantiate(murTop, anchor)
+  const inst = Patterns.instantiate(murTop, anchor, { shift: 0 })
   check('instantiate : murs géolocalisés', inst.walls.length === 1 && inst.walls[0].y1 === rowY(1) && inst.walls[0].y2 === 270)
   const top = inst.platforms.find(p => p.wallTop)
   check('instantiate : sommet wallTop présent', !!top && top.y === rowY(1) && top.w === 32)

@@ -152,12 +152,23 @@ const Patterns = (() => {
   // ---------- instanciation (coords relatives -> monde) ----------
   // Origine d'un pattern : bord droit de la plateforme d'ancrage (celle d'avant),
   // ligne d'entrée = entry.row. Le décalage vertical aligne l'entrée sur le monde.
-  function instantiate(pat, last) {
+  function instantiate(pat, last, opts) {
     const delta = last.row - entryRow(pat)
     const dx = last.x + last.w
+    // Transposition verticale : décalage global aléatoire, borné pour que tout
+    // le pattern (plateformes + murs) tienne dans 0..4 sans écrêtage. La
+    // géométrie relative est intacte (la physique revalide le chaînage) et un
+    // pattern rejoué ne se retrouve plus toujours sur les mêmes lignes.
+    // opts.shift explicite (0 pour la validation éditeur, déterministe).
+    let rMin = 4, rMax = 0
+    for (const q of pat.platforms) { const r = (q.row | 0) + delta; if (r < rMin) rMin = r; if (r > rMax) rMax = r }
+    for (const wl of pat.walls || []) { const r = (wl.row | 0) + delta; if (r < rMin) rMin = r; if (r > rMax) rMax = r }
+    const lo = -rMin, hi = 4 - rMax
+    const shift = opts && opts.shift != null ? clampN(opts.shift | 0, lo, hi)
+      : lo > hi ? 0 : lo + Math.floor(Math.random() * (hi - lo + 1))
     const platforms = [], balls = [], decor = [], walls = []
     for (const q of pat.platforms) {
-      const row = clampN((q.row | 0) + delta, 0, 4)
+      const row = clampN((q.row | 0) + delta + shift, 0, 4)
       const inst = {
         x: dx + q.x, row, y: rowY(row), baseY: rowY(row),
         w: q.cells * CELL, type: q.type === 'ghost' ? 'phase' : q.type,
@@ -179,7 +190,7 @@ const Patterns = (() => {
     // (wallTop) injectée dans la chaîne triée par x : atterrissable en jeu,
     // validée comme un saut optionnel par validateInstance.
     for (const wl of pat.walls || []) {
-      const row = clampN((wl.row | 0) + delta, 0, 4)
+      const row = clampN((wl.row | 0) + delta + shift, 0, 4)
       const inst = {
         x: dx + wl.x, w: wl.cells * CELL, kind: wl.kind, spiked: !!wl.spiked, row,
         y1: wl.kind === 'ground' ? rowY(row) : 0,
@@ -195,7 +206,7 @@ const Patterns = (() => {
     }
     platforms.sort((a, b) => a.x - b.x)
     for (const b of pat.balls || []) {
-      const row = clampN((b.row | 0) + delta, 0, 4)
+      const row = clampN((b.row | 0) + delta + shift, 0, 4)
       balls.push({
         x: dx + b.x, y: clampN(rowY(row) + (b.yOff || 0), CEIL + 12, VH - 8),
         o: Math.random() < 0.3, taken: false, gold: !!b.gold, life: !!b.life
@@ -299,7 +310,10 @@ const Patterns = (() => {
   function validatePatternJumps(p) {
     const anchorRow = entryRow(p)
     const anchor = { x: -4 * CELL, row: anchorRow, y: rowY(anchorRow), baseY: rowY(anchorRow), w: 4 * CELL, type: 'basic', amp: 0, spd: 0, ph: 0 }
-    const inst = instantiate(p, anchor)
+    // Validation sur la position canonique (shift 0) : l'éditeur doit donner
+    // un verdict stable ; en jeu, chaque instance transposée est revalidée
+    // par validateInstance de toute façon.
+    const inst = instantiate(p, anchor, { shift: 0 })
     const walls = inst.walls || []
     const budget = djBudget()
     let prev = anchor

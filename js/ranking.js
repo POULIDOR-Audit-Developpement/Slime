@@ -30,7 +30,13 @@ const Ranking = (() => {
     }
     const out = list.slice()
     if (i >= 0) out.splice(i, 1)
-    out.push({ contact: entry.contact || '', score: +entry.score, date: +entry.date || 0, code: entry.code, elapsed: Math.max(0, Math.floor(+entry.elapsed || 0)) })
+    // Stats anti-triche optionnelles (code v3) : normalisées à 0 si absentes.
+    out.push({
+      contact: entry.contact || '', score: +entry.score, date: +entry.date || 0,
+      code: entry.code, elapsed: Math.max(0, Math.floor(+entry.elapsed || 0)),
+      theo: Math.max(0, Math.floor(+entry.theo || 0)),
+      patterns: Math.max(0, Math.floor(+entry.patterns || 0))
+    })
     return { list: out, accepted: true, replaced: i >= 0 }
   }
 

@@ -82,5 +82,26 @@ const e = (contact, score, date, code, elapsed) =>
   check('stockage corrompu : liste vide (pas de crash)', R.load().length === 0)
 }
 
+// 6) stats anti-triche optionnelles (v3 : theo/patterns)
+{
+  const { R } = loadRanking()
+  const withStats = Object.assign(e('dave', 300, 6), { theo: 900, patterns: 31 })
+  let r = R.add([], withStats)
+  check('entrée avec stats : acceptée', r.accepted)
+  check('entrée avec stats : theo + patterns stockés', r.list[0].theo === 900 && r.list[0].patterns === 31)
+  // meilleur score suivant sans stats : les champs repartent à zéro, pas de crash
+  r = R.add(r.list, Object.assign(e('dave', 400, 7), { theo: 1100, patterns: 40 }))
+  check('remplacement : nouvelles stats prises', r.list[0].theo === 1100 && r.list[0].patterns === 40)
+  const plain = R.add(R.add([], e('erin', 50, 8)).list, e('erin', 60, 9)).list
+  check('entrée sans stats : champs manquants tolérés (pas de crash)', plain.length === 1 && plain[0].score === 60)
+  // merge/import : les stats survivent à l'union
+  const m = R.merge(plain, [withStats])
+  const dm = m.find(x => x.contact === 'dave')
+  check('merge : stats conservées', !!dm && dm.theo === 900 && dm.patterns === 31)
+  // entrée valide sans stats -> champs normalisés à 0 (affichage « — » côté decode)
+  const norm = R.add([], e('fred', 70, 10)).list[0]
+  check('normalisation : theo/patterns à 0 si absents', norm.theo === 0 && norm.patterns === 0)
+}
+
 if (fail === 0) console.log('\nRANKING OK — tous les checks passent')
 else { console.error(`\n${fail} CHECK(S) EN ÉCHEC`); process.exit(1) }

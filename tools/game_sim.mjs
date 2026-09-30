@@ -420,6 +420,86 @@ function driverFn() {
   execJump = _ej
   check('soak 1200 frames sans exception (sauts : ' + jumps + ', vies : ' + lives + ')', jumps > 5)
 
+  // --- 11) stats anti-triche : points théoriques + patterns spawnés ---
+  startGame()
+  runStarted = true
+  check('patterns comptés dès le remplissage initial', patternsSpawned > 0)
+  check('theoPts initial >= 0', theoPts >= 0)
+  {
+    const n0 = patternsSpawned, t0 = theoPts
+    const cnt = () => {
+      let gold = 0, life = 0
+      for (const b of balls) { if (b.gold) gold++; else if (b.life) life++ }
+      return { n: balls.length, gold, life }
+    }
+    const a = cnt()
+    spawnNext()
+    const b = cnt()
+    // théorique = billes 10 + or 50 (=10+40) + bonus 30 (=10+20)
+    const expected = (b.n - a.n) * 10 + (b.gold - a.gold) * 40 + (b.life - a.life) * 20
+    check('spawnNext : +1 pattern compté', patternsSpawned === n0 + 1)
+    check('spawnNext : theoPts = valeur des collectibles ajoutés (' + expected + ')', theoPts - t0 === expected)
+    // un score ne peut jamais dépasser le théorique + la distance : garde anti-triche
+    check('theoPts cohérent : collectibles seuls <= théorique', theoPts >= currentScore() - Math.floor(camX / 10))
+  }
+
+  // --- 12) bascule de piste musicale : palette + transition ---
+  {
+    startGame()
+    runStarted = true // le timer de transition ne tourne qu'en run (comme en jeu)
+    check('départ : fond piste 0, pas de transition', bgTrack === 0 && trackFxT === 0)
+    applyMusicTrack(1)
+    const fx1 = trackFxT
+    check('bascule piste 1 : palette violette', bgTrack === 1 && COLORS[C_BLUE] === TRACK_PALETTES[1][0] && COLORS[C_BLUE_HI] === TRACK_PALETTES[1][4])
+    check('bascule piste 1 : transition armée (~2 s)', fx1 > 1.5)
+    applyMusicTrack(1)
+    check('bascule idempotente : ni re-arm ni re-palette', trackFxT === fx1 && COLORS[C_BLUE] === TRACK_PALETTES[1][0])
+    applyMusicTrack(2)
+    check('bascule piste 2 : palette braise', COLORS[C_BLUE] === TRACK_PALETTES[2][0])
+    applyMusicTrack(0)
+    check('retour piste 0 : palette d\'origine restaurée',
+      COLORS[C_BLUE] === '#4a5ed7' && COLORS[C_BLUE_L] === '#5f74e3' && COLORS[C_BLUE_D] === '#4152c8' &&
+      COLORS[C_BLUE_XD] === '#3946a8' && COLORS[C_BLUE_HI] === '#6b83ec')
+    const fx0 = trackFxT
+    check('retour piste 0 : transition armée', fx0 > 1.5)
+    update(1 / 60) // piste 0 = piste courante en Node : le poll ne re-arme pas
+    check('tick : timer de transition décroit', trackFxT < fx0)
+    trackFxT = 0.001
+    update(1 / 60)
+    check('tick : transition terminée -> timer à 0', trackFxT === 0)
+    // startGame : retour piste 0 SILENCIEUX (pas de bannière au redémarrage)
+    applyMusicTrack(2)
+    startGame()
+    check('startGame : fond remis piste 0 en silence', bgTrack === 0 && trackFxT === 0 && COLORS[C_BLUE] === '#4a5ed7')
+  }
+
+  // --- 13) mort : le code signé v3 embarque les stats du run ---
+  {
+    startGame()
+    runStarted = true
+    update(1 / 60)
+    const theo0 = theoPts, pat0 = patternsSpawned
+    die()
+    const dec = Crypto.verifyCode(scoreCode)
+    check('code de mort : v3 signé avec stats', !!dec && dec.v === 3)
+    check('code de mort : theo = points possibles du run (' + theo0 + ')', !!dec && dec.theo === theo0)
+    check('code de mort : patterns = sections jouées (' + pat0 + ')', !!dec && dec.patterns === pat0)
+    check('code de mort : score <= theo (anti-triche sensé)', !!dec && dec.score <= dec.theo + Math.floor(camX / 10) + 10)
+  }
+
+  // --- 14) draw() : la transition dessinée ne lève dans aucun état ---
+  try {
+    applyMusicTrack(1)
+    draw()
+    state = 'title'
+    draw()
+    startGame()
+    state = 'playing'
+    check('draw() avec transition armée sans exception', true)
+  } catch (e) {
+    check('draw() avec transition armée sans exception (' + e.message + ')', false)
+  }
+
   // --- 10) rendu : draw() ne doit lever dans aucun état ---
   Patterns.setLayout(null)
   applyLayout()

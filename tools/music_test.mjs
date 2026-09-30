@@ -90,10 +90,15 @@ function loadMusic() {
   check('piste 3 en boucle (survie > 9 min)', created[2].loop === true && !created[0].loop && !created[1].loop)
   created[0].fire('ended') // fin de bgm1
   check('fin de bgm1 -> bgm2 joue', created[1].paused === false && created[0].paused === true)
+  check('fin de bgm1 -> Music.track === 1', M2.track === 1)
   created[1].fire('ended') // fin de bgm2
   check('fin de bgm2 -> bgm3 joue', created[2].paused === false)
+  check('fin de bgm2 -> Music.track === 2', M2.track === 2)
   created[2].fire('ended') // fin de bgm3 : loop=true, ne doit pas casser
   check('fin de bgm3 : reste sur bgm3 (loop)', created[2].paused === false)
+  check('fin de bgm3 : Music.track reste 2', M2.track === 2)
+  M2.stop()
+  check('stop() : Music.track remis à 0', M2.track === 0)
 }
 
 // ---- 4. Node pur (pas de Audio) : no-op complet ----
@@ -104,8 +109,9 @@ function loadMusic() {
   try {
     const M3 = sandbox3(undefined, undefined, undefined, undefined)
     M3.restore(); M3.start(); M3.stop(); M3.toggle()
+    if (M3.track !== 0) throw new Error('track hors navigateur')
   } catch (e) { threw = true }
-  check('hors navigateur : no-op sans exception', !threw)
+  check('hors navigateur : no-op sans exception (track 0)', !threw)
 }
 
 // ---- 5. chargement paresseux : RIEN de média au boot ----

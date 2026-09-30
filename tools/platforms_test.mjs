@@ -137,7 +137,7 @@ async function driverFn() {
     platforms: [{ x: 3 * CELL, row: 2, cells: 3, type: 'ghost', yOff: 0, amp: 0, spd: 0, spike: null }], balls: [], decor: [] }
   check('validatePattern accepte ghost (alias)', Patterns.validatePattern(patGhost).length === 0)
   const anchor = { x: 0, row: 2, y: rowY(2), w: 4 * CELL, type: 'basic' }
-  const instG = Patterns.instantiate(patGhost, anchor)
+  const instG = Patterns.instantiate(patGhost, anchor, { shift: 0 })
   check('instantiate normalise ghost -> phase', instG.platforms[0].type === 'phase')
   check('phase0 toujours défini', typeof instG.platforms[0].phase0 === 'number')
 
@@ -145,12 +145,12 @@ async function driverFn() {
   const patSeesaw = { id: 't-seesaw', name: 'seesaw', difficulty: 3, entry: { row: 2 },
     platforms: [{ x: 10 * CELL, row: 2, cells: 3, type: 'seesaw', yOff: 0, amp: 0, spd: 0, spike: null }], balls: [], decor: [] }
   check('validatePattern accepte seesaw', Patterns.validatePattern(patSeesaw).length === 0)
-  const instS = Patterns.instantiate(patSeesaw, anchor)
+  const instS = Patterns.instantiate(patSeesaw, anchor, { shift: 0 })
   const r = Patterns.jumpOk(instG.platforms[0], instS.platforms[0], [], { dj: 0 })
   check('jumpOk depuis phase vers seesaw (source famille basique)', r.ok)
   const patLoin = { id: 't-bascule', name: 'bascule', difficulty: 3, entry: { row: 2 },
     platforms: [{ x: 19 * CELL, row: 2, cells: 3, type: 'basic', yOff: 0, amp: 0, spd: 0, spike: null }], balls: [], decor: [] }
-  const instL = Patterns.instantiate(patLoin, anchor)
+  const instL = Patterns.instantiate(patLoin, anchor, { shift: 0 })
   const rb = Patterns.jumpOk(instS.platforms[0], instL.platforms[0], [], { dj: 0 })
   check('jumpOk depuis seesaw (famille rebond, vitesse bascule)', rb.ok && rb.via === 'bounce')
 

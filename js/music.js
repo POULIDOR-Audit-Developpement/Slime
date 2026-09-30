@@ -100,6 +100,9 @@ const Music = (() => {
     stop,
     toggle,
     restore,
+    // Piste courante (0, 1 ou 2) : le jeu la lit chaque frame (lecture
+    // gratuite) pour swapper le fond au passage bgm1 -> bgm2 -> bgm3.
+    get track() { return idx },
     get muted() { return muted }
   }
 })()

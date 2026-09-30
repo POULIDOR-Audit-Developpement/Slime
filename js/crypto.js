@@ -79,12 +79,24 @@ const Crypto = (() => {
   //   b64url("score.elapsed.date") + '.' + HMAC32
   // AVEC contact (email/Instagram, déjà sanitizé par Contact.sanitize) :
   // version 2 —   b64url("2.score.elapsed.date.b64url(contact)") + '.' + HMAC32
+  // AVEC stats anti-triche (theo = points théoriques spawnés, patterns =
+  // nb de sections jouées) : version 3 —
+  //   b64url("3.score.elapsed.date.theo.patterns[.b64url(contact)]") + '.' + HMAC32
   // (le contact est lui-même encodé b64url : aucun '.' dans le payload).
-  function makeCode(score, elapsed, contact) {
+  // stats absent/null -> v1/v2 comme avant ; les 4 formats restent décodables.
+  function makeCode(score, elapsed, contact, stats) {
     const t = Math.max(0, Math.floor(elapsed || 0))
-    const payload = (typeof contact === 'string' && contact)
-      ? '2.' + score + '.' + t + '.' + Date.now() + '.' + b64url(contact)
-      : score + '.' + t + '.' + Date.now()
+    const hasContact = typeof contact === 'string' && !!contact
+    const num = v => Math.max(0, Math.floor(+v || 0))
+    let payload
+    if (stats && ('theo' in stats || 'patterns' in stats)) {
+      payload = '3.' + score + '.' + t + '.' + Date.now() + '.' + num(stats.theo) + '.' + num(stats.patterns)
+      if (hasContact) payload += '.' + b64url(contact)
+    } else {
+      payload = hasContact
+        ? '2.' + score + '.' + t + '.' + Date.now() + '.' + b64url(contact)
+        : score + '.' + t + '.' + Date.now()
+    }
     const body = b64url(payload)
     return body + '.' + hmacHex(SECRET, body).slice(0, 32)
   }
@@ -99,6 +111,20 @@ const Crypto = (() => {
     try {
       const payload = unb64url(body)
       const parts = payload.split('.')
+      // v3 : "3.score.elapsed.date.theo.patterns[.contactB64]"
+      if (parts[0] === '3' && parts.length >= 6) {
+        const out = {
+          v: 3,
+          score: parseInt(parts[1], 10),
+          date: new Date(parseInt(parts[3], 10)),
+          theo: parseInt(parts[4], 10) || 0,
+          patterns: parseInt(parts[5], 10) || 0
+        }
+        if (isNaN(out.date.getTime())) return null
+        out.elapsed = parseInt(parts[2], 10)
+        if (parts[6]) { try { out.contact = unb64url(parts[6]) } catch (e) { out.contact = '' } }
+        return out
+      }
       // v2 : "2.score.elapsed.date.contactB64"
       if (parts[0] === '2' && parts.length >= 5) {
         const out = {
