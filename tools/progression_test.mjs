@@ -52,6 +52,43 @@ for (const d of [1, 2, 3, 4, 5]) for (let j = 0; j < TIER_NEW[d].length; j++) {
 }
 check('dynamic T1 doux (amp <= 16, spd <= 1.6)', pool.filter(p => p.difficulty === 1).flatMap(p => p.platforms).filter(q => q.type === 'dynamic').every(q => q.amp <= 16 && q.spd <= 1.6))
 
+// --- 2c) poids par fenêtres de tier + anti-répétition profondeur 5 ---
+const poolW = pool
+check('weightOf exposé', typeof Patterns.weightOf === 'function')
+const t1p = poolW.find(p => p.difficulty === 1)
+const t3p = poolW.find(p => p.id === 'gen-t3-1') // vitrine sticky, sans turbo
+const t4p = poolW.find(p => p.difficulty === 4 && Patterns.typeUnlockOk(p, 540))
+const t5p = poolW.find(p => p.difficulty === 5)
+// Cap 9 min = le plus dur : T5 domine T4 domine T1
+check('cap 540 s : T5 > T4 > T1',
+  Patterns.weightOf(t5p, 540) > Patterns.weightOf(t4p, 540) &&
+  Patterns.weightOf(t4p, 540) > Patterns.weightOf(t1p, 540))
+// Tier actif à 240 s = T3 : sa vitrine pèse plus qu'un pattern T1
+check('fenêtre 240 s : T3 actif > T1', Patterns.weightOf(t3p, 240) > Patterns.weightOf(t1p, 240))
+// Facteurs exacts : base × 2.2 (actif), × 0.3 (deux tiers derrière)
+const baseT3_240 = 30 * (240 / 540)
+const baseT1_240 = 120 - 118 * (240 / 540)
+check('facteur tier actif ×2.2', Math.abs(Patterns.weightOf(t3p, 240) - baseT3_240 * 2.2) < 1e-6)
+check('facteur ancien ×0.3', Math.abs(Patterns.weightOf(t1p, 240) - baseT1_240 * 0.3) < 1e-6)
+// Anti-répétition : après un tirage, le pattern tiré est pénalisé (×0.1),
+// le précédent l'est encore (×0.2) — les ping-pong A,B,A,B s'effondrent.
+const sigMap = {}
+for (const p of poolW) sigMap[p.platforms.map(q => (q.type === 'ghost' ? 'phase' : q.type) + q.cells).join('-')] = p
+const beforeW = {}
+for (const p of poolW) beforeW[p.id] = Patterns.weightOf(p, 200)
+let last2 = { x: 16, row: 2, y: rowY(2), w: 5 * CELL }
+const drawnPats = []
+for (let i = 0; i < 12 && drawnPats.length < 2; i++) {
+  const sec = Patterns.spawnSection(last2, 200)
+  const sig = sec.platforms.map(p => p.type + Math.round(p.w / 32)).join('-')
+  const pat = sigMap[sig]
+  if (pat && pat.id !== (drawnPats[0] && drawnPats[0].id)) drawnPats.push(pat)
+  last2 = sec.platforms[sec.platforms.length - 1] || last2
+}
+check('2 patterns distincts tirés', drawnPats.length === 2)
+check('dernier tiré pénalisé (×0.1)', Patterns.weightOf(drawnPats[1], 200) <= beforeW[drawnPats[1].id] * 0.1 + 1e-9)
+check('précédent tiré pénalisé (×0.2)', Patterns.weightOf(drawnPats[0], 200) <= beforeW[drawnPats[0].id] * 0.2 + 1e-9)
+
 // --- 3) ensemble éligible jamais vide sur la run (pool par défaut) ---
 let vide = -1
 for (let s = 0; s < 540 && vide < 0; s++) {

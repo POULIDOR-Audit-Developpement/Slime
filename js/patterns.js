@@ -85,7 +85,6 @@ const Patterns = (() => {
 
   let store = null      // ce que l'utilisateur édite : { patterns: [...], layout }
   let layout = null
-  let lastId = null     // anti-répétition immédiate
   let pinned = null     // pattern épinglé (mode test ?pattern=)
 
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -347,21 +346,49 @@ const Patterns = (() => {
     return true
   }
 
+  // Fenêtres de tier (alignées sur UNLOCK_T) : chaque difficulté domine SA
+  // fenêtre — la difficulté 1 ne pèse plus sur toute la run.
+  const TIER_START = [0, 90, 210, 330, 420]
+  // Anti-répétition profondeur 5 : les 5 derniers patterns tirés sont
+  // pénalisés par fraîcheur — le doublon immédiat comme les ping-pong
+  // A,B,A,B s'effondrent.
+  const HISTORY_N = 5
+  const HISTORY_MUL = [0.1, 0.2, 0.3, 0.5, 0.8]
+  let history = []
+
+  function activeTier(elapsed) {
+    let a = 0
+    for (let i = 0; i < TIER_START.length; i++) if (elapsed >= TIER_START[i]) a = i
+    return a
+  }
+
   function currentPool() {
     if (pinned) return [pinned]
     const user = store && store.patterns
     return user && user.length ? user : defaults()
   }
 
-  function weights(pool, elapsed, ignoreGate) {
+  // Poids complet d'un pattern à `elapsed` : base W0/W1 × fenêtre de tier ×
+  // anti-répétition × garde UNLOCK_T. ignoreGate (pinned, fallback pool vide)
+  // saute la garde et l'historique : poids bruts.
+  function weightOf(p, elapsed, ignoreGate) {
     const t = Math.min(elapsed / 540, 1)
-    return pool.map(p => {
-      const d = clampN((p.difficulty | 0) - 1, 0, 4)
-      let w = W0[d] + (W1[d] - W0[d]) * t
-      if (!pinned && p.id === lastId) w *= 0.12
-      if (!ignoreGate && !pinned && !typeUnlockOk(p, elapsed)) w = 0
-      return Math.max(w, 0)
-    })
+    const d = clampN((p.difficulty | 0) - 1, 0, 4)
+    let w = W0[d] + (W1[d] - W0[d]) * t
+    if (!ignoreGate && !pinned) {
+      const active = activeTier(elapsed)
+      if (d === active) w *= 2.2
+      else if (d === active - 1) w *= 0.8
+      else if (d < active - 1) w *= 0.3
+      const h = history.indexOf(p.id)
+      if (h >= 0 && h < HISTORY_N) w *= HISTORY_MUL[h]
+      if (!typeUnlockOk(p, elapsed)) w = 0
+    }
+    return Math.max(w, 0)
+  }
+
+  function weights(pool, elapsed, ignoreGate) {
+    return pool.map(p => weightOf(p, elapsed, ignoreGate))
   }
 
   function safety(last) {
@@ -399,7 +426,8 @@ const Patterns = (() => {
       if (!pick) pick = pool[pool.length - 1]
       const inst = instantiate(pick, last)
       if (!strict || validateInstance(last, inst)) {
-        lastId = pick.id
+        history.unshift(pick.id)
+        if (history.length > HISTORY_N) history.length = HISTORY_N
         return inst
       }
     }
@@ -755,7 +783,7 @@ const Patterns = (() => {
     getPatterns, setPatterns, setPatternsRaw, getLayout, setLayout,
     usingDefaults, installDefaults, resetUser,
     defaults, sortPool, validatePattern, validatePatternJumps,
-    UNLOCK_T, typeUnlockOk,
+    UNLOCK_T, typeUnlockOk, weightOf,
     patternWidth, entryRow, emptyPattern, uid,
     instantiate, jumpOk, targetOf,
     spawnSection, pin, getPinned,

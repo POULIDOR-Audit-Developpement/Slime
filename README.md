@@ -153,7 +153,7 @@ Physique du jeu réglable pour de **micro-ajustements** du game feel — même m
   | T4 | 330–450 s | bouncy (330 s), seesaw (360 s) |
   | T5 | 450 s+ | gold (420 s) + mélanges durs |
 
-- Le jeu pioche dans le pool selon une **courbe de poids** : T1 domine au début, les tiers durs prennent le dessus vers 9 min (calé sur la caméra : 3 BGM de 3 min) ; anti-répétition immédiate ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
+- Le jeu pioche dans le pool selon une **courbe de poids par fenêtre de tier** : chaque tier domine SA fenêtre (T1 → 0–90 s, T2 → 90–210, T3 → 210–330, T4 → 330–420, T5 → 420+ ; à 9 min, le plus dur tire ~75 % des patterns) ; **anti-répétition profondeur 5** (les 5 derniers patterns tirés sont pénalisés par fraîcheur — doublons et ping-pong A,B,A,B s'effondrent) ; chaque enchaînement est revalidé, avec plateforme de secours si rien ne passe
 - **Ton pool remplace le pool par défaut dès qu'il contient au moins 1 pattern** (sinon le jeu joue les 30 sections embarquées) ; bouton « Pool par défaut » pour les copier et les éditer
 - **Pool LAN et remplacement** : l'état partagé peut porter un `poolTag` ; quand il change, chaque appareil **remplace** son pool par le distant au prochain pull (les anciens patterns locaux ne ressortent pas), puis la fusion « rien n'est perdu » reprend normalement pour les créations suivantes
 
