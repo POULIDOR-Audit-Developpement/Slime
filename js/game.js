@@ -55,9 +55,9 @@ let WALL = { left: WALL_DEF.left, right: WALL_DEF.right }
 let PLAT = { crumbleT: CRUMBLE_T, spdMul: 1 }
 // Pouvoirs (onglet POWER) et vue (zoom global, onglet VUE) issus du layout.
 let POWERS = {
-  doubleJump: { enabled: true, cooldown: 4, charges: 1, powerMul: 1 },
-  slowmo: { enabled: true, scale: 0.35, duration: 0.6 },
-  ledge: { enabled: true, pullT: 0.6, window: 8 }
+  doubleJump: { enabled: true, cooldown: 0.5, charges: 2, powerMul: 1.15 },
+  slowmo: { enabled: true, scale: 0.05, duration: 2 },
+  ledge: { enabled: true, pullT: 0.3, window: 5 }
 }
 let VIEW = { zoom: 1, showTrajectory: true, shake: true }
 // Raccourci : physique courante (onglet PHYS de l'éditeur -> layout.phys).
@@ -93,23 +93,25 @@ function applyLayout() {
   }
   if (l && l.powers) {
     const dj = l.powers.doubleJump, sm = l.powers.slowmo, lg = l.powers.ledge || {}
+    // Défauts et bornes alignés sur POWERS_DEF (js/patterns.js) — le layout
+    // est déjà normalisé, ces garde-fous ne doivent jamais l'écrêter.
     POWERS = {
       doubleJump: {
         enabled: dj.enabled !== false,
-        cooldown: numBound(dj.cooldown, 4, 0, 15),
-        charges: Math.round(numBound(dj.charges, 1, 1, 3)),
-        powerMul: numBound(dj.powerMul, 1, 0.5, 1.5)
+        cooldown: numBound(dj.cooldown, 0.5, 0, 15),
+        charges: Math.round(numBound(dj.charges, 2, 1, 3)),
+        powerMul: numBound(dj.powerMul, 1.15, 0.5, 1.5)
       },
       slowmo: {
         enabled: sm.enabled !== false,
-        scale: numBound(sm.scale, 0.35, 0.15, 0.8),
-        duration: numBound(sm.duration, 0.6, 0.2, 2)
+        scale: numBound(sm.scale, 0.05, 0.05, 0.8),
+        duration: numBound(sm.duration, 2, 0.2, 2)
       },
       ledge: {
         enabled: lg.enabled !== false,
         // pullT (ex hangT) : durée de la remontée ; migration des anciens saves.
-        pullT: numBound(lg.pullT !== undefined ? lg.pullT : lg.hangT, 0.6, 0.3, 3),
-        window: Math.round(numBound(lg.window, 8, 4, 16))
+        pullT: numBound(lg.pullT !== undefined ? lg.pullT : lg.hangT, 0.3, 0.3, 3),
+        window: Math.round(numBound(lg.window, 5, 4, 16))
       }
     }
   }

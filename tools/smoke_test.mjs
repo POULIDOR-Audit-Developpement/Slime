@@ -136,6 +136,9 @@ check('caméra : retour aux défauts feeling', Phys.phys().camBase === 35 && Phy
 
 Phys.setPhys({ grav: 800, slimeR: 10 })
 check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 170)
+Phys.setPhys({ slimeR: 6 })
+check('slimeR 6 accepté (borne = plancher slider)', Phys.phys().slimeR === 6)
+Phys.setPhys(null)
 Phys.setPhys({ vmin: 400, vmax: 200, grav: 99999 })
 check('bornes + garde vmax', Phys.phys().grav === 1000 && Phys.phys().vmin === 400 && Phys.phys().vmax >= 450)
 Phys.setPhys(null)

@@ -71,6 +71,12 @@ function driverFn() {
 
   // --- état initial : physique par défaut (slime réduit 14) ---
   check('état playing', state === 'playing')
+  // Défauts POWERS vus par le JEU (applyLayout sur le layout normalisé) —
+  // les fallbacks de game.js doivent correspondre aux POWERS_DEF du layout.
+  check('pouvoirs défauts jeu (DJ 0.5s/2/×1.15, slowmo ×0.05/2s, ledge 0.3s/5)',
+    POWERS.doubleJump.cooldown === 0.5 && POWERS.doubleJump.charges === 2 && POWERS.doubleJump.powerMul === 1.15 &&
+    POWERS.slowmo.scale === 0.05 && POWERS.slowmo.duration === 2 &&
+    POWERS.ledge.pullT === 0.3 && POWERS.ledge.window === 5)
   check('slime.r = 11 (défaut réduit)', slime.r === 11)
 
   // --- 1) saut visé vers le haut-droite (distance moyenne) ---

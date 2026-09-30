@@ -55,7 +55,7 @@ function normPhys(n) {
   // Bornes = union des anciennes bornes et des plages de sliders de l'éditeur
   // (chaque défaut est le milieu exact de son slider, onglet PHYS).
   const out = {
-    slimeR: physBound(n.slimeR, d.slimeR, 8, 19),
+    slimeR: physBound(n.slimeR, d.slimeR, 6, 19),
     grav: physBound(n.grav, d.grav, 270, 1000),
     vmin: physBound(n.vmin, d.vmin, 60, 400),
     vmax: physBound(n.vmax, d.vmax, 160, 600),
