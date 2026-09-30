@@ -471,6 +471,11 @@ function driverFn() {
     applyMusicTrack(2)
     startGame()
     check('startGame : fond remis piste 0 en silence', bgTrack === 0 && trackFxT === 0 && COLORS[C_BLUE] === '#4a5ed7')
+    // Fond multi-couches (nuages/panneaux/sol) : draw après bascules de piste
+    // sans exception — les couches lisent la palette live (COLORS).
+    let bgErr = null
+    try { applyMusicTrack(1); draw(); applyMusicTrack(2); draw(); applyMusicTrack(0); draw() } catch (e) { bgErr = e }
+    check('fond multi-couches : bascules + draw sans exception', !bgErr)
   }
 
   // --- 13) mort : le code signé v3 embarque les stats du run ---

@@ -1009,6 +1009,39 @@ function bgLayer(f, seed, cb) {
   }
 }
 
+// Couches d'habillage (spec « zones vides » 2026-09-30) : nuages hauts,
+// panneaux mi-denses, sol défilant. 100 % vectoriel — les couleurs lues dans
+// COLORS suivent la palette de piste (bascule BGM) sans recoloration dédiée.
+// Coût par frame : ~40 petits rects via bgLayer, aucun canvas régénéré.
+function drawClouds() {
+  bgLayer(0.15, 41, (x, h, h2, h3) => {
+    if (h < 0.3) {
+      const y = 18 + h3 * 44, w = 46 + h2 * 42
+      rectfill(x + 6, y + 7, w, 10, C_BLUE_HI)
+      rectfill(x + 18, y, w - 26, 9, C_BLUE_HI)
+      rectfill(x + 12, y + 15, w - 18, 4, C_BLUE_L)
+    }
+  })
+}
+function drawMidPanels() {
+  bgLayer(0.45, 97, (x, h, h2, h3) => {
+    if (h < 0.34) {
+      const px = x + h2 * 18, py = 102 + h3 * 66, pw = 22 + h2 * 26, ph = 58 + h * 66
+      rectfill(px, py, pw, ph, C_BLUE_XD)
+      rectfill(px + 4, py + 5, 4, ph - 10, C_BLUE_HI)
+      rectfill(px + pw - 8, py + 9, 3, ph - 18, C_BLUE_L)
+    }
+  })
+}
+function drawGroundStrip() {
+  bgLayer(0.7, 63, (x, h, h2) => {
+    rectfill(x, 251, 64, 19, C_BLUE_XD)
+    rectfill(x, 251, 64, 3, C_BLUE_D)
+    if (h < 0.5) rectfill(x + h2 * 44, 246, 2, 5, C_BLUE_HI)
+    if (h > 0.8) rectfill(x + h2 * 30, 256, 9, 3, C_BLUE_L)
+  })
+}
+
 function drawBG() {
   cls(C_BLUE)
   bgLayer(0.12, 11, (x, h, h2, h3) => {
@@ -1028,12 +1061,15 @@ function drawBG() {
     }
     alpha(1)
   }
+  drawClouds()
   bgLayer(0.28, 77, (x, h, h2, h3) => {
     if (h < 0.22) rectfill(x + h2 * 40, 30 + h3 * 180, 14, 3, C_BLUE_XD)
     if (h > 0.5 && h < 0.62) rectfill(x + h3 * 40, 40 + h2 * 160, 3, 26, C_BLUE_XD)
     if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
     if (h > 0.86) rectfill(x + h2 * 40, 100 + h * 90, 18, 3, C_BLUE_HI)
   })
+  drawMidPanels()
+  drawGroundStrip()
 }
 
 // ---------- fond par piste BGM : palette + sprites recolorés ----------
