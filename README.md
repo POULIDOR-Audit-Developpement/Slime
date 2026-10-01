@@ -68,6 +68,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 - **Plus de plafond** : le haut du monde est ouvert — les grands sauts passent au-dessus de l'écran (une flèche te repère quand tu es hors-champ)
 - Les piques de gauche et de droite font mal — ne tombe pas dans le vide
 - Les billes rapportent des points (score caché !), la **bille dorée vaut 50** — elle est toujours au bout d'un détour risqué
+- La **gemme vaut 250 pts** (losange cyan, patterns T3-T5 du pool par défaut) : le gros pari high-risk — elle n'est jamais sur le chemin sûr, seulement au ras des pics, en apex de gap ou en hauteur au-dessus du vide. Ramasser n'a aucun effet négatif : le risque, c'est le trajet
 - Le **bonus slime** (tête verte « as in HUD ») rend une vie ; si elle est déjà pleine, il vaut 30 points
 
 ### Types de plateformes
@@ -98,7 +99,7 @@ Ouvrir **`editor.html`** — un mot de passe est demandé (défaut : `slime`, vo
 ### Onglet PATTERNS
 - Chaque pattern est une **section** de plateformes/billes/murs/décor en coordonnées relatives, avec une **ligne d'entrée** (l'ancre verte : d'où le slime saute en arrivant) et une **difficulté T1→T5**
 - **Rangement automatique** : la liste (et le pool partagé LAN, ainsi que les exports) est triée en continu par **difficulté croissante** puis **ordre alphabétique** du nom (casse et accents ignorés) — inutile de classer à la main
-- Outils : flèche (déplacer), plateforme (touches **1-9** = type, **+/-** = largeur), **mur vertical (W)** : colonne au sol ou stalactite au plafond, largeur 1-3, **flancs piqués optionnels** (mortels) — le sommet d'une colonne est toujours atterrissable, bille, bille or, décor, gomme ; **Suppr** efface, **flèches** ajustent au pixel
+- Outils : flèche (déplacer), plateforme (touches **1-9** = type, **+/-** = largeur), **mur vertical (W)** : colonne au sol ou stalactite au plafond, largeur 1-3, **flancs piqués optionnels** (mortels) — le sommet d'une colonne est toujours atterrissable, bille, bille or, **gemme (V)** : 250 pts à placer dans les zones mortelles, décor, gomme ; **Suppr** efface, **flèches** ajustent au pixel
 - **Multi-sélection** (outil flèche) : **Ctrl ou Shift+clic** ajoute/retire un élément, **Ctrl ou Shift+glisser sur le vide** trace un rectangle qui capture tout ce qu'il touche ; glisser un élément **déjà sélectionné** déplace **tout le groupe** (un clic simple sans glisser réduit la sélection à cet élément) ; plateformes/murs snappés à la grille, lignes 0-4
 - **Copier/coller d'éléments** : **Ctrl+C** copie la sélection, **Ctrl+X** coupe, **Ctrl+V** colle dans le pattern courant — ou dans un **autre pattern** — ancré sous la souris (sinon décalé d'une case) ; **Ctrl+A** sélectionne tout le pattern, **Suppr** efface la sélection entière, **flèches** la déplacent (Shift = pas de 8 px)
 - **Validation en direct** : la même physique que le jeu (`js/physics.js`) simule chaque saut **avec les pouvoirs du layout** — ✓ vert = faisable au saut visé simple, ✓ bleu (DJ/L) = faisable seulement via double saut ou rattrape de bord, ✗ rouge = impossible même avec les pouvoirs ; un saut qui traverse le corps d'un mur est invalidé, sauter **sur** le sommet d'une colonne reste valide. Budget fidèle au jeu : **un seul double saut par pattern** (budget volontairement conservateur) ; les plateformes collantes transmettent leur puissance (×0.8), les rebondissantes peuvent être corrigées en plein vol. Un pattern avec des ✗ ne bloque pas le jeu (il est juste joué tel quel, prudence !)
@@ -173,7 +174,7 @@ ou visuellement : `tools/gen_default_pool.html` (aperçu validé saut par saut, 
 
 À la mort, le jeu génère un **code signé en HMAC-SHA256** (le score n'est jamais calculé côté lecteur).
 Le **format v3** embarque aussi les **stats anti-triche** du run : les **points théoriques**
-(collectibles spawnés : billes 10 / or 50 / bonus 30) et le **nombre de patterns joués**.
+(collectibles spawnés : billes 10 / or 50 / bonus 30 / gemmes 250) et le **nombre de patterns joués**.
 Côté créateur, un score honnête vérifie `score ≤ théorique + distance max` (caméra à fond = 40 pts/s
 par défaut) — `decode.html` affiche ce plafond comme **« Possible »** (théorique + distance max,
 décomposition en clair) et signale ⚠️ tout code le dépassant : score ≤ possible est toujours vrai
