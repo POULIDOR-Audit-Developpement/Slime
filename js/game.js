@@ -549,9 +549,9 @@ function execJump() {
     gp.tilt = 0
     slime.squashT = 0.12
     sfx(SFX_LAND, 5, 0.8)
+    if (!runStarted) trackFxT = TRACK_FX_DUR // bannière « NIVEAU 1 » : 1er saut de la run seulement
     runStarted = true
     Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
-    trackFxT = TRACK_FX_DUR // bannière « NIVEAU 1 » au départ de la run
     aim.on = false
     aimPad = null
     slowmoT = 0
@@ -597,9 +597,9 @@ function execJump() {
   aim.on = false
   aimPad = null
   slowmoT = 0 // le ralenti ne concerne que la visée : le saut part à pleine vitesse
+  if (!runStarted) trackFxT = TRACK_FX_DUR // bannière « NIVEAU 1 » : 1er saut de la run seulement
   runStarted = true
   Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
-  trackFxT = TRACK_FX_DUR // bannière « NIVEAU 1 » au départ de la run
 }
 
 function land(p) {

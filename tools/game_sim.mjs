@@ -395,6 +395,27 @@ function driverFn() {
   applyLayout()
   startGame()
 
+  // --- 8b) FX de niveau : onde + bannière UNIQUEMENT au premier saut ---
+  // Le commentaire historique dit « au départ de la run » : le saut suivant
+  // (même run) ne doit pas ré-armer trackFxT. Sauts verticaux (vmin) :
+  // retombent sur la plateforme de départ, aucune mort possible.
+  startGame()
+  {
+    updateCam()
+    let p = w2px(slime.x, slime.y - 20) // distance < aimMin -> vmin
+    tap(p.x, p.y, 0)
+    untap(p.x, p.y, 0)
+    check('1er saut : FX de niveau armé', runStarted === true && trackFxT === TRACK_FX_DUR)
+    let f = 0
+    while (f++ < 150 && trackFxT >= TRACK_FX_DUR) update(1 / 60) // écoule le timer (vol + sol)
+    waitLand()
+    updateCam()
+    p = w2px(slime.x, slime.y - 20)
+    tap(p.x, p.y, 0)
+    untap(p.x, p.y, 0)
+    check('saut suivant : FX non ré-armé', trackFxT < TRACK_FX_DUR)
+  }
+
   // --- 9) soak : 1200 frames simulées (~20 s), multivies, aucun crash ---
   // Le bot vise (280,50) monde (petit arc up-forward) et relâche aussitôt.
   let jumps = 0, lives = 0, frames = 0
