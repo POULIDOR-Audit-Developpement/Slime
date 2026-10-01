@@ -328,5 +328,35 @@ check('pouvoirs coupés : gap lointain KO', Patterns.validatePatternJumps(djGap)
 check('pouvoirs coupés : gap lointain non-simple', Patterns.validatePatternJumps(djGap).okSimple === false)
 Patterns.setLayout(null)
 
+// 10. Gemmes high-risk dans le pool GÉNÉRÉ (spec 2026-09-30) : le pool
+// régénéré doit comporter des gemmes en T3-T5, aucune en T1-T2, dans les
+// bornes du générateur — et être déterministe (double build identique).
+{
+  const genSrc = [
+    'js/physics.js',
+    'tools/gen-core.js'
+  ].map(f => readFileSync(new URL('../' + f, import.meta.url), 'utf8')).join('\n')
+  const gen = new Function(genSrc.replace(/if \(typeof module[^]*$/, '') + '\nreturn generateDefaultPool;')()
+  const buildOnce = () => JSON.stringify(gen({ perTier: 6, seed: 20260930 }).patterns)
+  const poolA = buildOnce()
+  check('générateur déterministe (double build identique)', poolA === buildOnce())
+  const gemsByTier = {}
+  let badCount = false, badSpacing = false
+  for (const p of JSON.parse(poolA)) {
+    const gems = p.balls.filter(b => b.gem)
+    if (gems.length) gemsByTier[p.difficulty] = (gemsByTier[p.difficulty] || 0) + 1
+    if (gems.length > 3) badCount = true
+    for (let i = 0; i < gems.length; i++)
+      for (let j = i + 1; j < gems.length; j++)
+        if (Math.abs(gems[i].x - gems[j].x) < 6 * CELL) badSpacing = true
+  }
+  check('T1-T2 : zéro pattern gemmé', !gemsByTier[1] && !gemsByTier[2])
+  check('T3 : >= 1 pattern gemmé', (gemsByTier[3] || 0) >= 1)
+  check('T4 : >= 1 pattern gemmé', (gemsByTier[4] || 0) >= 1)
+  check('T5 : >= 1 pattern gemmé', (gemsByTier[5] || 0) >= 1)
+  check('bornes : <= 3 gemmes par pattern', !badCount)
+  check('espacement : >= 6 cellules entre gemmes', !badSpacing)
+}
+
 console.log(fails === 0 ? '\nTOUS LES TESTS PASSENT' : `\n${fails} ÉCHEC(S)`)
 process.exit(fails === 0 ? 0 : 1)

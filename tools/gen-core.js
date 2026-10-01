@@ -51,6 +51,35 @@ function generateDefaultPool(opts) {
     }
   }
 
+  // Gemmes high-risk (spec 2026-09-30) : T3 ~1 pattern/3 (1 gemme), T4 ~1/3
+  // (1-2), T5 ~1/2 (1-3). Spots mortels uniquement : au ras des pics, en
+  // apex de gap, en hauteur au-dessus d'une plateforme large. Appelée après
+  // validation de la chaîne : aucun tirage en amont n'est déplacé.
+  function simSpawnGems(A, chain, balls, tier) {
+    if (tier < 3) return
+    const share = tier === 5 ? 0.5 : 0.34
+    if (A.rand() >= share) return
+    const nMax = tier === 5 ? 3 : (tier === 4 ? 2 : 1)
+    const spots = []
+    for (const p of chain) {
+      if (p.spike) spots.push({ x: p.x + p.w * 0.5, y: p.y - 16 })
+      if (p.type === 'basic' && p.w >= 4 * CELL) spots.push({ x: p.x + p.w * 0.5, y: p.y - 26 })
+    }
+    for (let j = 1; j < chain.length; j++) {
+      const a = chain[j - 1], b = chain[j]
+      if (b.x - (a.x + a.w) >= 2 * CELL) spots.push({ x: (a.x + a.w + b.x) / 2, y: Math.min(a.y, b.y) - 24 })
+    }
+    if (!spots.length) return
+    const n = Math.min(A.randi(1, nMax), spots.length)
+    const picked = []
+    for (let k = 0; k < n; k++) {
+      const s = spots.splice(A.randi(0, spots.length - 1), 1)[0]
+      if (picked.some(q => Math.abs(q.x - s.x) < 6 * CELL)) continue
+      picked.push(s)
+      balls.push({ x: s.x, y: clampN(s.y, CEIL + 14, 252), gem: true })
+    }
+  }
+
   // --- port de spawnNext (génération par palette de tier) ---
   // opts : { tier, idx, perTier, s, vitrine, showcase } — position dans la
   // courbe (D = progression 0..1 sur tout le pool) et mode vitrine.
@@ -188,6 +217,10 @@ function generateDefaultPool(opts) {
         }
         if (!ok) { rejected++; i--; continue }
 
+        // Gemmes high-risk : APRÈS la validation de la chaîne (les tirages
+        // de plateformes/billes ci-dessus restent identiques bit à bit).
+        simSpawnGems(A, chain, balls, tier)
+
         const platforms = chain.map(p => {
           const q = {
             x: Math.round(p.x), row: p.row, cells: Math.round(p.w / CELL),
@@ -203,7 +236,7 @@ function generateDefaultPool(opts) {
         })
         const ballsRel = balls.map(b => {
           const row = clampN(Math.round((b.y - ROW0) / RS), 0, 4)
-          return { x: Math.round(b.x), row, yOff: Math.round(b.y - rowY(row)), gold: false }
+          return { x: Math.round(b.x), row, yOff: Math.round(b.y - rowY(row)), gold: false, gem: !!b.gem }
         })
         let width = CELL
         for (const q of platforms) width = Math.max(width, q.x + q.cells * CELL)
