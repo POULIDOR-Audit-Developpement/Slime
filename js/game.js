@@ -1055,15 +1055,88 @@ function drawClouds() {
     }
   })
 }
-function drawMidPanels() {
-  bgLayer(0.45, 97, (x, h, h2, h3) => {
-    if (h < 0.34) {
-      const px = x + h2 * 18, py = 102 + h3 * 66, pw = 22 + h2 * 26, ph = 58 + h * 66
-      rectfill(px, py, pw, ph, C_BLUE_XD)
-      rectfill(px + 4, py + 5, 4, ph - 10, C_BLUE_HI)
-      rectfill(px + pw - 8, py + 9, 3, ph - 18, C_BLUE_L)
+// Décors des planches v5-v7 (tools/extract_decors.py) peuplant le fond
+// défilant — remplace les panneaux bleus mi-denses. 2 couches de parallaxe,
+// placement DÉTERMINISTE par hash (même pattern que nuages/sol : stable,
+// aucun clignotement), culling gratuit via bgLayer (seuls les segments
+// visibles dessinent, ~8-12 drawImage/frame). Coût par frame : drawImage
+// uniquement — les canvases recadrés des tuiles sont préparés UNE fois.
+const LEVEL_DECORS = [
+  // 0 plaines : lointain = arbres, proche = buissons/rochers/fleurs
+  { far: ['decTree1', 'decTree2', 'decTreeBig', 'decPine1', 'decPine3', 'decPine5'],
+    near: ['decBush1', 'decBush2', 'decBushLeafy', 'decBushFern', 'decRock3',
+      'decRockSingle', 'decFlowers3', 'decFlowers5', 'decStump1'] },
+  // 1 usine de magma : tuyaux/roues/consoles au loin, feu/vapeur/lava devant
+  { far: ['decPipeElbow', 'decWheel1', 'decWheel2', 'decConsole', 'decLadder', 'decSteamPipe'],
+    near: ['hazFlame', 'decSteamVent', 'decLavaBubbles', 'decFan', 'decFlamedrops', 'decFlamedrop'] },
+  // 2 manoir hanté : meubles au loin, chandeliers/bougies PENDANT au plafond
+  { far: ['decClock', 'decArmchair', 'decCauldron', 'decBooks'],
+    near: ['decChandelierGold', 'decChandelierDark1', 'decCandle1', 'decCandleWall', 'hazShadowEyes'] }
+]
+const HANGING_DECORS = {
+  decChandelierGold: 1, decChandelierDark1: 1, decChandelierDark2: 1,
+  decCandle1: 1, decCandle2: 1, decCandleWall: 1
+}
+
+function drawLevelDecors() {
+  if (!Sprites.ready) return
+  drawDecorLayer(0.45, 191, 22, 38, 236, 246, 0.34, 0.75) // lointain : petits
+  drawDecorLayer(0.7, 233, 40, 74, 250, 264, 0.30, 1)     // proche : gros
+}
+
+function drawDecorLayer(f, seed, s0, s1, feet0, feet1, dens, al) {
+  alpha(al)
+  bgLayer(f, seed, (x, h, h2, h3) => {
+    if (h > dens) return
+    const pool = LEVEL_DECORS[bgTrack][h2 < 0.55 ? 'far' : 'near']
+    const key = pool[(h3 * pool.length) | 0]
+    const w = s0 + h2 * (s1 - s0)
+    const nw = Sprites.natW(key), nh = Sprites.natH(key)
+    if (!nw) return
+    const hh = w * nh / nw
+    const gx = x + h2 * (64 - w)
+    if (HANGING_DECORS[key]) {
+      Sprites.drawTL(key, gx, CEIL + 2, w, h2 > 0.75)
+    } else {
+      Sprites.drawTL(key, gx, feet0 + h3 * (feet1 - feet0) - hh, w, h2 > 0.75)
     }
   })
+  alpha(1)
+}
+
+// Variantes de tuiles « basic » par niveau (blocs des planches v5-v7) :
+// ~1 cellule sur 5 prend une texture du niveau. Les sprites sources sont
+// carrés ou debout : recadrage au ratio des tuiles (4:3, ou 2 cells pour
+// les blocs larges) fait UNE fois puis enregistré dans Sprites (canvases
+// en cache — zéro déformation, zéro coût par frame ; règles perf).
+const BASIC_TILES = [
+  { cell: ['platGrass1x1', 'platGrass1x1b', 'platGrassNue1', 'platGrassNue2'],
+    wide: ['platGrassFlowersWide'] },
+  { cell: ['platGrid1', 'platGrid2', 'platGrid3', 'platGrid4', 'platGrid5', 'platGrid6'],
+    wide: [] },
+  { cell: ['platStone1x1'], wide: ['platStone2x1', 'platStoneWorn'] }
+]
+const TILE_RATIO = CELL / 24
+const tileVarCache = new Map()
+function tileVar(key, ratio) {
+  const ck = key + '@' + ratio
+  if (tileVarCache.has(ck)) return tileVarCache.get(ck)
+  const im = Sprites.get(key)
+  let out = null
+  if (im && im.width && typeof document !== 'undefined') {
+    try {
+      let cw = im.width, ch = Math.round(cw / ratio)
+      if (ch > im.height) { ch = im.height; cw = Math.min(im.width, Math.round(ch * ratio)) }
+      const cv = document.createElement('canvas')
+      cv.width = cw
+      cv.height = ch
+      cv.getContext('2d').drawImage(im, (im.width - cw) >> 1, (im.height - ch) >> 1, cw, ch, 0, 0, cw, ch)
+      out = key + '_r'
+      Sprites.register(out, cv)
+    } catch (e) { out = null } // environnement sans canvas 2d : tuile de base
+  }
+  tileVarCache.set(ck, out)
+  return out
 }
 function drawGroundStrip() {
   bgLayer(0.7, 63, (x, h, h2) => {
@@ -1112,7 +1185,7 @@ function drawBG() {
     if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
     if (h > 0.86) rectfill(x + h2 * 40, 100 + h * 90, 18, 3, C_BLUE_HI)
   })
-  drawMidPanels()
+  drawLevelDecors()
   drawGroundStrip()
 }
 
@@ -1457,6 +1530,9 @@ function drawPlat(p) {
       const baseTile = ['tileGreen', 'tileVolcanic', 'tileManor'][bgTrack] || 'tileGreen'
       const keys = { basic: baseTile, crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange',
         turbo: 'tileTurbo', gold: 'tileGold', seesaw: 'tileSeesaw' }
+      // Variantes « basic » du niveau (planches v5-v7) : hash déterministe
+      // par position — identique pour un même pattern, stable pendant la run.
+      const bt = p.type === 'basic' ? BASIC_TILES[bgTrack] : null
       // Bascule : tuiles pivotantes autour du centre de la plateforme
       // (inclinaison purement visuelle) — un seul translate/rotate, tuiles
       // dessinées en coordonnées relatives au pivot.
@@ -1465,7 +1541,13 @@ function drawPlat(p) {
       for (let i = 0; i < n; i++) {
         const tx = sw ? -p.w / 2 + i * CELL : p.x + jx + i * CELL
         const ty = sw ? -12 : p.y
-        Sprites.drawImage(keys[p.type] || 'tileGreen', tx, ty, CELL, 24)
+        let varKey = null
+        if (bt) {
+          const hv = h32(((p.x | 0) + i * 7) * 89 + 5)
+          if (hv < 0.22) varKey = tileVar(bt.cell[((hv * 100) | 0) % bt.cell.length], TILE_RATIO)
+        }
+        if (varKey) Sprites.drawImage(varKey, tx, ty, CELL, 24)
+        else Sprites.drawImage(keys[p.type] || 'tileGreen', tx, ty, CELL, 24)
         if (p.type === 'crumble') {
           rectfill(tx + 9, ty + 6, 2, 8, C_CR_DARK)
           rectfill(tx + 20, ty + 10, 2, 6, C_CR_DARK)
@@ -1482,6 +1564,19 @@ function drawPlat(p) {
           fill(C_WHITE)
           shape([tx + 15, ty + 6, tx + 22, ty + 12, tx + 15, ty + 18])
           fill(C_WHITE)
+        }
+      }
+      // Bloc large du niveau (2 cells) : ~1 plateforme sur 6, ancré pour ne
+      // jamais déborder du tablier (hash déterministe par position).
+      if (bt && bt.wide.length && n >= 2) {
+        const hw = h32((p.x | 0) * 61 + 9)
+        if (hw < 0.18) {
+          const wi = ((hw * 97) | 0) % (n - 1)
+          const wk = tileVar(bt.wide[((hw * 53) | 0) % bt.wide.length], (CELL * 2) / 24)
+          if (wk) {
+            const wx = sw ? -p.w / 2 + wi * CELL : p.x + jx + wi * CELL
+            Sprites.drawImage(wk, wx, sw ? -12 : p.y, CELL * 2, 24)
+          }
         }
       }
       if (sw) pop()

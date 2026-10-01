@@ -270,6 +270,14 @@ const Sprites = (() => {
     return true
   }
 
+  // Enregistre un canvas/image sous une NOUVELLE clé (hors defs : jamais
+  // rechargé) — variantes de tuiles pré-recadrées par niveau (cf. game.js).
+  function register(key, im) {
+    if (!key || !im || !im.width) return false
+    imgs[key] = im
+    return true
+  }
+
   return {
     load,
     setTiers,
@@ -284,6 +292,7 @@ const Sprites = (() => {
     get,
     base,
     setBase,
+    register,
     get ready() { return ready }
   }
 })()

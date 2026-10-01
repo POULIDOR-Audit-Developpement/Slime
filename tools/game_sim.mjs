@@ -51,8 +51,21 @@ const litecanvasStubs = {
   } })(),
   window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: noop },
   navigator: { userAgent: 'node' },
-  document: { documentElement: {}, body: { appendChild: noop, removeChild: noop }, createElement: () => ({ style: {}, focus: noop, select: noop }) },
-  Image: class { set src(v) {} }
+  document: {
+    documentElement: {},
+    body: { appendChild: noop, removeChild: noop },
+    // canvas factice : getContext renvoie le proxy no-op — tileVar/recolor
+    // s'exécutent pour de vrai (chemins de dessin couverts par les checks)
+    createElement: (tag) => tag === 'canvas'
+      ? { width: 0, height: 0, getContext: () => ctxStub(), style: {} }
+      : { style: {}, focus: noop, select: noop }
+  },
+  // onload déclenché de façon synchrone : Sprites.ready passe à true dans
+  // la sim -> drawBG/drawPlat/drawLevelDecors sont réellement exécutés.
+  Image: class {
+    constructor() { this.width = 64; this.height = 48; this.complete = true }
+    set src(v) { if (this.onload) this.onload() }
+  }
 }
 
 // ---------- driver : partage le scope de game.js ----------
