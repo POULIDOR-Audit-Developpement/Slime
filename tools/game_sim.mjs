@@ -609,18 +609,18 @@ function driverFn() {
     calls.length = 0
     drawPowerHud()
     const parts = calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt')
-    check('jauge DJ consommée 50% : base découpée (haut + 2 rails) + overlay',
-      parts.length === 4 && parts[0][2][1] === 0 && parts[0][2][3] === 39)
+    check('jauge DJ consommée 50% : base découpée (capuchons + 2 rails) + overlay',
+      parts.length === 5 && parts[0][2][1] === 0 && parts[0][2][3] === 4)
     const ov = parts.find(c => c[2][0] === 4)
-    check('jauge DJ 50% : vert à mi-hauteur (source x4 y62.5 h23.5)',
-      !!ov && ov[2][1] === 62.5 && ov[2][3] === 23.5)
-    // toutes les charges épuisées, timer écoulé : flacon vide, ni base pleine ni overlay
+    check('jauge DJ 50% : vert à mi-hauteur de TOUT l\'intérieur (source x4 y45 h41)',
+      !!ov && ov[2][1] === 45 && ov[2][3] === 41)
+    // toutes les charges épuisées, timer écoulé : flacon vide (4 parts de cadre), 0 overlay
     slime.airJumps = 0
     slime.djCd = 0
     calls.length = 0
     drawPowerHud()
-    check('jauge DJ épuisée : 3 parts (haut + rails), 0 overlay, pas de flacon plein',
-      calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt').length === 3 &&
+    check('jauge DJ épuisée : 4 parts de cadre, 0 overlay, pas de flacon plein',
+      calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt').length === 4 &&
       calls.filter(c => c[0] === 'img' && c[1] === 'gaugeAlt').length === 0)
     Sprites.drawSrc = oDS
     Sprites.drawImage = oDI

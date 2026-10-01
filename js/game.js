@@ -2037,10 +2037,11 @@ function drawHUD() {
 }
 
 // Flacon gauge_alt (25x92, planche v4 « jauge verticale alternative ») :
-// cadre vert + remplissage intérieur x[4,20], y[39,86[. Hors prêt, le
-// remplissage natif n'est PAS dessiné : la base est découpée (capuchon+haut
-// brun, rails) et l'overlay fait monter le vert avec le timer (djCd).
-const DJ_VIAL = { x: 4, w: 17, y0: 39, y1: 86 }
+// cadre vert + intérieur remplissable x[4,20], y[4,86[ (PNG retouché : le
+// remplissage vert occupe toute la hauteur, plus de partie brune). Hors prêt,
+// l'intérieur n'est PAS dessiné : base découpée (capuchon+haut, rails) et
+// l'overlay fait monter le vert avec le timer (djCd).
+const DJ_VIAL = { x: 4, w: 17, y0: 4, y1: 86 }
 
 // Indicateur du double saut, à droite des têtes de vie.
 // - Chevrons = CHARGES : 1 par saut aérien (bonus doré inclus) ; consommé =
@@ -2077,11 +2078,12 @@ function drawPowerHud() {
       Sprites.drawImage('gaugeAlt', vx, vy, vw)
       alpha(1)
     } else {
-      // Vide à la consommation : cadre + intérieur brun, remplissage natif exclu.
+      // Vide à la consommation : cadre complet (capuchons + rails), remplissage exclu.
       alpha(0.85)
       part(0, 0, 25, DJ_VIAL.y0)
       part(0, DJ_VIAL.y0, DJ_VIAL.x, DJ_VIAL.y1 - DJ_VIAL.y0)
       part(DJ_VIAL.x + DJ_VIAL.w, DJ_VIAL.y0, 25 - DJ_VIAL.x - DJ_VIAL.w, DJ_VIAL.y1 - DJ_VIAL.y0)
+      part(0, DJ_VIAL.y1, 25, vial.height - DJ_VIAL.y1)
       if (f > 0) {
         alpha(1)
         const yTop = DJ_VIAL.y0 + (1 - f) * (DJ_VIAL.y1 - DJ_VIAL.y0)
