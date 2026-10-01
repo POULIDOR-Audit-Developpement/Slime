@@ -428,19 +428,34 @@ function driverFn() {
   {
     const n0 = patternsSpawned, t0 = theoPts
     const cnt = () => {
-      let gold = 0, life = 0
-      for (const b of balls) { if (b.gold) gold++; else if (b.life) life++ }
-      return { n: balls.length, gold, life }
+      let gold = 0, life = 0, gem = 0
+      for (const b of balls) { if (b.gold) gold++; else if (b.life) life++; if (b.gem) gem++ }
+      return { n: balls.length, gold, life, gem }
     }
     const a = cnt()
     spawnNext()
     const b = cnt()
-    // théorique = billes 10 + or 50 (=10+40) + bonus 30 (=10+20)
-    const expected = (b.n - a.n) * 10 + (b.gold - a.gold) * 40 + (b.life - a.life) * 20
+    // théorique = billes 10 + or 50 (=10+40) + bonus 30 (=10+20) + gemme 250 (=10+240)
+    const expected = (b.n - a.n) * 10 + (b.gold - a.gold) * 40 + (b.life - a.life) * 20 + (b.gem - a.gem) * 240
     check('spawnNext : +1 pattern compté', patternsSpawned === n0 + 1)
     check('spawnNext : theoPts = valeur des collectibles ajoutés (' + expected + ')', theoPts - t0 === expected)
     // un score ne peut jamais dépasser le théorique + la distance : garde anti-triche
     check('theoPts cohérent : collectibles seuls <= théorique', theoPts >= currentScore() - Math.floor(camX / 10))
+  }
+
+  // --- 11b) gemmes : collecte 250 pts, pas de bonus doré, priorité sur l'or ---
+  startGame()
+  runStarted = true
+  {
+    const b = balls.find(q => !q.taken)
+    b.gem = true; b.gold = true // priorité gem > gold même sur flags coexistants
+    const s0 = currentScore()
+    slime.x = b.x; slime.y = b.y; slime.vx = 0; slime.vy = 0
+    update(1 / 60)
+    check('gemme : gemsCollected = 1', gemsCollected === 1)
+    check('gemme : +250 pts exactement', currentScore() - s0 === 250)
+    check('gemme : priorité sur or (goldsCollected = 0)', goldsCollected === 0)
+    check('gemme : pas de bonus saut doré (goldT = 0)', slime.goldT === 0)
   }
 
   // --- 12) bascule de piste musicale : palette + transition ---

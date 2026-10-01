@@ -158,7 +158,9 @@ const COLORS = [
   // Bascule : bois (face, flanc, pivot sombre).
   '#c98d4e', '#8a5a2b', '#4a2e14',
   // Style « présentation » : fond vitrine, panneaux, ombre du logo.
-  '#05050e', '#1c2148', '#12521d'
+  '#05050e', '#1c2148', '#12521d',
+  // Gemme high-risk (spec 2026-09-30) : cyan distinct des billes/or.
+  '#3fd9e8'
 ]
 const C_BG0 = 0, C_BG1 = 1, C_BG2 = 2, C_BG3 = 3
 const C_PAGE = COLORS.length - 3, C_PANEL2 = COLORS.length - 2, C_LOGO_D = COLORS.length - 1
@@ -183,6 +185,7 @@ const C_TURBO_TOP = 42, C_TURBO_SIDE = 43
 const C_GOLD_TOP = 44, C_GOLD_SIDE = 45, C_GOLD_L = 46
 // « Plateformes fun » : bascule en bois (cf. commentaire dans COLORS).
 const C_SW_TOP = 47, C_SW_SIDE = 48, C_SW_DARK = 49
+const C_GEM = 50
 
 // ---------- Fond par piste BGM ----------
 // Le fond suit la musique : à chaque bascule de piste (bgm1 -> bgm2 -> bgm3,
@@ -276,9 +279,14 @@ const AIM_SENS = 1.1
 const CAM_PALIER_S = 10
 let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
+// Gemme high-risk (spec 2026-09-30) : scoring côté jeu (GOLD_PTS vit dans
+// physics.js, mais la gemme n'y a pas sa place — pur scoring).
+const GEM_PTS = 250
 // Anti-triche : points théoriques spawnés (bille 10 / or 50 / bonus 30) et
 // nombre de sections jouées — embarqués dans le code signé v3 à la mort.
 let theoPts = 0, patternsSpawned = 0
+// Collectés pendant la run (bille 10 / or 50 / bonus 30 / gemme GEM_PTS).
+let gemsCollected = 0
 // Fond par piste BGM : piste appliquée, timer de la transition ponctuelle,
 // et PNG de fond d'origine (capturés une fois, recoloration toujours depuis eux).
 let bgTrack = 0, trackFxT = 0, bgOriginals = null
@@ -293,7 +301,7 @@ const CONTACT = typeof Contact !== 'undefined' ? Contact : null
 
 function slimeR() { return PH().slimeR }
 function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
-function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS + bonusCollected * 30 }
+function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS + bonusCollected * 30 + gemsCollected * GEM_PTS }
 function camRatio() {
   const P = PH()
   return clamp((camSpd - P.camBase) / Math.max(1, P.camMax - P.camBase), 0, 1)
@@ -346,8 +354,8 @@ function spawnNext() {
   for (const b of sec.balls) {
     balls.push(b)
     // Théorique anti-triche : tout collectible spawné compte dans le total
-    // possible (mêmes valeurs que currentScore : 10 / GOLD_PTS / 30).
-    theoPts += b.gold ? GOLD_PTS : (b.life ? 30 : 10)
+    // possible (mêmes valeurs que currentScore : 10 / GOLD_PTS / 30 / GEM_PTS).
+    theoPts += b.gem ? GEM_PTS : (b.gold ? GOLD_PTS : (b.life ? 30 : 10))
   }
   for (const d of sec.decor) decors.push(d)
   for (const wl of sec.walls || []) wallsArr.push(wl)
@@ -400,6 +408,7 @@ function startGame() {
   ballsCollected = 0
   goldsCollected = 0
   bonusCollected = 0
+  gemsCollected = 0
   theoPts = 0
   patternsSpawned = 0
   resetMusicTrack() // nouvelle partie : fond piste 1, sans bannière
@@ -824,9 +833,15 @@ function updSlime(dt) {
 function updBalls() {
   for (const b of balls) {
     if (b.taken) continue
-    if (dist(slime.x, slime.y, b.x, b.y) < slime.r + (b.gold || b.life ? 9 : 6)) {
+    if (dist(slime.x, slime.y, b.x, b.y) < slime.r + (b.gem || b.gold || b.life ? 9 : 6)) {
       b.taken = true
-      if (b.life) {
+      if (b.gem) {
+        // Gemme high-risk : priorité sur tous les autres flags — gros points,
+        // aucun effet de jeu (le bonus de saut doré reste exclusif à l'or).
+        gemsCollected++
+        sfx(SFX_COIN, 4, 0.8)
+        burst(b.x, b.y, C_GEM, 20, 180)
+      } else if (b.life) {
         // Bonus slime « as in HUD » : +1 vie, ou points si déjà au max.
         bonusCollected++
         if (slime.size < 3) {
@@ -1526,6 +1541,15 @@ function drawPlat(p) {
 }
 
 function drawBall(b) {
+  if (b.gem) {
+    const pu = 1 + 0.12 * Math.sin(T * 5)
+    alpha(0.4); shape([b.x, b.y - 11 * pu, b.x + 8 * pu, b.y, b.x, b.y + 11 * pu, b.x - 8 * pu, b.y]); fill(C_GEM)
+    alpha(1)
+    shape([b.x, b.y - 9, b.x + 7, b.y, b.x, b.y + 9, b.x - 7, b.y]); fill(C_BLACK)
+    shape([b.x, b.y - 7, b.x + 5, b.y, b.x, b.y + 7, b.x - 5, b.y]); fill(C_GEM)
+    circfill(b.x - 2, b.y - 2, 1.6, C_WHITE)
+    return
+  }
   if (b.life) {
     const pu = 1 + 0.1 * Math.sin(T * 4)
     alpha(0.35)

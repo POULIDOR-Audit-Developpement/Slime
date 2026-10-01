@@ -209,7 +209,7 @@ const Patterns = (() => {
       const row = clampN((b.row | 0) + delta + shift, 0, 4)
       balls.push({
         x: dx + b.x, y: clampN(rowY(row) + (b.yOff || 0), CEIL + 12, VH - 8),
-        o: Math.random() < 0.3, taken: false, gold: !!b.gold, life: !!b.life
+        o: Math.random() < 0.3, taken: false, gold: !!b.gold, life: !!b.life, gem: !!b.gem
       })
     }
     for (const d of pat.decor || []) {
