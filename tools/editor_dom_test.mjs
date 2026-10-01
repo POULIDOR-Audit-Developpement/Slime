@@ -427,6 +427,40 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   // VUE : les 3 nouvelles tuiles sont posables en décor.
   check('VUE : tuiles turbo/gold/seesaw en décor', lv.includes('tileTurbo') && lv.includes('tileGold') && lv.includes('tileSeesaw'))
   Ed.setMode('patterns')
+
+  // --- T9 : outil Gemme (V) — placement, panneau, exclusivité or/gemme ---
+  // Toolbar : bouton rendu avec son libellé d'aide (le mini-DOM ne parse pas
+  // l'innerHTML : on épingle le markup, comme pour tType plus haut).
+  const tbHtml = els.toolbar.innerHTML
+  check('toolbar : bouton gem présent avec title', tbHtml.includes('data-tool="gem"') && tbHtml.includes('Poser une gemme (V)'))
+  // Raccourci v -> outil gem (observable : hint + pose d'une bille gemmée)
+  els.btnNew.handlers.click()
+  const pat3 = Patterns.getPatterns()[Patterns.getPatterns().length - 1]
+  kd('v')
+  check('touche v : hint « poser une gemme »', els.tbHint.textContent === 'Clic : poser une gemme')
+  els.cv.handlers.pointerdown({ clientX: sxOf(960), clientY: syOf(rowY(2) - 10), button: 0 })
+  win.fire('pointerup', {})
+  const gemBall = pat3.balls[pat3.balls.length - 1]
+  check('pose gem : bille gem:true, gold:false', gemBall && gemBall.gem === true && gemBall.gold === false)
+  // Panneau propriétés : exclusivité mutuelle oGold/oGem sur la bille gemmée
+  kd('s') // outil Flèche : sinon le clic re-poserait une gemme au lieu de sélectionner
+  els.cv.handlers.pointerdown({ clientX: sxOf(gemBall.x), clientY: syOf(rowY(gemBall.row) + gemBall.yOff), button: 0 })
+  win.fire('pointerup', {})
+  const pvGem = els.props.innerHTML
+  check('panneau bille gemmée : case gemme (250 pts)', pvGem.includes('id="oGem"') && pvGem.includes('gemme (250 pts)'))
+  els.oGold.checked = true
+  els.oGold.handlers.change({ target: els.oGold })
+  check('cocher or -> gold true, gem false', gemBall.gold === true && gemBall.gem === false)
+  els.oGem.checked = true
+  els.oGem.handlers.change({ target: els.oGem })
+  check('cocher gemme -> gem true, gold false', gemBall.gem === true && gemBall.gold === false)
+  // Round-trip export/import : le flag gem survit à la re-sérialisation
+  const gemJson = Patterns.exportPatterns()
+  Patterns.resetUser()
+  Patterns.applyImport(Patterns.importData(gemJson), 'replace')
+  const reimported = Patterns.getPatterns().flatMap(p => p.balls).some(b => b.gem === true)
+  check('round-trip export/import : gem conservé', reimported)
+  Patterns.resetUser()
 })()
 `)
 const store = {}

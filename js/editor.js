@@ -22,7 +22,7 @@ const Ed = (() => {
     goldT: '#ffe066', goldS: '#d99e0b',
     wood: '#c98d4e', woodD: '#8a5a2b', woodPivot: '#4a2e14',
     spike: '#e23b3b', spikeD: '#8f1f1f',
-    ball: '#ffd83d', gold: '#ffd700', ok: '#3ecb3e', ko: '#e23b3b', sel: '#ffd83d',
+    ball: '#ffd83d', gold: '#ffd700', gem: '#3fd9e8', ok: '#3ecb3e', ko: '#e23b3b', sel: '#ffd83d',
     pwr: '#38b6e8', slime: '#3ecb3e'
   }
   const TIER_COLORS = ['#3ecb3e', '#a5f0a5', '#ffd83d', '#ff9d2e', '#e23b3b']
@@ -278,6 +278,23 @@ const Ed = (() => {
   function drawBallEditor(c, b, selected) {
     const y = rowY(b.row) + b.yOff
     c.save()
+    if (b.gem) {
+      // gemme high-risk : losange cyan, même silhouette que le jeu
+      const dia = (r, col) => {
+        c.fillStyle = col
+        c.beginPath(); c.moveTo(b.x, y - r); c.lineTo(b.x + r * 0.78, y)
+        c.lineTo(b.x, y + r); c.lineTo(b.x - r * 0.78, y); c.closePath(); c.fill()
+      }
+      c.globalAlpha = 0.35
+      dia(11, COL.gem)
+      c.globalAlpha = 1
+      dia(9, COL.black)
+      dia(7, COL.gem)
+      c.fillStyle = COL.white
+      c.beginPath(); c.arc(b.x - 2, y - 2, 1.6, 0, 7); c.fill()
+      c.restore()
+      return
+    }
     if (b.life) {
       // bonus slime « as in HUD » : tête verte cerclée d'un halo
       c.globalAlpha = 0.3
@@ -542,7 +559,7 @@ const Ed = (() => {
     // --- retour espace écran : badges de validation ---
     const v = drawValidation(ctx, pat)
     // aperçu de placement (espace monde)
-    if (mouse.inside && (tool === 'plat' || tool === 'ball' || tool === 'gold' || tool === 'wall')) {
+    if (mouse.inside && (tool === 'plat' || tool === 'ball' || tool === 'gold' || tool === 'gem' || tool === 'wall')) {
       ctx.save()
       ctx.scale(s, s)
       ctx.translate(-camX, 0)
@@ -556,7 +573,7 @@ const Ed = (() => {
       } else {
         const row = clampN(Math.round((mouse.wy - ROW0) / RS), 0, 4)
         const yOff = Math.round(mouse.wy - rowY(row))
-        drawBallEditor(ctx, { x: Math.round(mouse.wx), row, yOff, gold: tool === 'gold' }, false)
+        drawBallEditor(ctx, { x: Math.round(mouse.wx), row, yOff, gold: tool === 'gold', gem: tool === 'gem' }, false)
       }
       ctx.restore()
     }
@@ -796,6 +813,7 @@ const Ed = (() => {
       const b = pat.balls[selIdx]
       html += `<div class="chk"><input type="checkbox" id="oLife" ${b.life ? 'checked' : ''}/> bonus slime (+1 vie, sinon 30 pts)</div>
       <div class="chk"><input type="checkbox" id="oGold" ${b.gold ? 'checked' : ''}/> bille dorée (50 pts)</div>
+      <div class="chk"><input type="checkbox" id="oGem" ${b.gem ? 'checked' : ''}/> gemme (250 pts)</div>
       <div class="row"><label>X</label><input type="number" id="oBX" step="8" value="${b.x}"/></div>
       <div class="row"><label>Ligne</label><select id="oBRow">${[0, 1, 2, 3, 4].map(r => `<option value="${r}" ${b.row === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
       <div class="row"><label>Y offset</label><input type="number" id="oBYOff" value="${b.yOff}"/></div>`
@@ -868,7 +886,9 @@ const Ed = (() => {
     }
     on('oSa', 'input', spikeUpd); on('oSb', 'input', spikeUpd)
     on('oLife', 'change', e => { pat.balls[selIdx].life = e.target.checked; persist() })
-    on('oGold', 'change', e => { pat.balls[selIdx].gold = e.target.checked; persist() })
+    on('oGold', 'change', e => { pat.balls[selIdx].gold = e.target.checked; if (e.target.checked) pat.balls[selIdx].gem = false; persist() })
+    // Gemme : exclusive avec l'or (une bille = un rôle effectif, cf. spec).
+    on('oGem', 'change', e => { pat.balls[selIdx].gem = e.target.checked; if (e.target.checked) pat.balls[selIdx].gold = false; persist() })
     on('oBX', 'change', e => { pat.balls[selIdx].x = parseInt(e.target.value, 10) || 0; persist() })
     on('oBRow', 'change', e => { pat.balls[selIdx].row = parseInt(e.target.value, 10); persist() })
     on('oBYOff', 'change', e => { pat.balls[selIdx].yOff = parseInt(e.target.value, 10) || 0; persist() })
@@ -1646,6 +1666,7 @@ const Ed = (() => {
       ['wall', 'Mur', 'Poser un mur vertical (W)'],
       ['ball', 'Bille', 'Poser une bille (B)'],
       ['gold', 'Bille or', 'Poser une bille dorée (G)'],
+      ['gem', 'Gemme', 'Poser une gemme (V)'],
       ['decor', 'Décor', 'Poser un asset (D)'],
       ['erase', 'Gomme', 'Supprimer (E)']
     ]
@@ -1701,6 +1722,7 @@ const Ed = (() => {
       wall: 'Clic : poser · glisser : hauteur (ligne de la pointe) · piques réglables à droite',
       ball: 'Clic : poser une bille',
       gold: 'Clic : poser une bille dorée',
+      gem: 'Clic : poser une gemme',
       decor: 'Clic : poser l\'asset choisi',
       erase: 'Clic sur un élément : le supprimer'
     }
@@ -1860,9 +1882,9 @@ const Ed = (() => {
       drag = { kind: 'multi', sx0: wx, sy0: wy, orig: snapshotSelection(pat) }
       return
     }
-    if (tool === 'ball' || tool === 'gold') {
+    if (tool === 'ball' || tool === 'gold' || tool === 'gem') {
       const row = clampN(Math.round((wy - ROW0) / RS), 0, 4)
-      const b = { x: Math.round(wx), row, yOff: Math.round(wy - rowY(row)), gold: tool === 'gold' }
+      const b = { x: Math.round(wx), row, yOff: Math.round(wy - rowY(row)), gold: tool === 'gold', gem: tool === 'gem' }
       pat.balls.push(b)
       setSingleSel('ball', pat.balls.length - 1)
       persist(); renderProps()
@@ -2089,7 +2111,7 @@ const Ed = (() => {
     if (mode !== 'patterns') return
     // Source unique : le catalogue de patterns (9 types) — touches 1-9.
     if (/^[1-9]$/.test(e.key)) { platType = Patterns.TYPES[parseInt(e.key, 10) - 1]; document.getElementById('tType').value = platType; if (tool !== 'plat') setTool('plat'); return }
-    const toolKeys = { s: 'select', a: 'plat', w: 'wall', b: 'ball', g: 'gold', d: 'decor', e: 'erase' }
+    const toolKeys = { s: 'select', a: 'plat', w: 'wall', b: 'ball', g: 'gold', v: 'gem', d: 'decor', e: 'erase' }
     if (!e.ctrlKey && !e.metaKey && toolKeys[e.key.toLowerCase()]) { setTool(toolKeys[e.key.toLowerCase()]); return }
     if (!pat) return
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(pat); return }
