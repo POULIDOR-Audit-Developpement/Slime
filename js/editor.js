@@ -507,7 +507,10 @@ const Ed = (() => {
 
   function drawValidation(c, pat) {
     const v = cachedValidate(pat)
-    const inst = Patterns.instantiate(pat, anchorOf(pat))
+    // shift 0 OBLIGATOIRE : sans lui, instantiate applique la transposition
+    // verticale aléatoire (anti-répétition en jeu) et les badges ✓/✗ changent
+    // de rangée à chaque frame — et ne suivent plus les plateformes dessinées.
+    const inst = Patterns.instantiate(pat, anchorOf(pat), { shift: 0 })
     let prev = null
     for (let i = 0; i < inst.platforms.length; i++) {
       const cur = inst.platforms[i]
@@ -946,8 +949,11 @@ const Ed = (() => {
     <div class="chk"><input type="checkbox" id="vShake" ${v.shake ? 'checked' : ''}/> secousse d'écran (dégâts, mort)</div>
     <div class="note">Zoom global de la vue en jeu, centré sur le slime (fixe pendant la partie). ×1 = cadrage complet 480×270. Utile pour bien voir un slime réduit (onglet PHYS, taille 9). L'aperçu au centre de la vue montre la fenêtre visible.</div>
     <h3>Vérification des sauts</h3>
-    <div class="chk"><input type="checkbox" id="vChkJumps" ${L.checkJumps !== false ? 'checked' : ''}/> écarter les sections injoignables au spawn</div>
-    <div class="note">Optionnelle et non infaillible : le simulateur peut se tromper dans les deux sens. Coché, un pattern jugé injoignable depuis la plateforme précédente est retiré du tirage (repli : plateforme de sécurité). Décoché, tout le pool est joué tel quel. Les badges ✓/✗ de l'onglet PATTERNS restent un simple indicateur.</div>
+    <details class="adv">
+      <summary>Options avancées</summary>
+      <div class="chk"><input type="checkbox" id="vChkJumps" ${L.checkJumps === true ? 'checked' : ''}/> écarter les sections injoignables au spawn</div>
+      <div class="note">Désactivée par défaut : les ✓/✗ de l'onglet PATTERNS sont un simple indicateur, et toutes les sections du pool sont jouées telles quelles — y compris celles que le simulateur juge injoignables (sections spéciales). Coché, un pattern jugé injoignable depuis la plateforme précédente est retiré du tirage (repli : plateforme de sécurité).</div>
+    </details>
     <h3>Plateformes (global)</h3>
     <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="8" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
     <div class="row"><label>Dyn. vit.</label><input type="range" id="pSpdMul" min="5" max="15" value="${Math.round(L.plat.spdMul * 10)}"/><span class="val" id="pSpdMulV">${L.plat.spdMul.toFixed(1)} ×</span></div>
@@ -1549,8 +1555,9 @@ const Ed = (() => {
   function playtest() {
     const p = selPattern()
     if (!p) { flash('Sélectionne un pattern à tester', true); return }
-    if (!cachedValidate(p).ok && !confirm('Ce pattern contient des sauts impossibles même avec les pouvoirs (double saut, rattrape). Tester quand même ?')) return
-    window.open('index.html?pattern=' + encodeURIComponent(Patterns.patternToCode(p)), '_blank')
+    // Les ✓/✗ sont un simple indicateur : on teste toujours, même « KO ».
+    // Le jeu tourne dans play.html (index.html est la vitrine, sans game.js).
+    window.open('play.html?pattern=' + encodeURIComponent(Patterns.patternToCode(p)), '_blank')
   }
 
   // ---------- presse-papiers d'éléments (interne à l'éditeur) ----------
@@ -2208,6 +2215,17 @@ const Ed = (() => {
     document.getElementById('btnCopy').addEventListener('click', copyCode)
     document.getElementById('btnPaste').addEventListener('click', pasteCode)
     document.getElementById('btnPlay').addEventListener('click', playtest)
+    // « Tester niveau » : run COMPLÈTE du pool au niveau choisi (play.html?niveau=N).
+    // Le jeu démarre décalé au niveau (musique bgmN, difficulté et caméra) et
+    // n'enregistre aucun score — c'est un test, pas une run classée.
+    const openNiveau = n => {
+      const m = document.getElementById('menuNiveaux')
+      if (m) m.open = false
+      window.open('play.html?niveau=' + n, '_blank')
+    }
+    for (const [id, n] of [['nNiv1', 1], ['nNiv2', 2], ['nNiv3', 3]]) {
+      document.getElementById(id).addEventListener('click', () => openNiveau(n))
+    }
     fileInput.addEventListener('change', e => {
       const f = e.target.files[0]
       if (!f) return

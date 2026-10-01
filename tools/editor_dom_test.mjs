@@ -18,7 +18,16 @@ function makeEl(id) {
     innerHTML: '', textContent: '', value: '', checked: false,
     clientWidth: 800, clientHeight: 450, width: 0, height: 0,
     addEventListener(ev, fn) { this.handlers[ev] = fn },
-    getContext: () => new Proxy({}, { get: (t, k) => (t[k] ||= () => undefined), set: () => true }),
+    // ctx ENREGISTREUR : chaque appel de méthode est poussé dans el._ctx
+    // (['arc', x, y, r, ...]) — permet d'épingler ce que draw() dessine.
+    _ctx: null,
+    getContext: () => new Proxy({}, {
+      get: (t, k) => {
+        if (k === 'canvas') return el
+        return (t[k] ||= (...a) => { (el._ctx ||= []).push([k, ...a]); return undefined })
+      },
+      set: () => true
+    }),
     querySelectorAll: () => [],
     querySelector(sel) { return makeEl(sel) },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 272, height: 450 }),
@@ -46,7 +55,13 @@ const windowStub = {
   removeEventListener(ev, fn) { winHandlers[ev] = (winHandlers[ev] || []).filter(f => f !== fn) },
   fire(ev, evObj) { for (const fn of winHandlers[ev] || []) fn(evObj) },
   requestAnimationFrame: () => 0,
-  location: { search: '', origin: 'http://test' }
+  location: { search: '', origin: 'http://test' },
+  // playtest : ouvertures de fenêtre et confirms enregistrés (rien ne s'ouvre en test)
+  _opened: [],
+  _confirms: [],
+  // callbacks rAF capturés (draw de l'éditeur déclenché à la main dans les checks)
+  _raf: [],
+  open(url) { this._opened.push(url); return {} }
 }
 
 let failed = 0
@@ -179,8 +194,10 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('slider zoom -> layout.view.zoom', Patterns.getLayout().view.zoom === 2.5)
   els.btnResetL.handlers.click()
   check('reset vue : zoom défaut ×1', Patterns.getLayout().view.zoom === 1)
-  // vérification des sauts : optionnelle (non infaillible), l'admin décide
-  check('case vérif des sauts présente', lh.includes('vChkJumps'))
+  // vérification des sauts : purement indicative — opt-in replié dans
+  // « Options avancées », décochée par défaut (aucune section n'est écartée)
+  check('case vérif des sauts présente, dans le bloc Options avancées', lh.includes('vChkJumps') && lh.includes('Options avancées') && /<details[^>]*>[\\s\\S]*vChkJumps[\\s\\S]*<\\/details>/.test(lh))
+  check('case vérif des sauts décochée par défaut (indicatif)', /id="vChkJumps"(?![^>]*checked)/.test(lh))
   els.vChkJumps.checked = false
   els.vChkJumps.handlers.change({ target: els.vChkJumps })
   check('case décochée -> layout.checkJumps false', Patterns.getLayout().checkJumps === false)
@@ -461,10 +478,63 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   const reimported = Patterns.getPatterns().flatMap(p => p.balls).some(b => b.gem === true)
   check('round-trip export/import : gem conservé', reimported)
   Patterns.resetUser()
+
+  // --- playtest : les ✓/✗ sont un simple indicateur, aucun confirm bloquant ---
+  els.btnNew.handlers.click()
+  const patP = Patterns.getPatterns()[Patterns.getPatterns().length - 1]
+  // saut horizontal hors de portée : le simulateur juge la section impossible
+  patP.platforms.push({ x: 40 * CELL, row: 2, cells: 1, type: 'basic', yOff: 0, amp: 0, spd: 0, spike: null })
+  els.btnPlay.handlers.click()
+  check('playtest : le pattern est réellement jugé KO par le simulateur', !Patterns.validatePatternJumps(patP).ok)
+  check('playtest : confirm jamais appelé', win._confirms.length === 0)
+  check('playtest : la fenêtre de test ouvre malgré le saut KO', win._opened.length === 1)
+  // Le jeu tourne dans play.html — pas index.html (vitrine sans game.js,
+  // cf. déplacement du jeu hors de index.html après la V1).
+  check('playtest : ouvre play.html?pattern=… (pas la vitrine)', /play\\.html\\?pattern=/.test(win._opened[0] || ''))
+  Patterns.resetUser()
+
+  // --- menu « Tester niveau » : 3 entrées -> play.html?niveau=N (run complète) ---
+  const openNiv = id => {
+    const b = els[id]
+    win._opened.length = 0
+    if (b && b.handlers.click) b.handlers.click()
+    return win._opened.slice()
+  }
+  let o = openNiv('nNiv1')
+  check('menu niveau 1 -> play.html?niveau=1', o.length === 1 && /play\\.html\\?niveau=1$/.test(o[0]))
+  o = openNiv('nNiv2')
+  check('menu niveau 2 -> play.html?niveau=2', o.length === 1 && /play\\.html\\?niveau=2$/.test(o[0]))
+  o = openNiv('nNiv3')
+  check('menu niveau 3 -> play.html?niveau=3', o.length === 1 && /play\\.html\\?niveau=3$/.test(o[0]))
+  Patterns.resetUser()
+
+  // --- badges de validation : position STABLE d'une frame à l'autre ---
+  // (régression : drawValidation ré-instanciait le pattern SANS { shift: 0 } ->
+  // transposition verticale ALÉATOIRE à chaque frame, les ✓/✗ changeaient de
+  // rangée en permanence). Le mini-DOM enregistre les appels ctx : on déclenche
+  // 6 frames et on compare les cercles de badge (arc r=9, rayon unique aux
+  // badges de validation — cf. drawValidation).
+  els.btnNew.handlers.click()
+  const patB = Patterns.getPatterns()[Patterns.getPatterns().length - 1]
+  patB.platforms.push({ x: 10 * CELL, row: 3, cells: 2, type: 'basic', yOff: 0, amp: 0, spd: 0, spike: null })
+  patB.platforms.push({ x: 16 * CELL, row: 1, cells: 2, type: 'basic', yOff: 0, amp: 0, spd: 0, spike: null })
+  const frame = () => { win._raf[win._raf.length - 1]() }
+  const badgeFrames = []
+  for (let f = 0; f < 6; f++) {
+    const calls = els.cv._ctx || (els.cv._ctx = [])
+    const mark = calls.length
+    frame()
+    const fr = calls.slice(mark)
+    const badges = fr.filter(c => c[0] === 'arc' && c[3] === 9)
+    badgeFrames.push(JSON.stringify(badges))
+  }
+  check('validation : 2 badges dessinés par frame', badgeFrames.every(b => JSON.parse(b).length === 2))
+  check('validation : badges immobiles entre frames (pas de shift aléatoire)', badgeFrames.every(b => b === badgeFrames[0]))
+  Patterns.resetUser()
 })()
 `)
 const store = {}
-const done = fn(documentStub, windowStub, { getItem: k => ls[k] ?? null, setItem: (k, v) => { ls[k] = String(v) }, removeItem: k => { delete ls[k] } }, () => false, class { set src(v) {} }, () => 0, els, check, windowStub)
+const done = fn(documentStub, windowStub, { getItem: k => ls[k] ?? null, setItem: (k, v) => { ls[k] = String(v) }, removeItem: k => { delete ls[k] } }, m => { windowStub._confirms.push(m); return false }, class { set src(v) {} }, cb => { windowStub._raf.push(cb); return 0 }, els, check, windowStub)
 if (done && typeof done.then === 'function') await done
 
 // --- Régression fix review : transform scopé dans la preview bascule ---

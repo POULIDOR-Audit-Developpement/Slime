@@ -109,6 +109,7 @@ function loadMusic() {
   try {
     const M3 = sandbox3(undefined, undefined, undefined, undefined)
     M3.restore(); M3.start(); M3.stop(); M3.toggle()
+    M3.setStart(2) // ?niveau=N : API no-op hors navigateur
     if (M3.track !== 0) throw new Error('track hors navigateur')
   } catch (e) { threw = true }
   check('hors navigateur : no-op sans exception (track 0)', !threw)
@@ -135,6 +136,41 @@ function loadMusic() {
   M4.toggle() // unmute
   M4.start() // 1er saut : c'est ICI que les éléments sont créés (dans le geste)
   check('1er saut : les 3 pistes sont créées et bgm1 joue', created.length === 3 && created[0].paused === false)
+}
+
+// ---- 6. piste de départ forcée : Music.setStart(n) (?niveau=N, éditeur) ----
+{
+  const src = readFileSync(new URL('../js/music.js', import.meta.url), 'utf8')
+  const created = []
+  class FakeAudioN {
+    constructor(s) { this.src = s; this.loop = false; this.paused = true; this.handlers = {}; this.currentTime = 0; created.push(this) }
+    addEventListener(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn) }
+    set currentTime(v) { this._t = v }
+    get currentTime() { return this._t }
+    play() { this.paused = false; return Promise.resolve() }
+    pause() { this.paused = true }
+    fire(ev) { for (const fn of this.handlers[ev] || []) fn() }
+  }
+  const sandboxN = new Function('Audio', 'localStorage', 'volume', 'document', 'console', 'return (() => {' + src + '; return Music })()')
+  const MN = sandboxN(FakeAudioN, { getItem: () => null, setItem: () => {} }, () => {}, undefined, console)
+  MN.restore()
+  MN.setStart(2) // « Tester niveau 3 » : la run démarre sur bgm3 (manoir)
+  MN.start()
+  check('setStart(2) : bgm3 joue au 1er saut (ni bgm1 ni bgm2)', created.length === 3 && created[2].paused === false && created[0].paused && created[1].paused)
+  check('setStart(2) : Music.track === 2', MN.track === 2)
+  created[2].fire('ended') // bgm3 en loop : reste sur elle-même
+  check('depuis bgm3 : boucle sur elle-même (pas de débordement)', MN.track === 2 && created[2].paused === false)
+  MN.stop()
+  check('stop() : retour à la piste de DÉPART (2, pas 0)', MN.track === 2)
+  MN.start()
+  check('rejouer : bgm3 repart du début', created[2].paused === false && MN.track === 2)
+  MN.setStart(99)
+  check('setStart borné 0..2', MN.track === 2)
+  MN.stop()
+  MN.setStart(0)
+  check('setStart(0) : la run suivante repart sur bgm1', MN.track === 0)
+  MN.start()
+  check('rejouer après setStart(0) : bgm1 joue', created[0].paused === false && created[2].paused === true)
 }
 
 console.log(fail === 0 ? '\nMUSIC OK — tous les checks passent' : `\n${fail} CHECK(S) EN ÉCHEC`)

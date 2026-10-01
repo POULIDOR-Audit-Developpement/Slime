@@ -9,6 +9,8 @@
 // - toggle() : coupe/relance (touche 'm' ou coin haut-gauche) — coupe aussi
 //   les SFX (volume zzfx), comportement inchangé, persisté dans localStorage.
 // - Onglet masqué : pause/reprise (le chiptune, piloté par rAF, s'arrêtait).
+// - setStart(n) : piste de départ d'une run (?niveau=N, « Tester niveau » de
+//   l'éditeur) — start()/stop() reviennent à bgmN au lieu de bgm1.
 // - Fichier absent/illisible : silence (console.info), jamais bloquant.
 // - Hors navigateur (simulations Node tools/*.mjs) : no-op complet.
 const Music = (() => {
@@ -16,6 +18,7 @@ const Music = (() => {
   const VOL = 0.5
   let audio = null // éléments Audio créés au boot ; null hors navigateur
   let idx = 0
+  let startIdx = 0 // piste de départ d'une run (setStart — « Tester niveau » éditeur)
   let started = false // run en cours (start() sans stop() depuis)
   let muted = false
 
@@ -56,16 +59,25 @@ const Music = (() => {
     started = true
     init() // paresseux : premier saut seulement, dans le geste utilisateur —
     // rien de média au chargement de la page (burst 3×4 Mo = saccades mobiles)
+    idx = startIdx // nouvelle partie : la piste de DÉPART (?niveau=N), pas bgm1
     if (!audio || muted) return
     playCur(true) // nouvelle partie : la piste démarre du début
   }
 
   function stop() {
     started = false
-    idx = 0
+    idx = startIdx
     if (!audio) return
     pauseAll()
     for (const a of audio) { try { a.currentTime = 0 } catch (e) {} }
+  }
+
+  // Piste de départ d'une run (0..2) : « Tester niveau » (éditeur) démarre la
+  // musique sur bgmN. L'index courant suit tout de suite… sauf hors navigateur
+  // (audio null : no-op strict, Music.track reste 0) et pendant une run.
+  function setStart(n) {
+    startIdx = Math.min(TRACKS.length - 1, Math.max(0, n | 0))
+    if (!started && audio) idx = startIdx
   }
 
   // volume() = gain zzfx global (litecanvas) : coupe aussi les SFX. Absent hors
@@ -100,6 +112,7 @@ const Music = (() => {
     stop,
     toggle,
     restore,
+    setStart,
     // Piste courante (0, 1 ou 2) : le jeu la lit chaque frame (lecture
     // gratuite) pour swapper le fond au passage bgm1 -> bgm2 -> bgm3.
     get track() { return idx },

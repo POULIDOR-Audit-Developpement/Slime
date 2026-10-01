@@ -36,6 +36,7 @@ const Sprites = (() => {
     djPump1: 'dj_pump1',
     timeWarp: 'time_warp',
     gaugeBar: 'gauge_bar',
+    gaugeAlt: 'gauge_alt',
     gaugeSlow: 'gauge_slow',
     gaugeMid: 'gauge_mid',
     gaugeFast: 'gauge_fast',
@@ -161,7 +162,7 @@ const Sprites = (() => {
         if (++loaded >= keys.length) ready = true
       }
       im.onerror = () => { loaded++ }
-      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261001b'
+      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261001c'
       imgs[k] = im
     }
   }

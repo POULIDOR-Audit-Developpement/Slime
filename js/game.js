@@ -33,17 +33,14 @@ function ensureVoidPattern() {
 }
 
 function drawOuterFrame() {
+  // Hors-vue (letterbox) : aplat sombre discret (DA mockup). La texture
+  // bedrock qui tuait tout l'écran sur les mobiles hauts est réservée aux
+  // bandes de danger DANS le terrain (drawDamageBand — signal de gameplay).
   const c = ctx()
   c.save()
-  if (voidPattern) {
-    c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
-    c.fillStyle = voidPattern
-    c.fillRect(-VOX / VSC - 2, -VOY / VSC - 2, W / VSC + 4, H / VSC + 4)
-  } else {
-    c.setTransform(1, 0, 0, 1, 0, 0)
-    c.fillStyle = framePattern || '#131735'
-    c.fillRect(0, 0, W, H)
-  }
+  c.setTransform(1, 0, 0, 1, 0, 0)
+  c.fillStyle = '#131735'
+  c.fillRect(0, 0, W, H)
   c.restore()
 }
 const VERSION = '4.0'
@@ -194,12 +191,13 @@ const C_GEM = 50
 
 // ---------- Fond par niveau (= piste BGM) ----------
 // Le fond suit la musique : à chaque bascule de piste (bgm1 -> bgm2 -> bgm3,
-// ~3 min), un fond illustré propre au niveau (plaines / usine de magma /
-// manoir hanté, ASSETS/sprites/v5/bg_level1..3.png) + palette procédurale
-// thématisée + sprites de fond recolorés UNE fois (jamais par frame — règles
-// perf AGENTS.md). Ordre : BLUE, BLUE_L, BLUE_D, BLUE_XD, BLUE_HI.
+// ~3 min), la palette procédurale du fond bascule (retour DA mockup
+// « apercu-jeu.png » : fond sombre désaturé, plateformes saturées — niveau 1
+// = bleu d'origine ; les panneaux bgBig/bgPanel sont recolorés une fois par
+// bascule dans recolorBgSprites, jamais par frame — règles perf AGENTS.md).
+// Ordre : BLUE, BLUE_L, BLUE_D, BLUE_XD, BLUE_HI.
 const TRACK_PALETTES = [
-  ['#3f8f4f', '#5fb06a', '#2f7040', '#245833', '#9fd98f'],
+  ['#4a5ed7', '#5f74e3', '#4152c8', '#3946a8', '#6b83ec'],
   ['#c25a24', '#e07a3a', '#93381a', '#722610', '#f5a878'],
   ['#5c3f96', '#7a5cb8', '#452e78', '#31205c', '#b49ae6']
 ]
@@ -213,6 +211,18 @@ const TRACK_FORCE = (() => {
     return Math.min(2, Math.max(0, (parseInt(v, 10) || 1) - 1))
   } catch (e) { return -1 }
 })()
+// ?niveau=N (1..3) : « Tester niveau » de l'éditeur — expérience complète du
+// niveau : run DÉCALÉE (elapsed t+(N-1)*3 min -> difficulté T1-T5 et vitesse
+// caméra du niveau), visuel forcé N, musique démarrée sur bgmN, AUCUN code de
+// score (run de test, jamais classée). ?track=N reste un diagnostic visuel pur.
+const NIVEAU_FORCE = (() => {
+  try {
+    const v = new URLSearchParams(window.location.search).get('niveau')
+    if (v == null) return -1
+    return Math.min(3, Math.max(1, parseInt(v, 10) || 1)) - 1
+  } catch (e) { return -1 }
+})()
+const NIVEAU_LEN = 180 // ~3 min par piste BGM (durée des mp3) : décalage/niveau
 
 // ---------- Paliers score -> couleur (éditables dans settings.html) ----------
 // La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
@@ -409,7 +419,7 @@ function burst(x, y, color, n, pow) {
 }
 
 function startGame() {
-  elapsed = 0
+  elapsed = NIVEAU_FORCE >= 0 ? NIVEAU_FORCE * NIVEAU_LEN : 0 // ?niveau=N : run décalée au début du niveau
   camX = 0
   camSpd = PH().camBase
   gameT = 0
@@ -426,7 +436,7 @@ function startGame() {
   gemsCollected = 0
   theoPts = 0
   patternsSpawned = 0
-  resetMusicTrack() // nouvelle partie : fond niveau 1 ; la bannière « NIVEAU 1 » part au 1er saut
+  resetMusicTrack() // nouvelle partie : fond niveau 1 (ou forcé ?niveau=N), silencieux ; la bannière part au 1er saut
   newRecord = false
   scoreCode = null
   deathT = 0
@@ -492,7 +502,10 @@ function die() {
   pendingCodeScore = s
   scoreCode = null
   qrCv = null
-  if (!testMode && s > 0 && CONTACT && CONTACT.asked && !CONTACT.asked()) {
+  if (NIVEAU_FORCE >= 0) {
+    // ?niveau=N : run de test DÉCALÉE (t+3/t+6 min) — scoreCode reste null
+    // (ni modal, ni classement : le score n'est pas comparable à une vraie run).
+  } else if (!testMode && s > 0 && CONTACT && CONTACT.asked && !CONTACT.asked()) {
     CONTACT.ensureModal({ onDone: () => { makeDeathCode() } })
   } else {
     makeDeathCode()
@@ -1055,89 +1068,14 @@ function drawClouds() {
     }
   })
 }
-// Décors des planches v5-v7 (tools/extract_decors.py) peuplant le fond
-// défilant — remplace les panneaux bleus mi-denses. 2 couches de parallaxe,
-// placement DÉTERMINISTE par hash (même pattern que nuages/sol : stable,
-// aucun clignotement), culling gratuit via bgLayer (seuls les segments
-// visibles dessinent, ~8-12 drawImage/frame). Coût par frame : drawImage
-// uniquement — les canvases recadrés des tuiles sont préparés UNE fois.
-const LEVEL_DECORS = [
-  // 0 plaines : lointain = arbres, proche = buissons/rochers/fleurs
-  { far: ['decTree1', 'decTree2', 'decTreeBig', 'decPine1', 'decPine3', 'decPine5'],
-    near: ['decBush1', 'decBush2', 'decBushLeafy', 'decBushFern', 'decRock3',
-      'decRockSingle', 'decFlowers3', 'decFlowers5', 'decStump1'] },
-  // 1 usine de magma : tuyaux/roues/consoles au loin, feu/vapeur/lava devant
-  { far: ['decPipeElbow', 'decWheel1', 'decWheel2', 'decConsole', 'decLadder', 'decSteamPipe'],
-    near: ['hazFlame', 'decSteamVent', 'decLavaBubbles', 'decFan', 'decFlamedrops', 'decFlamedrop'] },
-  // 2 manoir hanté : meubles au loin, chandeliers/bougies PENDANT au plafond
-  { far: ['decClock', 'decArmchair', 'decCauldron', 'decBooks'],
-    near: ['decChandelierGold', 'decChandelierDark1', 'decCandle1', 'decCandleWall', 'hazShadowEyes'] }
-]
-const HANGING_DECORS = {
-  decChandelierGold: 1, decChandelierDark1: 1, decChandelierDark2: 1,
-  decCandle1: 1, decCandle2: 1, decCandleWall: 1
-}
-
-function drawLevelDecors() {
-  if (!Sprites.ready) return
-  drawDecorLayer(0.45, 191, 22, 38, 236, 246, 0.34, 0.75) // lointain : petits
-  drawDecorLayer(0.7, 233, 40, 74, 250, 264, 0.30, 1)     // proche : gros
-}
-
-function drawDecorLayer(f, seed, s0, s1, feet0, feet1, dens, al) {
-  alpha(al)
-  bgLayer(f, seed, (x, h, h2, h3) => {
-    if (h > dens) return
-    const pool = LEVEL_DECORS[bgTrack][h2 < 0.55 ? 'far' : 'near']
-    const key = pool[(h3 * pool.length) | 0]
-    const w = s0 + h2 * (s1 - s0)
-    const nw = Sprites.natW(key), nh = Sprites.natH(key)
-    if (!nw) return
-    const hh = w * nh / nw
-    const gx = x + h2 * (64 - w)
-    if (HANGING_DECORS[key]) {
-      Sprites.drawTL(key, gx, CEIL + 2, w, h2 > 0.75)
-    } else {
-      Sprites.drawTL(key, gx, feet0 + h3 * (feet1 - feet0) - hh, w, h2 > 0.75)
-    }
-  })
-  alpha(1)
-}
-
-// Variantes de tuiles « basic » par niveau (blocs des planches v5-v7) :
-// ~1 cellule sur 5 prend une texture du niveau. Les sprites sources sont
-// carrés ou debout : recadrage au ratio des tuiles (4:3, ou 2 cells pour
-// les blocs larges) fait UNE fois puis enregistré dans Sprites (canvases
-// en cache — zéro déformation, zéro coût par frame ; règles perf).
-const BASIC_TILES = [
-  { cell: ['platGrass1x1', 'platGrass1x1b', 'platGrassNue1', 'platGrassNue2'],
-    wide: ['platGrassFlowersWide'] },
-  { cell: ['platGrid1', 'platGrid2', 'platGrid3', 'platGrid4', 'platGrid5', 'platGrid6'],
-    wide: [] },
-  { cell: ['platStone1x1'], wide: ['platStone2x1', 'platStoneWorn'] }
-]
-const TILE_RATIO = CELL / 24
-const tileVarCache = new Map()
-function tileVar(key, ratio) {
-  const ck = key + '@' + ratio
-  if (tileVarCache.has(ck)) return tileVarCache.get(ck)
-  const im = Sprites.get(key)
-  let out = null
-  if (im && im.width && typeof document !== 'undefined') {
-    try {
-      let cw = im.width, ch = Math.round(cw / ratio)
-      if (ch > im.height) { ch = im.height; cw = Math.min(im.width, Math.round(ch * ratio)) }
-      const cv = document.createElement('canvas')
-      cv.width = cw
-      cv.height = ch
-      cv.getContext('2d').drawImage(im, (im.width - cw) >> 1, (im.height - ch) >> 1, cw, ch, 0, 0, cw, ch)
-      out = key + '_r'
-      Sprites.register(out, cv)
-    } catch (e) { out = null } // environnement sans canvas 2d : tuile de base
-  }
-  tileVarCache.set(ck, out)
-  return out
-}
+// Décors des planches v5-v7 : l'habillage PROCÉDURAL (arbres/fleurs/meubles
+// apparaissant spontanément) a été retiré au retour DA mockup — il concurren-
+// çait la lisibilité du gameplay. Seuls les décors placés VOLONTAIREMENT dans
+// l'éditeur (pat.decor, dessinés atténués dans le monde) restent affichés.
+//
+// Le mélange « 1 cellule sur 5 prend une texture du niveau » (BASIC_TILES,
+// tileVar) a été retiré aussi : une plateforme = une texture (vert / volcan-
+// ique / manoir), la variété venant des plateformes spéciales (gameplay).
 function drawGroundStrip() {
   bgLayer(0.7, 63, (x, h, h2) => {
     rectfill(x, 251, 64, 19, C_BLUE_XD)
@@ -1154,29 +1092,19 @@ function drawBG() {
     if (h < 0.45) rectfill(x + 6 + h * 26, 36 + h3 * 130, 24 + h2 * 22, 70 + h * 90, C_BLUE_L)
   })
   if (Sprites.ready) {
-    const lvl = 'bgLevel' + (bgTrack + 1)
-    const lvim = Sprites.get(lvl)
-    if (lvim && lvim.width) {
-      // fond illustré du niveau (plaines / magma / manoir) : 2 copies en
-      // parallaxe lente couvrent l'écran quel que soit le défilement —
-      // coût par frame identique à l'ancien bgBig (2-3 drawImage)
-      const off = -(camX * 0.12 % VW)
-      Sprites.drawImage(lvl, off, 0, VW, VH)
-      Sprites.drawImage(lvl, off + VW, 0, VW, VH)
-    } else {
-      // secours : panneaux bleus d'origine (images de niveau manquantes)
-      const bw = 350
-      const off1 = -(camX * 0.08 % (bw + 280))
-      alpha(0.42)
-      for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, VH - 96)
-      alpha(0.85)
-      const off2 = -(camX * 0.3 % 760)
-      for (let k = 0; k < 3; k++) {
-        const h1 = h32(k * 13 + 5), h2v = h32(k * 29 + 11)
-        Sprites.drawImage('bgPanel' + (1 + (h1 * 4 | 0)), off2 + k * 380 + h1 * 220, 74 + h2v * 90, 60)
-      }
-      alpha(1)
+    // Panneaux bleus d'origine (DA mockup) : fond discret qui laisse la
+    // lisibilité aux plateformes — recolorés une fois par bascule de piste.
+    const bw = 350
+    const off1 = -(camX * 0.08 % (bw + 280))
+    alpha(0.42)
+    for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, VH - 96)
+    alpha(0.85)
+    const off2 = -(camX * 0.3 % 760)
+    for (let k = 0; k < 3; k++) {
+      const h1 = h32(k * 13 + 5), h2v = h32(k * 29 + 11)
+      Sprites.drawImage('bgPanel' + (1 + (h1 * 4 | 0)), off2 + k * 380 + h1 * 220, 74 + h2v * 90, 60)
     }
+    alpha(1)
   }
   drawClouds()
   bgLayer(0.28, 77, (x, h, h2, h3) => {
@@ -1185,7 +1113,6 @@ function drawBG() {
     if (h2 < 0.14) rectfill(x + h * 44, 60 + h3 * 150, 7, 7, C_BLUE_HI)
     if (h > 0.86) rectfill(x + h2 * 40, 100 + h * 90, 18, 3, C_BLUE_HI)
   })
-  drawLevelDecors()
   drawGroundStrip()
 }
 
@@ -1227,17 +1154,21 @@ function applyMusicTrack(t) {
 }
 
 // Nouvelle partie : retour niveau 1 SILENCIEUX (palette d'origine, pas de
-// bannière — la musique repart de bgm1 via Music.stop()).
+// bannière — la musique repart de bgm1 via Music.stop()). Avec ?niveau=N
+// (« Tester niveau ») : retour au niveau forcé, tout aussi silencieux.
 function resetMusicTrack() {
-  bgTrack = 0
+  bgTrack = NIVEAU_FORCE >= 0 ? NIVEAU_FORCE : 0
   trackFxT = 0
-  applyTrackPalette(0)
-  recolorBgSprites(0)
+  applyTrackPalette(bgTrack)
+  recolorBgSprites(bgTrack)
 }
 
 // Poll par frame pendant le run : applique le niveau courant (piste BGM,
-// ou ?track=N pour le diagnostic).
-function pollMusicTrack() { applyMusicTrack(TRACK_FORCE >= 0 ? TRACK_FORCE : Music.track) }
+// ?track=N diagnostic, ou ?niveau=N test éditeur).
+function pollMusicTrack() {
+  const t = NIVEAU_FORCE >= 0 ? NIVEAU_FORCE : (TRACK_FORCE >= 0 ? TRACK_FORCE : Music.track)
+  applyMusicTrack(t)
+}
 
 // Transition ponctuelle (~2 s, vectorielle : anneaux/rects/texte — aucun
 // canvas régénéré, coût par frame quasi nul) : flash bref, onde depuis le
@@ -1530,9 +1461,6 @@ function drawPlat(p) {
       const baseTile = ['tileGreen', 'tileVolcanic', 'tileManor'][bgTrack] || 'tileGreen'
       const keys = { basic: baseTile, crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange',
         turbo: 'tileTurbo', gold: 'tileGold', seesaw: 'tileSeesaw' }
-      // Variantes « basic » du niveau (planches v5-v7) : hash déterministe
-      // par position — identique pour un même pattern, stable pendant la run.
-      const bt = p.type === 'basic' ? BASIC_TILES[bgTrack] : null
       // Bascule : tuiles pivotantes autour du centre de la plateforme
       // (inclinaison purement visuelle) — un seul translate/rotate, tuiles
       // dessinées en coordonnées relatives au pivot.
@@ -1541,13 +1469,7 @@ function drawPlat(p) {
       for (let i = 0; i < n; i++) {
         const tx = sw ? -p.w / 2 + i * CELL : p.x + jx + i * CELL
         const ty = sw ? -12 : p.y
-        let varKey = null
-        if (bt) {
-          const hv = h32(((p.x | 0) + i * 7) * 89 + 5)
-          if (hv < 0.22) varKey = tileVar(bt.cell[((hv * 100) | 0) % bt.cell.length], TILE_RATIO)
-        }
-        if (varKey) Sprites.drawImage(varKey, tx, ty, CELL, 24)
-        else Sprites.drawImage(keys[p.type] || 'tileGreen', tx, ty, CELL, 24)
+        Sprites.drawImage(keys[p.type] || 'tileGreen', tx, ty, CELL, 24)
         if (p.type === 'crumble') {
           rectfill(tx + 9, ty + 6, 2, 8, C_CR_DARK)
           rectfill(tx + 20, ty + 10, 2, 6, C_CR_DARK)
@@ -1564,19 +1486,6 @@ function drawPlat(p) {
           fill(C_WHITE)
           shape([tx + 15, ty + 6, tx + 22, ty + 12, tx + 15, ty + 18])
           fill(C_WHITE)
-        }
-      }
-      // Bloc large du niveau (2 cells) : ~1 plateforme sur 6, ancré pour ne
-      // jamais déborder du tablier (hash déterministe par position).
-      if (bt && bt.wide.length && n >= 2) {
-        const hw = h32((p.x | 0) * 61 + 9)
-        if (hw < 0.18) {
-          const wi = ((hw * 97) | 0) % (n - 1)
-          const wk = tileVar(bt.wide[((hw * 53) | 0) % bt.wide.length], (CELL * 2) / 24)
-          if (wk) {
-            const wx = sw ? -p.w / 2 + wi * CELL : p.x + jx + wi * CELL
-            Sprites.drawImage(wk, wx, sw ? -12 : p.y, CELL * 2, 24)
-          }
         }
       }
       if (sw) pop()
@@ -2127,21 +2036,75 @@ function drawHUD() {
   drawPowerHud()
 }
 
-// Indicateur du double saut : jauge de recharge + chevrons, à droite des
-// têtes de vie. Pleine et bleue = prêt, grise = en cooldown / épuisée.
+// Flacon gauge_alt (25x92, planche v4 « jauge verticale alternative ») :
+// cadre vert + remplissage intérieur x[4,20], y[39,86[. Hors prêt, le
+// remplissage natif n'est PAS dessiné : la base est découpée (capuchon+haut
+// brun, rails) et l'overlay fait monter le vert avec le timer (djCd).
+const DJ_VIAL = { x: 4, w: 17, y0: 39, y1: 86 }
+
+// Indicateur du double saut, à droite des têtes de vie.
+// - Chevrons = CHARGES : 1 par saut aérien (bonus doré inclus) ; consommé =
+//   éteint ; recharge à l'atterrissage ; pulsation des allumés quand prêt.
+// - Flacon = TEMPS : vidé à la consommation, le vert monte avec djCd jusqu'à
+//   plein quand le timer est écoulé. Fallback vectoriel si sprites absents.
 function drawPowerHud() {
   const dj = POWERS.doubleJump
   if (!dj.enabled) return
-  const x = 12 + 3 * 28 + 6, y = VH - 30, w = 14, h = 24
+  const x = 12 + 3 * 28 + 6, y = VH - 30
   const ready = canDoubleJump()
-  rectfill(x - 1, y - 1, w + 2, h + 2, C_FRAME, 4)
-  rect(x - 1, y - 1, w + 2, h + 2, C_BLACK, 2)
   const f = ready ? 1 : slime.djCd > 0 && dj.cooldown > 0 ? 1 - slime.djCd / dj.cooldown : 0
-  rectfill(x + 1, y + 1 + (h - 2) * (1 - f), w - 2, (h - 2) * f, ready ? C_BLUE : C_GRAY)
-  alpha(ready ? 0.85 + 0.15 * Math.sin(T * 6) : 0.45)
-  shape([x + 3, y + 11, x + 7, y + 6, x + 11, y + 11]); fill(C_WHITE)
-  shape([x + 3, y + 18, x + 7, y + 13, x + 11, y + 18]); fill(C_WHITE)
-  alpha(1)
+  const pulse = 0.85 + 0.15 * Math.sin(T * 6)
+  const vial = Sprites.get('gaugeAlt')
+  if (vial && vial.width) {
+    // Chevrons (1 par charge, empilés autour du centre du bloc 24 px).
+    const n = dj.charges + (slime.goldT > 0 ? 1 : 0)
+    const lit = Math.min(Math.max(slime.airJumps, 0), n)
+    const pitch = n <= 2 ? 7 : 5
+    const y0c = y + 12 - (n - 1) * pitch / 2
+    for (let i = 0; i < n; i++) {
+      const yc = y0c + i * pitch
+      alpha(i < lit ? (ready ? pulse : 0.9) : 0.22)
+      shape([x + 1, yc + 5, x + 5, yc, x + 9, yc + 5]); fill(C_WHITE)
+      alpha(1)
+    }
+    // Flacon vertical (ratio 25:92, ~8x28).
+    const vh = 28, vw = vh * vial.width / vial.height, vx = x + 12, vy = y - 2
+    const part = (sx, sy, sw, sh) => Sprites.drawSrc('gaugeAlt', sx, sy, sw, sh,
+      vx + sx / vial.width * vw, vy + sy / vial.height * vh,
+      sw / vial.width * vw, sh / vial.height * vh)
+    if (ready) {
+      alpha(pulse)
+      Sprites.drawImage('gaugeAlt', vx, vy, vw)
+      alpha(1)
+    } else {
+      // Vide à la consommation : cadre + intérieur brun, remplissage natif exclu.
+      alpha(0.85)
+      part(0, 0, 25, DJ_VIAL.y0)
+      part(0, DJ_VIAL.y0, DJ_VIAL.x, DJ_VIAL.y1 - DJ_VIAL.y0)
+      part(DJ_VIAL.x + DJ_VIAL.w, DJ_VIAL.y0, 25 - DJ_VIAL.x - DJ_VIAL.w, DJ_VIAL.y1 - DJ_VIAL.y0)
+      if (f > 0) {
+        alpha(1)
+        const yTop = DJ_VIAL.y0 + (1 - f) * (DJ_VIAL.y1 - DJ_VIAL.y0)
+        part(DJ_VIAL.x, yTop, DJ_VIAL.w, DJ_VIAL.y1 - yTop)
+      }
+      alpha(1)
+    }
+  } else {
+    const w = 14, h = 24
+    const n = dj.charges + (slime.goldT > 0 ? 1 : 0)
+    const lit = Math.min(Math.max(slime.airJumps, 0), n)
+    rectfill(x - 1, y - 1, w + 2, h + 2, C_FRAME, 4)
+    rect(x - 1, y - 1, w + 2, h + 2, C_BLACK, 2)
+    rectfill(x + 1, y + 1 + (h - 2) * (1 - f), w - 2, (h - 2) * f, ready ? C_BLUE : C_GRAY)
+    const pitch = n <= 2 ? 7 : 5
+    const y0c = y + 12 - (n - 1) * pitch / 2
+    for (let i = 0; i < n; i++) {
+      const yc = y0c + i * pitch
+      alpha(i < lit ? (ready ? pulse : 0.9) : 0.22)
+      shape([x + 3, yc + 5, x + 7, yc, x + 11, yc + 5]); fill(C_WHITE)
+      alpha(1)
+    }
+  }
 }
 
 // Écran game over : délai (s) avant l'assombrissement, pour laisser voir
@@ -2594,7 +2557,11 @@ function draw_() {
     c.translate(VW / 2 + shx, VH / 2 + shy)
     c.scale(camW / VW, camH / VH)
     c.translate(-camCx, -camCy)
+    // Décors placés volontairement dans l'éditeur : atténués pour rester
+    // de l'ambiance — jamais en concurrence avec plateformes/billes/slime.
+    alpha(0.5)
     for (const d of decors) Sprites.drawImage(d.sprite, d.x, d.y, d.w)
+    alpha(1)
     drawWalls()
     for (const p of platforms) drawPlat(p)
     for (const b of balls) if (!b.taken) drawBall(b)
@@ -2698,6 +2665,7 @@ function init() {
   applyLayout()
   setupTestMode()
   Music.restore()
+  if (NIVEAU_FORCE >= 0) Music.setStart(NIVEAU_FORCE) // « Tester niveau » : la run démarre sur bgmN
   Sprites.load()
   buildFramePattern()
   // L'éditeur (autre onglet) a sauvegardé : rechargement du layout en direct

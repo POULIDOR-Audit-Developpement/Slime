@@ -76,9 +76,10 @@ const Patterns = (() => {
     v.showTrajectory = v.showTrajectory !== false
     v.shake = v.shake !== false
     out.view = v
-    // Vérification des sauts au spawn : optionnelle et non infaillible (le
-    // simulateur peut rejeter à tort) — l'admin décide. Activée par défaut.
-    out.checkJumps = out.checkJumps !== false
+    // Vérification des sauts au spawn : purement indicative (le simulateur
+    // peut rejeter à tort) et DÉSACTIVÉE par défaut — les sections de l'admin
+    // sont toujours jouées telles quelles. Opt-in avancé dans l'éditeur (VUE).
+    out.checkJumps = out.checkJumps === true
     if (!Array.isArray(out.decor)) out.decor = []
     return out
   }

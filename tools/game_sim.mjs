@@ -584,6 +584,48 @@ function driverFn() {
     check('draw() sans exception dans tous les états (' + e.message + ')', false)
   }
 
+  // --- 15) jauge double saut : flacon gauge_alt (planche v4) ---
+  // Prêt : flacon complet (drawImage). Charge consommée : base découpée en
+  // drawSrc (capuchon+haut brun, puis rails — SANS le remplissage natif) et
+  // overlay qui fait monter le vert avec le timer (djCd) ; les chevrons
+  // suivent les charges (airJumps).
+  {
+    startGame()
+    POWERS.doubleJump.enabled = true
+    slime.goldT = 0
+    slime.airJumps = POWERS.doubleJump.charges
+    slime.djCd = 0
+    const calls = []
+    const oDS = Sprites.drawSrc, oDI = Sprites.drawImage
+    Sprites.drawSrc = function (k) { calls.push(['src', k, Array.prototype.slice.call(arguments, 1)]); return oDS.apply(Sprites, arguments) }
+    Sprites.drawImage = function (k) { calls.push(['img', k]); return oDI.apply(Sprites, arguments) }
+    drawPowerHud()
+    check('jauge DJ prête : flacon complet (1 drawImage, 0 drawSrc)',
+      calls.filter(c => c[0] === 'img' && c[1] === 'gaugeAlt').length === 1 &&
+      calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt').length === 0)
+    // 1 charge consommée, timer à moitié écoulé
+    slime.airJumps = POWERS.doubleJump.charges - 1
+    slime.djCd = POWERS.doubleJump.cooldown / 2
+    calls.length = 0
+    drawPowerHud()
+    const parts = calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt')
+    check('jauge DJ consommée 50% : base découpée (haut + 2 rails) + overlay',
+      parts.length === 4 && parts[0][2][1] === 0 && parts[0][2][3] === 39)
+    const ov = parts.find(c => c[2][0] === 4)
+    check('jauge DJ 50% : vert à mi-hauteur (source x4 y62.5 h23.5)',
+      !!ov && ov[2][1] === 62.5 && ov[2][3] === 23.5)
+    // toutes les charges épuisées, timer écoulé : flacon vide, ni base pleine ni overlay
+    slime.airJumps = 0
+    slime.djCd = 0
+    calls.length = 0
+    drawPowerHud()
+    check('jauge DJ épuisée : 3 parts (haut + rails), 0 overlay, pas de flacon plein',
+      calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt').length === 3 &&
+      calls.filter(c => c[0] === 'img' && c[1] === 'gaugeAlt').length === 0)
+    Sprites.drawSrc = oDS
+    Sprites.drawImage = oDI
+  }
+
   console.log(fails === 0 ? '\nSIM OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('game_sim failed')
 }
@@ -596,5 +638,47 @@ try {
   fn(...Object.values(litecanvasStubs))
 } catch (e) {
   console.error('EXCEPTION :', e.message)
+  process.exit(1)
+}
+
+// ---------- ?niveau=N : « Tester niveau » lancé depuis l'éditeur ----------
+// Deuxième sandbox avec ?niveau=3 : run DÉCALÉE (elapsed t+6 min -> difficulté
+// et caméra du niveau), visuel manoir silencieux dès le départ, AUCUN code de
+// score. Même harnais, seule location.search change (le ?track/?niveau du
+// run principal reste vide -> les checks historiques ne bougent pas).
+const niveauStubs = {
+  ...litecanvasStubs,
+  window: { location: { search: '?niveau=3' }, innerHeight: 540, innerWidth: 960, addEventListener: noop }
+}
+function niveauDriverFn() {
+  let fails = 0
+  const check = (name, cond) => { if (!cond) { fails++; console.log('FAIL', name) } else console.log('ok  ', name) }
+  init()
+  check('?niveau=3 lu au chargement (index 0-based)', NIVEAU_FORCE === 2)
+  startGame()
+  check('elapsed décalé au début du niveau 3 (t+6 min)', elapsed === 360)
+  check('visuel manoir dès le départ, sans transition', bgTrack === 2 && trackFxT === 0 && COLORS[C_BLUE] === TRACK_PALETTES[2][0])
+  runStarted = true
+  update(1 / 60)
+  check('poll par frame : le niveau forcé tient', bgTrack === 2)
+  // Caméra : la rampe lit elapsed -> vitesse mi-parcours (défauts 80->240)
+  check('caméra : vitesse rampée par elapsed (pas la base)', camSpd > PH().camBase)
+  check('caméra : formule de palier appliquée à elapsed décalé',
+    camSpd === Math.min(PH().camBase + Math.floor(360 / CAM_PALIER_S) *
+      Math.max(1, Math.round((PH().camMax - PH().camBase) * CAM_PALIER_S / PH().camRampDur)), PH().camMax))
+  die()
+  check('niveau forcé : AUCUN code de score (test, pas classement)', scoreCode === null)
+  check('musique : API setStart disponible (no-op en Node)', typeof Music.setStart === 'function')
+  if (fails > 0) throw new Error('game_sim niveau failed')
+  console.log('\nSIM NIVEAU OK — tous les checks passent')
+}
+const fnNiveau = new Function(
+  ...Object.keys(niveauStubs),
+  src + '\n;(' + niveauDriverFn.toString() + ')()'
+)
+try {
+  fnNiveau(...Object.values(niveauStubs))
+} catch (e) {
+  console.error('EXCEPTION niveau :', e.message)
   process.exit(1)
 }
