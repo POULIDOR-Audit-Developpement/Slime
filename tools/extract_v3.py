@@ -7,7 +7,7 @@ import os
 # bullet time). Découpe manuelle (coordonnées lues sur la grille 128 px) puis
 # détourage : test de couleur fond damier + diffusion depuis les bords du crop
 # (les cellules gris clair de la jauge, encadrées de noir, ne sont pas atteintes).
-SRC = 'ASSETS/Gemini_Generated_Image_io9kgwio9kgwio9k.png'
+SRC = 'ASSETS/planches/v3-actions.png'
 OUT = 'ASSETS/sprites/v3'
 os.makedirs(OUT, exist_ok=True)
 

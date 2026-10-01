@@ -1,1 +1,3 @@
 data/
+.openchamber/
+__pycache__/

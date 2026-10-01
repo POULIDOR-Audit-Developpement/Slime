@@ -31,6 +31,7 @@ sprite) :
 ## Diagnostic perf intégré (paramètres d'URL — aucun effet sans eux)
 
 - `?fps` : compteur images rendues/s + maj simulation/s, en haut à gauche
+- `?track` : force le niveau (1 = plaines, 2 = magma, 3 = manoir) sans attendre la bascule audio
 - `?prof` : chronométrage par frame — `u` = ms simulation, `d` = ms draw,
   `g` = écart moyen/max rAF, sections `[an animation | of cadre | bg fond |
   sc scène | r reste]` + résolution du canvas

@@ -3,14 +3,15 @@ from PIL import Image
 from collections import deque
 import os
 
-# Extraction ciblée de la planche v4 (ASSETS/v4.png, 1024x559) : séquence
+# Extraction ciblée de la planche v4 (ASSETS/planches/v4-ledge-catch.png,
+# 1024x559) : séquence
 # LEDGE CATCH « remontée » (accroche -> traction -> assis) et jauges vitesse
 # caméra (4 états + jauge alternative verticale). Découpe manuelle (coordonnées
 # lues sur la planche, flèches et chiffres exclus par les bornes) puis
 # détourage : test de couleur fond damier + diffusion depuis les bords du crop.
 # Le bloc brun/pierre des frames ledge est conservé ici (effacé plus tard par
 # tools/make_v4_sprites.py, la plateforme du jeu fournit le rebord).
-SRC = 'ASSETS/v4.png'
+SRC = 'ASSETS/planches/v4-ledge-catch.png'
 OUT = 'ASSETS/sprites/v4'
 os.makedirs(OUT, exist_ok=True)
 

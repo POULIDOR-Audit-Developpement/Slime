@@ -465,27 +465,29 @@ function driverFn() {
     check('départ : fond piste 0, pas de transition', bgTrack === 0 && trackFxT === 0)
     applyMusicTrack(1)
     const fx1 = trackFxT
-    check('bascule piste 1 : palette violette', bgTrack === 1 && COLORS[C_BLUE] === TRACK_PALETTES[1][0] && COLORS[C_BLUE_HI] === TRACK_PALETTES[1][4])
-    check('bascule piste 1 : transition armée (~2 s)', fx1 > 1.5)
+    check('bascule niveau 2 (magma) : palette orange', bgTrack === 1 && COLORS[C_BLUE] === TRACK_PALETTES[1][0] && COLORS[C_BLUE_HI] === TRACK_PALETTES[1][4])
+    check('bascule niveau 2 : transition armée (~2 s)', fx1 > 1.5)
     applyMusicTrack(1)
     check('bascule idempotente : ni re-arm ni re-palette', trackFxT === fx1 && COLORS[C_BLUE] === TRACK_PALETTES[1][0])
     applyMusicTrack(2)
-    check('bascule piste 2 : palette braise', COLORS[C_BLUE] === TRACK_PALETTES[2][0])
+    check('bascule niveau 3 (manoir) : palette violette', COLORS[C_BLUE] === TRACK_PALETTES[2][0])
     applyMusicTrack(0)
-    check('retour piste 0 : palette d\'origine restaurée',
-      COLORS[C_BLUE] === '#4a5ed7' && COLORS[C_BLUE_L] === '#5f74e3' && COLORS[C_BLUE_D] === '#4152c8' &&
-      COLORS[C_BLUE_XD] === '#3946a8' && COLORS[C_BLUE_HI] === '#6b83ec')
+    check('retour niveau 1 (plaines) : palette d\'origine restaurée',
+      COLORS[C_BLUE] === TRACK_PALETTES[0][0] && COLORS[C_BLUE_L] === TRACK_PALETTES[0][1] &&
+      COLORS[C_BLUE_D] === TRACK_PALETTES[0][2] && COLORS[C_BLUE_XD] === TRACK_PALETTES[0][3] &&
+      COLORS[C_BLUE_HI] === TRACK_PALETTES[0][4])
     const fx0 = trackFxT
-    check('retour piste 0 : transition armée', fx0 > 1.5)
+    check('retour niveau 1 : transition armée', fx0 > 1.5)
     update(1 / 60) // piste 0 = piste courante en Node : le poll ne re-arme pas
     check('tick : timer de transition décroit', trackFxT < fx0)
     trackFxT = 0.001
     update(1 / 60)
     check('tick : transition terminée -> timer à 0', trackFxT === 0)
-    // startGame : retour piste 0 SILENCIEUX (pas de bannière au redémarrage)
+    // startGame : retour niveau 1 SILENCIEUX (pas de bannière au redémarrage ;
+    // la bannière « NIVEAU 1 » part au 1er saut, cf. runStarted)
     applyMusicTrack(2)
     startGame()
-    check('startGame : fond remis piste 0 en silence', bgTrack === 0 && trackFxT === 0 && COLORS[C_BLUE] === '#4a5ed7')
+    check('startGame : fond remis niveau 1 en silence', bgTrack === 0 && trackFxT === 0 && COLORS[C_BLUE] === TRACK_PALETTES[0][0])
     // Fond multi-couches (nuages/panneaux/sol) : draw après bascules de piste
     // sans exception — les couches lisent la palette live (COLORS).
     let bgErr = null

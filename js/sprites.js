@@ -46,6 +46,13 @@ const Sprites = (() => {
     bgPanel2: 'bg_panel2',
     bgPanel3: 'bg_panel3',
     bgPanel4: 'bg_panel4',
+    // fonds illustrés par niveau (niveau = piste BGM, planches v5-v7)
+    bgLevel1: 'bg_level1',
+    bgLevel2: 'bg_level2',
+    bgLevel3: 'bg_level3',
+    // tuiles « basic » des niveaux 2 et 3 (le niveau 1 garde tileGreen)
+    tileVolcanic: 'tile_volcanic',
+    tileManor: 'tile_manor',
     needleH: 'needle_h'
   }
   // Frames déclinées en couleurs par recoloration runtime (un palier par
@@ -124,7 +131,7 @@ const Sprites = (() => {
         if (++loaded >= keys.length) ready = true
       }
       im.onerror = () => { loaded++ }
-      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20260926a'
+      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261001a'
       imgs[k] = im
     }
   }

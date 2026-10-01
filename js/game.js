@@ -64,14 +64,16 @@ let VIEW = { zoom: 1, showTrajectory: true, shake: true }
 const PH = () => Phys.phys()
 // Largeur de dessin du sprite de référence (pour un rayon de 18).
 const SLIME_DRAW_W = 44
-// Canevas des frames ledge (tools/make_v4_sprites.py) : haut du bloc = ligne
-// des bras = sommet de plateforme à LEDGE_GRIP, face gauche du bloc (là où
-// pend le corps au départ) à LEDGE_BLOCK_L, dans LEDGE_W x LEDGE_H. Canevas
-// 400x420 : le slime y occupe ~208 px comme dans les frames v3 (sinon il
-// paraît deux fois trop petit à l'écran).
-// LEDGE_TOP_CX : centre du slime assis dans ledgeTop (fin de remontée).
+// Canevas des frames ledge (tools/make_v6_sprites.py, animation v6 extraite
+// de ASSETS/planches/v8-ledge-catch.png) : haut du bloc = ligne des bras =
+// sommet de plateforme à LEDGE_GRIP, face gauche du bloc (là où pend le
+// corps au départ) à LEDGE_BLOCK_L, dans LEDGE_W x LEDGE_H. Canevas 400x420 :
+// le slime y occupe ~208 px comme dans les frames v4 (sinon il paraît deux
+// fois trop petit à l'écran).
+// LEDGE_TOP_CX : centre du slime assis dans ledgeTop (fin de remontée),
+// mesuré par tools/make_v6_sprites.py.
 const LEDGE_W = 400, LEDGE_H = 420, LEDGE_GRIP = 210, LEDGE_BLOCK_L = 138
-const LEDGE_TOP_CX = 277
+const LEDGE_TOP_CX = 233
 
 // Nombre borné : non numérique -> défaut ; 0 est une valeur valide.
 function numBound(v, def, lo, hi) {
@@ -187,17 +189,27 @@ const C_GOLD_TOP = 44, C_GOLD_SIDE = 45, C_GOLD_L = 46
 const C_SW_TOP = 47, C_SW_SIDE = 48, C_SW_DARK = 49
 const C_GEM = 50
 
-// ---------- Fond par piste BGM ----------
+// ---------- Fond par niveau (= piste BGM) ----------
 // Le fond suit la musique : à chaque bascule de piste (bgm1 -> bgm2 -> bgm3,
-// ~3 min), palette procédurale + sprites de fond recolorés UNE fois (jamais
-// par frame — règles perf AGENTS.md). P1 bleu (art d'origine), p2 violet
-// crépuscule, p3 braise. Ordre : BLUE, BLUE_L, BLUE_D, BLUE_XD, BLUE_HI.
+// ~3 min), un fond illustré propre au niveau (plaines / usine de magma /
+// manoir hanté, ASSETS/sprites/v5/bg_level1..3.png) + palette procédurale
+// thématisée + sprites de fond recolorés UNE fois (jamais par frame — règles
+// perf AGENTS.md). Ordre : BLUE, BLUE_L, BLUE_D, BLUE_XD, BLUE_HI.
 const TRACK_PALETTES = [
-  ['#4a5ed7', '#5f74e3', '#4152c8', '#3946a8', '#6b83ec'],
-  ['#7a3fd4', '#9a63ec', '#5c2bb0', '#421d8c', '#b78af5'],
-  ['#d74a3b', '#ec6f5f', '#b02d22', '#8c1c14', '#f5978a']
+  ['#3f8f4f', '#5fb06a', '#2f7040', '#245833', '#9fd98f'],
+  ['#c25a24', '#e07a3a', '#93381a', '#722610', '#f5a878'],
+  ['#5c3f96', '#7a5cb8', '#452e78', '#31205c', '#b49ae6']
 ]
 const TRACK_FX_DUR = 2 // transition ponctuelle (onde + flash + bannière), s
+// ?track=N : force le niveau (fond, tuiles, bannière) sans attendre la
+// bascule audio — diagnostic/réglage uniquement (cf. AGENTS.md ?prof/?fps)
+const TRACK_FORCE = (() => {
+  try {
+    const v = new URLSearchParams(location.search).get('track')
+    if (v == null) return -1
+    return Math.min(2, Math.max(0, (parseInt(v, 10) || 1) - 1))
+  } catch (e) { return -1 }
+})()
 
 // ---------- Paliers score -> couleur (éditables dans settings.html) ----------
 // La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
@@ -411,7 +423,7 @@ function startGame() {
   gemsCollected = 0
   theoPts = 0
   patternsSpawned = 0
-  resetMusicTrack() // nouvelle partie : fond piste 1, sans bannière
+  resetMusicTrack() // nouvelle partie : fond niveau 1 ; la bannière « NIVEAU 1 » part au 1er saut
   newRecord = false
   scoreCode = null
   deathT = 0
@@ -536,6 +548,7 @@ function execJump() {
     sfx(SFX_LAND, 5, 0.8)
     runStarted = true
     Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
+    trackFxT = TRACK_FX_DUR // bannière « NIVEAU 1 » au départ de la run
     aim.on = false
     aimPad = null
     slowmoT = 0
@@ -583,6 +596,7 @@ function execJump() {
   slowmoT = 0 // le ralenti ne concerne que la visée : le saut part à pleine vitesse
   runStarted = true
   Music.start() // BGM mp3 : démarre au 1er saut (geste utilisateur -> autoplay OK)
+  trackFxT = TRACK_FX_DUR // bannière « NIVEAU 1 » au départ de la run
 }
 
 function land(p) {
@@ -1064,17 +1078,29 @@ function drawBG() {
     if (h < 0.45) rectfill(x + 6 + h * 26, 36 + h3 * 130, 24 + h2 * 22, 70 + h * 90, C_BLUE_L)
   })
   if (Sprites.ready) {
-    const bw = 350
-    const off1 = -(camX * 0.08 % (bw + 280))
-    alpha(0.42)
-    for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, VH - 96)
-    alpha(0.85)
-    const off2 = -(camX * 0.3 % 760)
-    for (let k = 0; k < 3; k++) {
-      const h1 = h32(k * 13 + 5), h2v = h32(k * 29 + 11)
-      Sprites.drawImage('bgPanel' + (1 + (h1 * 4 | 0)), off2 + k * 380 + h1 * 220, 74 + h2v * 90, 60)
+    const lvl = 'bgLevel' + (bgTrack + 1)
+    const lvim = Sprites.get(lvl)
+    if (lvim && lvim.width) {
+      // fond illustré du niveau (plaines / magma / manoir) : 2 copies en
+      // parallaxe lente couvrent l'écran quel que soit le défilement —
+      // coût par frame identique à l'ancien bgBig (2-3 drawImage)
+      const off = -(camX * 0.12 % VW)
+      Sprites.drawImage(lvl, off, 0, VW, VH)
+      Sprites.drawImage(lvl, off + VW, 0, VW, VH)
+    } else {
+      // secours : panneaux bleus d'origine (images de niveau manquantes)
+      const bw = 350
+      const off1 = -(camX * 0.08 % (bw + 280))
+      alpha(0.42)
+      for (let k = -1; k < 3; k++) Sprites.drawImage('bgBig', off1 + k * (bw + 280), 96, bw, VH - 96)
+      alpha(0.85)
+      const off2 = -(camX * 0.3 % 760)
+      for (let k = 0; k < 3; k++) {
+        const h1 = h32(k * 13 + 5), h2v = h32(k * 29 + 11)
+        Sprites.drawImage('bgPanel' + (1 + (h1 * 4 | 0)), off2 + k * 380 + h1 * 220, 74 + h2v * 90, 60)
+      }
+      alpha(1)
     }
-    alpha(1)
   }
   drawClouds()
   bgLayer(0.28, 77, (x, h, h2, h3) => {
@@ -1103,12 +1129,12 @@ function recolorBgSprites(t) {
     if (typeof SlimeColors === 'undefined' || !Sprites.ready) return
     if (!bgOriginals) {
       bgOriginals = {}
-      for (const k of ['bgBig', 'bgPanel1', 'bgPanel2', 'bgPanel3', 'bgPanel4']) bgOriginals[k] = Sprites.base(k)
+      for (const k of ['bgPanel1', 'bgPanel2', 'bgPanel3', 'bgPanel4']) bgOriginals[k] = Sprites.base(k)
     }
     for (const k of Object.keys(bgOriginals)) {
       const im = bgOriginals[k]
       if (!im || !im.width) continue
-      // piste 1 : PNG d'origine ; sinon teinte bleue -> palette de la piste
+      // piste 1 : PNG d'origine ; sinon teinte bleue -> palette du niveau
       Sprites.setBase(k, t === 0 ? im : SlimeColors.recolorBlue(im, TRACK_PALETTES[t][0]))
     }
   } catch (e) {} // hors navigateur / images absentes : palette seule, jamais bloquant
@@ -1124,7 +1150,7 @@ function applyMusicTrack(t) {
   trackFxT = TRACK_FX_DUR // transition ponctuelle : onde + flash + bannière
 }
 
-// Nouvelle partie : retour piste 1 SILENCIEUX (palette d'origine, pas de
+// Nouvelle partie : retour niveau 1 SILENCIEUX (palette d'origine, pas de
 // bannière — la musique repart de bgm1 via Music.stop()).
 function resetMusicTrack() {
   bgTrack = 0
@@ -1133,12 +1159,13 @@ function resetMusicTrack() {
   recolorBgSprites(0)
 }
 
-// Poll par frame pendant le run : applique la piste BGM courante.
-function pollMusicTrack() { applyMusicTrack(Music.track) }
+// Poll par frame pendant le run : applique le niveau courant (piste BGM,
+// ou ?track=N pour le diagnostic).
+function pollMusicTrack() { applyMusicTrack(TRACK_FORCE >= 0 ? TRACK_FORCE : Music.track) }
 
 // Transition ponctuelle (~2 s, vectorielle : anneaux/rects/texte — aucun
 // canvas régénéré, coût par frame quasi nul) : flash bref, onde depuis le
-// slime, bannière « MUSIQUE 2/3 » dans le style de « RECORD ».
+// slime, bannière « NIVEAU 2/3 » dans le style de « RECORD ».
 function drawTrackFx() {
   if (trackFxT <= 0 || state !== 'playing') return
   const u = 1 - trackFxT / TRACK_FX_DUR // 0 -> 1 sur la durée
@@ -1159,10 +1186,10 @@ function drawTrackFx() {
     circ(sx, sy, r * 0.8, TRACK_PALETTES[bgTrack][4] || C_BLUE_HI)
     alpha(1)
   }
-  // Bannière : fondu entrée/sortie, ombre noire + couleur de la piste.
+  // Bannière : fondu entrée/sortie, ombre noire + couleur du niveau.
   const fade = Math.min(1, u / 0.15, (1 - u) / 0.25)
   if (fade > 0) {
-    const msg = I18N.t('music') + ' ' + (bgTrack + 1)
+    const msg = I18N.t('level') + ' ' + (bgTrack + 1)
     alpha(fade)
     text(VW / 2, 84, msg, C_BLACK, 'bold')
     text(VW / 2, 80, msg, TRACK_PALETTES[bgTrack][4] || C_BLUE_HI, 'bold')
@@ -1422,7 +1449,10 @@ function drawPlat(p) {
         Sprites.drawSrc('dynStrip', t, 0, pitch, 33, p.x + jx + i * CELL, p.y, CELL, 24)
       }
     } else {
-      const keys = { basic: 'tileGreen', crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange',
+      // Tuile « basic » du niveau : herbe (plaines), roche volcanique
+      // (magma), pierre de manoir (hanté) — les autres types gardent la leur
+      const baseTile = ['tileGreen', 'tileVolcanic', 'tileManor'][bgTrack] || 'tileGreen'
+      const keys = { basic: baseTile, crumble: 'tileGray', phase: 'tileGhost', bouncy: 'tileOrange',
         turbo: 'tileTurbo', gold: 'tileGold', seesaw: 'tileSeesaw' }
       // Bascule : tuiles pivotantes autour du centre de la plateforme
       // (inclinaison purement visuelle) — un seul translate/rotate, tuiles

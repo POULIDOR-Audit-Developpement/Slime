@@ -3,7 +3,8 @@ import numpy as np
 from collections import deque
 import os
 
-# v4 : séquence LEDGE CATCH « remontée » extraite de ASSETS/v4.png par
+# v4 : séquence LEDGE CATCH « remontée » extraite de
+# ASSETS/planches/v4-ledge-catch.png par
 # tools/extract_v4.py -> ASSETS/sprites/v4/ledge_pull{0,1,2}.png.
 # Le bloc brun/pierre de la planche est effacé (la plateforme du jeu fournit
 # elle-même le rebord), puis chaque frame est calée sur le même canevas que la

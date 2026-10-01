@@ -3,7 +3,7 @@ from PIL import Image
 from collections import deque
 import os
 
-SRC = 'ASSETS/Gemini_Generated_Image_5ny7sq5ny7sq5ny7.jpeg'
+SRC = 'ASSETS/planches/v1-persos.jpeg'
 OUT = 'ASSETS/sprites'
 os.makedirs(OUT, exist_ok=True)
 
