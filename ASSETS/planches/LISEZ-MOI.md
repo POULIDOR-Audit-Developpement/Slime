@@ -11,11 +11,29 @@ chargés par le jeu vivent dans `ASSETS/sprites/game/` (cf. `js/sprites.js`).
 | `v2-atouts.jpeg` | Atouts manquants (tuiles, HUD, sticky, dynamique, zone danger, décor d'arrière-plan) | `tools/extract_v2.py` | `ASSETS/sprites/v2/a_*.png` → `tools/make_v2_sprites.py` |
 | `v3-actions.png` | Actions & jauges (double saut pump, bullet time, jauges HUD, poses ledge v3) | `tools/extract_v3.py` | `ASSETS/sprites/v3/*.png` → `tools/make_v3_sprites.py` |
 | `v4-ledge-catch.png` | Ledge catch « remontée » 3 frames + cadrans de vitesse caméra | `tools/extract_v4.py` | `ASSETS/sprites/v4/*.png` → `tools/make_v4_sprites.py` |
-| `v5-niveau1-plaines.jpg` | NIVEAU 1 : Plaines paisibles (fond + décors + plateformes herbe) | `tools/extract_v5.py` | `ASSETS/sprites/v5/*.png` |
-| `v6-niveau2-magma.jpg` | NIVEAU 2 : Usine de magma (fond + roche volcanique + grilles métalliques) | `tools/extract_v5.py` | `ASSETS/sprites/v5/*.png` |
-| `v7-niveau3-manoir.jpg` | NIVEAU 3 : Manoir hanté (fond + pierre de manoir + décors) | `tools/extract_v5.py` | `ASSETS/sprites/v5/*.png` |
+| `v5-niveau1-plaines.jpg` | NIVEAU 1 : Plaines paisibles (fond + décors + plateformes herbe) | `tools/extract_v5.py` (fond + tuiles) et `tools/extract_decors.py` (décors + plateformes) | `ASSETS/sprites/v5/*.png` |
+| `v6-niveau2-magma.jpg` | NIVEAU 2 : Usine de magma (fond + roche volcanique + grilles métalliques) | `tools/extract_v5.py` (fond + tuiles) et `tools/extract_decors.py` (grilles, passerelle, tuyaux, roues, flammes…) | `ASSETS/sprites/v5/*.png` |
+| `v7-niveau3-manoir.jpg` | NIVEAU 3 : Manoir hanté (fond + pierre de manoir + décors) | `tools/extract_v5.py` (fond + tuiles) et `tools/extract_decors.py` (blocs de pierre, chandeliers, meubles…) | `ASSETS/sprites/v5/*.png` |
 | `v8-ledge-catch.png` | NOUVELLE animation ledge catch 3 frames (slime sur blocs verts) | `tools/extract_v6.py` | `ASSETS/sprites/v6/*.png` → `tools/make_v6_sprites.py` |
 | `apercu-jeu.png` | Mockup de présentation du jeu (non découpé, référence DA) | — | — |
+
+## Extraction des décors (`tools/extract_decors.py`)
+
+Découpe TOUS les assets des planches v5/v6/v7 (hors fonds et tuiles déjà
+extraits par `extract_v5.py`, et hors panneaux « CONSERVÉS / RAPPEL » dont le
+contenu est déjà en jeu) : ~119 sprites transparents `dec_*` (décors
+d'ambiance), `plat_*` (textures de plateformes) et `haz_*` (hazards), copiés
+vers `ASSETS/sprites/game/` et enregistrés dans `js/sprites.js` + liste
+décor de l'éditeur (`DECOR_SPRITES`).
+
+- Détourage par diffusion depuis les bords (`detour`) ; mode `tight` (fond
+  local + distance couleur) pour les sprites pâles (roches, dalles, pierre
+  de manoir) dont la face serait mangée par le masque générique.
+- Rangées de décors : items explicites (bornes mesurées au pixel) car les
+  halos JPEG fusionnent les voisins ; les étiquettes de texte sont exclues
+  par la taille des composantes.
+- Contrôle visuel : `/tmp/opencode/check_decors.png` (planche de contact)
+  et `/tmp/opencode/zoom/overlay_vN.png` (rects verts = gardés).
 
 ## Niveaux = musiques
 

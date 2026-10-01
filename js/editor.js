@@ -31,10 +31,36 @@ const Ed = (() => {
     crumble: 'Cassable', phase: 'Phasante', bouncy: 'Rebondissante',
     turbo: 'Turbo', gold: 'Dorée', seesaw: 'Bascule'
   }
+  // décors des planches v5-v7 (extract_decors.py) ajoutés à la liste
   const DECOR_SPRITES = ['bgBig', 'bgPanel1', 'bgPanel2', 'bgPanel3', 'bgPanel4',
     'tileGreen', 'tileBlue', 'tileGray', 'tileGhost', 'tileOrange',
     'tileTurbo', 'tileGold', 'tileSeesaw',
-    'sticky', 'dynStrip', 'voidBand', 'hudHead', 'big', 'mid', 'small', 'splat']
+    'sticky', 'dynStrip', 'voidBand', 'hudHead', 'big', 'mid', 'small', 'splat',
+    'decArmchair', 'decBooks', 'decBush1', 'decBush2', 'decBushFern',
+    'decBushLeafy', 'decBushTrunk', 'decCandle1', 'decCandle2', 'decCandleWall',
+    'decCauldron', 'decChandelierDark1', 'decChandelierDark2', 'decChandelierGold', 'decClock',
+    'decConsole', 'decFan', 'decFlamedrop', 'decFlamedrops', 'decFlowers3',
+    'decFlowers4', 'decFlowers5', 'decFlowers6', 'decFlowers7', 'decFlowersPink',
+    'decFlowersPurple', 'decFlowersWhite', 'decLadder', 'decLavaBubbles', 'decLog1',
+    'decPine1', 'decPine2', 'decPine3', 'decPine4', 'decPine5',
+    'decPine6', 'decPipeElbow', 'decPipeStub', 'decRock3', 'decRockSingle',
+    'decRockpileBig', 'decRockpileMossy', 'decRockpileSmall', 'decSprout1', 'decSprout2',
+    'decSteamPipe', 'decSteamVent', 'decStump1', 'decStumpBig', 'decTree1',
+    'decTree2', 'decTreeBig', 'decTreeCypress', 'decTreeRound', 'decTreeYellow',
+    'decWheel1', 'decWheel2', 'decWheel3', 'hazFlame', 'hazShadowEyes',
+    'platBridge1', 'platBridge2', 'platBridge5', 'platDirtWide', 'platGrass1',
+    'platGrass10', 'platGrass2', 'platGrass3', 'platGrass4', 'platGrass5',
+    'platGrass6', 'platGrass7', 'platGrass8', 'platGrass9', 'platGrass1x1',
+    'platGrass1x1b', 'platGrass2x1', 'platGrass3x1', 'platGrassFlowers1', 'platGrassFlowers2',
+    'platGrassFlowers3', 'platGrassFlowersWide', 'platGrassNue1', 'platGrassNue2', 'platGrateSmall',
+    'platGrid1', 'platGrid2', 'platGrid3', 'platGrid4', 'platGrid5',
+    'platGrid6', 'platGrid7', 'platMini2', 'platMiniGrass2', 'platMiniGrass3',
+    'platMossy1', 'platMossy2', 'platMossy3', 'platMossy5', 'platMossy6',
+    'platPath1', 'platPath2', 'platPath3', 'platPathBroken', 'platPlate',
+    'platSlabMini', 'platStone1x1', 'platStone2x1', 'platStone3x1', 'platStoneBroken',
+    'platStoneWeb', 'platStoneWorn', 'platVentRiveted', 'platVentSmall', 'platVolcanicCorner',
+    'platVolcanicTop', 'platVolcanicWide', 'platWalkway', 'platWood'
+  ]
 
   // ---------- état ----------
   let mode = 'patterns'            // 'patterns' | 'layout' | 'phys'
