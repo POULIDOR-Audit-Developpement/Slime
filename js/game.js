@@ -159,10 +159,13 @@ const COLORS = [
   '#ffe066', '#d99e0b', '#fff3b0',
   // Bascule : bois (face, flanc, pivot sombre).
   '#c98d4e', '#8a5a2b', '#4a2e14',
+  // Gemme high-risk (spec 2026-09-30) : cyan distinct des billes/or. Comme
+  // les autres gameplay colors, insérée AVANT les 3 couleurs « présentation »
+  // (C_PAGE/C_PANEL2/C_LOGO_D sont indexées depuis la fin — la situer après
+  // les décalerait tous les trois, cf. revue 2026-10-01 F1).
+  '#3fd9e8',
   // Style « présentation » : fond vitrine, panneaux, ombre du logo.
-  '#05050e', '#1c2148', '#12521d',
-  // Gemme high-risk (spec 2026-09-30) : cyan distinct des billes/or.
-  '#3fd9e8'
+  '#05050e', '#1c2148', '#12521d'
 ]
 const C_BG0 = 0, C_BG1 = 1, C_BG2 = 2, C_BG3 = 3
 const C_PAGE = COLORS.length - 3, C_PANEL2 = COLORS.length - 2, C_LOGO_D = COLORS.length - 1

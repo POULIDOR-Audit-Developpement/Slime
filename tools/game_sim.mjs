@@ -447,10 +447,12 @@ function driverFn() {
   startGame()
   runStarted = true
   {
-    const b = balls.find(q => !q.taken)
-    b.gem = true; b.gold = true // priorité gem > gold même sur flags coexistants
+    // Bille DE TEST posée à côté du slime : le remplissage initial est
+    // probabiliste (parfois zéro bille à l'écran, parfois hors-champ au-delà
+    // du mur droit — deux flakes vus en revue 2026-10-01). Déterministe ici.
     const s0 = currentScore()
-    slime.x = b.x; slime.y = b.y; slime.vx = 0; slime.vy = 0
+    const b = { x: slime.x + 12, y: slime.y, o: false, taken: false, gold: true, life: false, gem: true }
+    balls.push(b) // priorité gem > gold même sur flags coexistants
     update(1 / 60)
     check('gemme : gemsCollected = 1', gemsCollected === 1)
     check('gemme : +250 pts exactement', currentScore() - s0 === 250)
@@ -459,6 +461,12 @@ function driverFn() {
   }
 
   // --- 12) bascule de piste musicale : palette + transition ---
+  // Palette : la gemme doit pointer sur son cyan ET le trio « présentation »
+  // (indexé depuis la fin) doit rester intact — toute couleur ajoutée en fin
+  // de tableau décalerait C_PAGE/C_PANEL2/C_LOGO_D (revue 2026-10-01, F1).
+  check('palette : C_GEM cyan + trio présentation intact',
+    COLORS[C_GEM] === '#3fd9e8' && COLORS[C_PAGE] === '#05050e' &&
+    COLORS[C_PANEL2] === '#1c2148' && COLORS[C_LOGO_D] === '#12521d')
   {
     startGame()
     runStarted = true // le timer de transition ne tourne qu'en run (comme en jeu)
