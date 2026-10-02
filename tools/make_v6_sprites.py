@@ -6,6 +6,10 @@ import os
 # v6 : NOUVELLE animation LEDGE CATCH extraite de
 # ASSETS/planches/v8-ledge-catch.png par tools/extract_v6.py ->
 # ASSETS/sprites/v6/ledge_pull{0,1,2}.png (slime sur blocs de tuiles vertes).
+# v6.1 : kill du bloc par palettes + géométrie — l'ancienne bande aveugle
+# tuait les coulures du slime sur la face navy et le liseré de la queue
+# (frames ledge/ledgeUp trouées, cf. demande « sprite troué »). Détail des
+# règles dans erase_block().
 # Le bloc de tuiles et le slime partagent des verts proches (JPEG) : la
 # couleur seule ne suffit pas. Stratégie :
 #   1. le bloc est un rectangle à position FIXE (feuille alignée) ; sa moitié
@@ -108,14 +112,15 @@ def erase_block(im):
     al = a[:, :, 3]
     mx = np.maximum(np.maximum(r, g), b)
     mn = np.minimum(np.minimum(r, g), b)
+    H, W = al.shape
     op = al > 0
     # graines : lime vif (b < 40 exclut le reflet haut des tuiles #91e559),
     # reflets pâles, contour noir-vert (b <= g — les noirs bleutés navy ont
     # b > g). Le corps du slime est ensuite reconstruit par diffusion bornée
-    # (profondeur 6) à travers tout SAUF les remplissages étanches du bloc
-    # (tuile stricte, face navy, reflet haut) — les verts moyens du ventre
-    # (g 150-177) sont partagés avec la tuile #21a130 : seule la connexité
-    # au corps les sauve, jamais la couleur.
+    # à travers tout SAUF les remplissages étanches du bloc (tuile stricte,
+    # face navy, reflet haut) — les verts moyens du ventre (g 150-177) sont
+    # partagés avec la tuile #21a130 : seule la connexité au corps les sauve,
+    # jamais la couleur.
     bright = op & (g >= 178) & (b < 40)
     whiteish = op & (mx >= 170) & (mx - mn < 60)
     keep_outline = (mx < 40) & (b <= g) & near_mask(bright, 1)
@@ -123,14 +128,14 @@ def erase_block(im):
     navy = op & (r < 20) & (g < 20) & (b >= 25) & (b <= 52)
     hi = op & (g >= 178) & (b >= 55)
     barrier = tile | navy | hi
-    # le noir ne se diffuse PAS (grille des tuiles, lignes noires du bloc) :
-    # il ne survit que via keep_outline (≤ 1 px du lime)
     medium = op & ~barrier & ~(mx < 40)
     seeds = bright | whiteish | keep_outline
-    # diffusion multi-sources, profondeur max 6 (BFS)
     keep = seeds.copy()
     frontier = seeds.copy()
-    for _ in range(6):
+    # profondeur 14 (au lieu de 6) : les plis profonds du drapé sur le coin
+    # sont entourés de remplissages étanches (barrières) ; 6 px ne suffisaient
+    # pas à rejoindre leur intérieur et le kill du bloc les grignotait.
+    for _ in range(14):
         step = near_mask(frontier, 1) & medium & ~keep
         if not step.any():
             break
@@ -150,15 +155,80 @@ def erase_block(im):
         keep |= step
         frontier = step
     keep |= keep_outline
+
+    # --- géométrie de la FACE : tx0 du rect du bloc est contaminé par le
+    # drapé (verts du slime classés tuile stricte — ex. pull0 : tx0=32 alors
+    # que la face commence à 77). Toutes les zones géométriques s'ancrent sur
+    # la bbox navy de la face.
+    facedens = navy.sum(axis=1)
+    face_rows = np.where(facedens > 0.3 * (tx1 - W // 2))[0]
+    face_rows = face_rows[face_rows > ty0 + 20]
+    face_top = int(face_rows.min()) if len(face_rows) else ty0 + 40
+    facecols = np.where(navy[face_rows.min():by1, :].sum(axis=0) > 5)[0]
+    nx0 = int(facecols.min()) if len(facecols) else tx0
+
+    # --- queue le long de la face : diffusion prolongée à travers les sombres
+    # du slime. La diffusion standard exclut mx < 40 -> queue déchiquetée.
+    # sombres verts (b <= g) et sombres bleutés (b > g, la queue pendait
+    # contre la face navy et son liseré a pris ses tons, ex. (0,0,18)) —
+    # HORS classe navy explicite (remplissage de la face) ; la zone s'arrête
+    # à nx0 + 2 donc pas de fuite dans la face.
+    tailzone = np.zeros(a.shape[:2], bool)
+    tailzone[max(0, ty0 - 16):min(H, by1 + 60), max(0, nx0 - 90):nx0 + 2] = True
+    darkgreen = op & (mx < 40) & (b <= g)
+    darkblue = op & (mx < 40) & (b > g) & ~((r < 20) & (g < 20) & (b >= 25))
+    medium2 = medium | darkgreen | darkblue
+    frontier = (keep & tailzone).copy()
+    for _ in range(60):
+        step = near_mask(frontier, 1) & medium2 & tailzone & ~keep
+        if not step.any():
+            break
+        keep |= step
+        frontier = step
+
+    # --- drapé sur la tuile de gauche : sauvetage par dilatation bornée. Le
+    # slime posé sur la tuile partage les couleurs du bloc (bordure
+    # (22,140,54), verts moyens) : la couleur seule ne les distingue pas (cf.
+    # remarque sur les verts du ventre). Un BFS de connexité fuit le long des
+    # anneaux de bordure des tuiles -> dilatation simple : les pixels
+    # bordure-tuile à <= 6 px du slime gardé rejoignent keep (3 passes =
+    # jusqu'à ~18 px de profondeur) ; le reste du bloc meurt par ses palettes.
+    tborder = op & ~barrier & near_palette(a, np.array([[22, 140, 54]], dtype=np.int16), 12)
+    for _ in range(3):
+        rescue = tborder & near_mask(keep, 6) & ~keep
+        if not rescue.any():
+            break
+        keep |= rescue
+
+    # --- kill du bloc : palettes + géométrie (v6.1). L'ancienne bande aveugle
+    # tuait aussi les COULURES du slime sur la face navy (gris-bleu
+    # (32,65,74)-ish, b > g comme la face) et la queue : d'où les frames
+    # ledge/ledgeUp trouées. Désormais :
+    #   · les palettes du bloc meurent partout (fill, bevel (35,113,65),
+    #     bordure (22,140,54)) — sauf au contact du slime gardé ;
+    #   · hors ZONE À COULURES, tout pixel du bloc non au contact du slime
+    #     meurt (coutures, grille, bordures, halos JPEG) ;
+    #   · dans la zone à coulures (face, sous la rangée de tuiles), seuls les
+    #     sombres/gris-bleus non protégés par le cœur d'une coulure ou le
+    #     corps meurent (grille débordante) — les coulures survivent.
+    dripzone = np.zeros(a.shape[:2], bool)
+    dripzone[face_top + 2:min(H, by1 + 6), max(0, nx0 - 14):min(W, nx0 + 80)] = True
+    dripcore = dripzone & op & (b > g) & (mx < 100) & ~barrier
+    driprotect = near_mask(dripcore, 2)
+    keepnear = near_mask(keep, 2)
+    mid = op & ~barrier & near_palette(a, np.array([[35, 113, 65]], dtype=np.int16), 10)
     kill = np.zeros(a.shape[:2], bool)
-    # bande horizontale du bloc vers la DROITE entière : le slime ne vit
-    # jamais à droite du bloc, tous ses halos (bord droit, arêtes, grille)
-    # tombent quel que soit leur éloignement ; à GAUCHE, 12 px de marge
-    # englobent le contour du bloc (la queue du slime qui pend le long de la
-    # face reste protégée par les classes conservées)
-    kill[max(0, ty0 - 4):by1 + 8, max(0, tx0 - 12):] = True
-    # coulures sombres sous le coin du bloc (sous la face navy)
-    kill[by1 - 2:, max(0, tx0 - 12):tx0 + 130] = True
+    band = np.zeros(a.shape[:2], bool)
+    band[max(0, ty0 - 4):min(H, by1 + 8), max(0, tx0 - 12):] = True
+    # zone sous la face (ancien kill « coulures sombres sous le coin »)
+    below = np.zeros(a.shape[:2], bool)
+    below[max(0, by1 - 2):, max(0, tx0 - 12):min(W, tx0 + 130)] = True
+    kill |= band & (tile | navy | hi) & ~near_mask(keep, 1)
+    kill |= (band | below) & mid & ~near_mask(keep, 2)
+    kill |= (band | below) & tborder & ~near_mask(keep, 1)
+    kill |= (band | below) & ~dripzone & ~keepnear
+    strandkill = ((mx < 40) | ((b > g) & (mx - mn < 32))) & ~driprotect & ~keepnear
+    kill |= (band | below) & dripzone & strandkill
     # ligne noire du haut de tuile (y ∈ [ty0-14, ty0]) : noire à plus de 3 px
     # de tout pixel slime conservé — la patte qui pose reste jointe, le bout
     # de ligne libre saute
@@ -167,6 +237,59 @@ def erase_block(im):
     kill |= strip & (mx < 40) & ~near_mask(keep, 3)
     kill &= ~keep
     al[kill] = 0
+
+    # --- comblement des trous dans la zone à coulures : la masse est un
+    # mélange coulure/navy (coulures semi-transparentes + JPEG) ; chaque pixel
+    # navy isolé tué y laisse un trou. Un pixel transparent dont les 24
+    # voisins du carré 5x5 sont opaques reprend la couleur moyenne voisine.
+    def box_cnt(mask, rad):
+        m = mask.astype(np.int32)
+        c = m.cumsum(0).cumsum(1)
+        c = np.pad(c, ((1, 0), (1, 0)))
+        HH, WW = m.shape
+        ys = np.arange(HH)
+        xs = np.arange(WW)
+        y0 = np.clip(ys - rad, 0, HH)
+        y1 = np.clip(ys + rad + 1, 0, HH)
+        x0 = np.clip(xs - rad, 0, WW)
+        x1 = np.clip(xs + rad + 1, 0, WW)
+        return c[np.ix_(y1, x1)] - c[np.ix_(y0, x1)] - c[np.ix_(y1, x0)] + c[np.ix_(y0, x0)]
+    full5 = 5 * 5
+    for _ in range(2):
+        cnt = box_cnt((al > 0) & dripzone, 2)
+        fillable = dripzone & (al == 0) & (cnt >= full5 - 1)
+        if not fillable.any():
+            break
+        for cy, cx in zip(*np.where(fillable)):
+            y0, y1 = max(0, cy - 2), min(H, cy + 3)
+            x0, x1 = max(0, cx - 2), min(W, cx + 3)
+            reg = a[y0:y1, x0:x1]
+            m = reg[:, :, 3] > 0
+            al[cy, cx] = 255
+            a[cy, cx, 0] = reg[:, :, 0][m].mean()
+            a[cy, cx, 1] = reg[:, :, 1][m].mean()
+            a[cy, cx, 2] = reg[:, :, 2][m].mean()
+    # --- fermeture des fissures fines (1-2 px) le long du drapé : la colonne
+    # d'effacement du bord de face peut laisser une fissure transparente au
+    # contact du slime. Condition : >= 6 voisins opaques sur 8 ET (gauche+
+    # droite ou haut+bas opaques) — les vrais creux ne remplissent pas.
+    for _ in range(3):
+        opq = al > 0
+        shift = lambda dy, dx: np.roll(np.roll(opq, dy, 0), dx, 1)
+        neigh = sum(shift(dy, dx).astype(np.int16)
+                    for dy in (-1, 0, 1) for dx in (-1, 0, 1)) - opq.astype(np.int16)
+        crack = (band | below) & ~opq & (neigh >= 6) & (shift(0, -1) & shift(0, 1) | shift(-1, 0) & shift(1, 0))
+        if not crack.any():
+            break
+        for cy, cx in zip(*np.where(crack)):
+            y0, y1 = max(0, cy - 1), min(H, cy + 2)
+            x0, x1 = max(0, cx - 1), min(W, cx + 2)
+            reg = a[y0:y1, x0:x1]
+            m = reg[:, :, 3] > 0
+            al[cy, cx] = 255
+            a[cy, cx, 0] = reg[:, :, 0][m].mean()
+            a[cy, cx, 1] = reg[:, :, 1][m].mean()
+            a[cy, cx, 2] = reg[:, :, 2][m].mean()
     # miettes et halos : on garde les composantes >= 80 px SAUF celles à
     # dominance grise (halo JPEG du bord du bloc — le slime est saturé,
     # jamais gris)

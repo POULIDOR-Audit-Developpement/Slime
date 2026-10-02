@@ -96,6 +96,30 @@
   .badge.ok { background: #123c12; color: var(--acc); }
   .badge.ko { background: #3c1212; color: var(--red); }
   .note { color: var(--dim); font-size: .85rem; line-height: 1.5; margin-top: .62rem; }
+  /* options avancées : bloc repliable (summary discret, façon sous-titre) */
+  details.adv { margin: .31rem 0 .77rem; }
+  details.adv summary {
+    cursor: pointer; color: var(--dim); font-size: .85rem; font-weight: 700;
+    letter-spacing: .06em; user-select: none; padding: .23rem 0; list-style: revert;
+  }
+  details.adv summary:hover { color: var(--txt); }
+  details.adv[open] summary { margin-bottom: .38rem; }
+  details.adv .chk, details.adv .note { margin-left: .77rem; }
+  /* menu « Tester niveau » : dépliant ancré sous le header */
+  details.menu { position: relative; }
+  details.menu summary {
+    list-style: none; cursor: pointer; padding: .46rem .77rem; background: var(--panel2);
+    border: 1px solid var(--line); color: var(--txt); font-size: .92rem; font-weight: 600;
+  }
+  details.menu summary::-webkit-details-marker { display: none; }
+  details.menu summary:hover { border-color: var(--acc); color: #fff; }
+  details.menu .menuLst {
+    position: absolute; right: 0; top: calc(100% + 2px); z-index: 60; display: flex;
+    flex-direction: column; min-width: 9.5rem; background: var(--panel2);
+    border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  }
+  details.menu .menuLst button { border: none; border-bottom: 1px solid var(--line); text-align: left; }
+  details.menu .menuLst button:last-child { border-bottom: none; }
   .empty { color: var(--dim); text-align: center; padding: 2.31rem .77rem; line-height: 1.6; }
   input[type=file] { display: none; }
   /* onglets VUE : plein cadre, sans liste ni barre d'outils */
@@ -202,6 +226,14 @@
   <button id="btnCopy" title="Code compact des patterns (sans les réglages) à coller sur une autre machine">Copier code</button>
   <button id="btnPaste" title="Coller un code de patterns venu d'une autre machine (les réglages du jeu ne sont pas touchés)">Coller code</button>
   <button id="btnPlay" title="Jouer le pattern sélectionné en boucle">▶ Playtest</button>
+  <details class="menu" id="menuNiveaux">
+    <summary title="Lancer une partie complète de ton pool au niveau choisi (aucun score enregistré)">Tester niveau ▾</summary>
+    <div class="menuLst">
+      <button id="nNiv1" title="Run complète depuis le niveau 1 : plaines (début de run)">1 · Plaines</button>
+      <button id="nNiv2" title="Run complète depuis le niveau 2 : magma (t+3 min, difficulté T3-T4)">2 · Magma</button>
+      <button id="nNiv3" title="Run complète depuis le niveau 3 : manoir (t+6 min, difficulté T4-T5)">3 · Manoir</button>
+    </div>
+  </details>
 </header>
 <main>
   <aside id="list"></aside>
@@ -221,9 +253,9 @@
 </footer>
 <script src="js/physics.js?v=20260930a"></script>
 <script src="js/slime-colors.js?v=20260930b"></script>
-<script src="js/sprites.js?v=20261001a"></script>
+<script src="js/sprites.js?v=20261001f"></script>
 <script src="js/patterns-defaults.js?v=20260930a"></script>
-<script src="js/patterns.js?v=20260930d"></script>
+<script src="js/patterns.js?v=20261001a"></script>
 <script src="js/crypto.js?v=20260930b"></script>
 <script>
 // ---------- portail : editor.js n'est charge qu'apres le bon mot de passe ----------
@@ -242,7 +274,7 @@
   }
   function loadEditor() {
     var s = document.createElement('script')
-    s.src = 'js/editor.js?v=20260930b'
+    s.src = 'js/editor.js?v=20261001d'
     document.body.appendChild(s)
   }
   function fail(msg) {

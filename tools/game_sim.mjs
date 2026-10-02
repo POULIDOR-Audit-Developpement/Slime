@@ -20,6 +20,10 @@ const src = files.map(f => readFileSync(new URL('../' + f, import.meta.url), 'ut
 // ---------- stubs litecanvas / DOM ----------
 const W = 960, H = 540
 const noop = () => {}
+const _vib = []        // appels navigator.vibrate (haptique)
+const _texts = []      // chaînes passées à text() (lectures HUD)
+const _fills = []      // args de rectfill (cellules de jauge HUD)
+const docHandlers = {} // listeners document (visibilitychange -> auto-pause)
 const ctxStub = () => {
   const c = {}
   const grad = { addColorStop: noop }
@@ -37,8 +41,10 @@ const litecanvasStubs = {
   W, H, T: 0,
   paint: noop,
   ctx: ctxStub,
-  cls: noop, rectfill: noop, rect: noop, circfill: noop, circ: noop,
-  line: noop, shape: noop, fill: noop, text: noop,
+  cls: noop,
+  rectfill: (...a) => _fills.push(a), rect: noop, circfill: noop, circ: noop,
+  line: noop, shape: noop, fill: noop,
+  text: (...a) => _texts.push(a[2]),
   textalign: noop, textsize: noop, alpha: noop, push: noop, pop: noop,
   pal: noop, sfx: noop, volume: noop,
   rand: (a, b) => a + Math.random() * (b - a),
@@ -50,10 +56,30 @@ const litecanvasStubs = {
     getItem: k => s[k] ?? null, setItem: (k, v) => { s[k] = String(v) }, removeItem: k => { delete s[k] }
   } })(),
   window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: noop },
-  navigator: { userAgent: 'node' },
-  document: { documentElement: {}, body: { appendChild: noop, removeChild: noop }, createElement: () => ({ style: {}, focus: noop, select: noop }) },
-  Image: class { set src(v) {} }
+  navigator: { userAgent: 'node', vibrate: p => _vib.push(p) },
+  document: {
+    documentElement: {},
+    hidden: false,
+    addEventListener: (t, fn) => { (docHandlers[t] = docHandlers[t] || []).push(fn) },
+    body: { appendChild: noop, removeChild: noop },
+    // canvas factice : getContext renvoie le proxy no-op — tileVar/recolor
+    // s'exécutent pour de vrai (chemins de dessin couverts par les checks)
+    createElement: (tag) => tag === 'canvas'
+      ? { width: 0, height: 0, getContext: () => ctxStub(), style: {} }
+      : { style: {}, focus: noop, select: noop }
+  },
+  // onload déclenché de façon synchrone : Sprites.ready passe à true dans
+  // la sim -> drawBG/drawPlat/drawLevelDecors sont réellement exécutés.
+  Image: class {
+    constructor() { this.width = 64; this.height = 48; this.complete = true }
+    set src(v) { if (this.onload) this.onload() }
+  }
 }
+// accès driver : enregistreurs exposés sur les stubs (objets par référence)
+litecanvasStubs.navigator._vib = _vib
+litecanvasStubs.document._handlers = docHandlers
+litecanvasStubs.window._texts = _texts
+litecanvasStubs.window._fills = _fills
 
 // ---------- driver : partage le scope de game.js ----------
 function driverFn() {
@@ -395,6 +421,27 @@ function driverFn() {
   applyLayout()
   startGame()
 
+  // --- 8b) FX de niveau : onde + bannière UNIQUEMENT au premier saut ---
+  // Le commentaire historique dit « au départ de la run » : le saut suivant
+  // (même run) ne doit pas ré-armer trackFxT. Sauts verticaux (vmin) :
+  // retombent sur la plateforme de départ, aucune mort possible.
+  startGame()
+  {
+    updateCam()
+    let p = w2px(slime.x, slime.y - 20) // distance < aimMin -> vmin
+    tap(p.x, p.y, 0)
+    untap(p.x, p.y, 0)
+    check('1er saut : FX de niveau armé', runStarted === true && trackFxT === TRACK_FX_DUR)
+    let f = 0
+    while (f++ < 150 && trackFxT >= TRACK_FX_DUR) update(1 / 60) // écoule le timer (vol + sol)
+    waitLand()
+    updateCam()
+    p = w2px(slime.x, slime.y - 20)
+    tap(p.x, p.y, 0)
+    untap(p.x, p.y, 0)
+    check('saut suivant : FX non ré-armé', trackFxT < TRACK_FX_DUR)
+  }
+
   // --- 9) soak : 1200 frames simulées (~20 s), multivies, aucun crash ---
   // Le bot vise (280,50) monde (petit arc up-forward) et relâche aussitôt.
   let jumps = 0, lives = 0, frames = 0
@@ -447,10 +494,12 @@ function driverFn() {
   startGame()
   runStarted = true
   {
-    const b = balls.find(q => !q.taken)
-    b.gem = true; b.gold = true // priorité gem > gold même sur flags coexistants
+    // Bille DE TEST posée à côté du slime : le remplissage initial est
+    // probabiliste (parfois zéro bille à l'écran, parfois hors-champ au-delà
+    // du mur droit — deux flakes vus en revue 2026-10-01). Déterministe ici.
     const s0 = currentScore()
-    slime.x = b.x; slime.y = b.y; slime.vx = 0; slime.vy = 0
+    const b = { x: slime.x + 12, y: slime.y, o: false, taken: false, gold: true, life: false, gem: true }
+    balls.push(b) // priorité gem > gold même sur flags coexistants
     update(1 / 60)
     check('gemme : gemsCollected = 1', gemsCollected === 1)
     check('gemme : +250 pts exactement', currentScore() - s0 === 250)
@@ -459,6 +508,12 @@ function driverFn() {
   }
 
   // --- 12) bascule de piste musicale : palette + transition ---
+  // Palette : la gemme doit pointer sur son cyan ET le trio « présentation »
+  // (indexé depuis la fin) doit rester intact — toute couleur ajoutée en fin
+  // de tableau décalerait C_PAGE/C_PANEL2/C_LOGO_D (revue 2026-10-01, F1).
+  check('palette : C_GEM cyan + trio présentation intact',
+    COLORS[C_GEM] === '#3fd9e8' && COLORS[C_PAGE] === '#05050e' &&
+    COLORS[C_PANEL2] === '#1c2148' && COLORS[C_LOGO_D] === '#12521d')
   {
     startGame()
     runStarted = true // le timer de transition ne tourne qu'en run (comme en jeu)
@@ -542,6 +597,132 @@ function driverFn() {
     check('draw() sans exception dans tous les états (' + e.message + ')', false)
   }
 
+  // --- 15) jauge double saut : flacon gauge_alt (planche v4) ---
+  // Prêt : flacon complet (drawImage). Charge consommée : base découpée en
+  // drawSrc (capuchon+haut brun, puis rails — SANS le remplissage natif) et
+  // overlay qui fait monter le vert avec le timer (djCd) ; les chevrons
+  // suivent les charges (airJumps).
+  {
+    startGame()
+    POWERS.doubleJump.enabled = true
+    slime.goldT = 0
+    slime.airJumps = POWERS.doubleJump.charges
+    slime.djCd = 0
+    const calls = []
+    const oDS = Sprites.drawSrc, oDI = Sprites.drawImage
+    Sprites.drawSrc = function (k) { calls.push(['src', k, Array.prototype.slice.call(arguments, 1)]); return oDS.apply(Sprites, arguments) }
+    Sprites.drawImage = function (k) { calls.push(['img', k]); return oDI.apply(Sprites, arguments) }
+    drawPowerHud()
+    check('jauge DJ prête : flacon complet (1 drawImage, 0 drawSrc)',
+      calls.filter(c => c[0] === 'img' && c[1] === 'gaugeAlt').length === 1 &&
+      calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt').length === 0)
+    // 1 charge consommée, timer à moitié écoulé
+    slime.airJumps = POWERS.doubleJump.charges - 1
+    slime.djCd = POWERS.doubleJump.cooldown / 2
+    calls.length = 0
+    drawPowerHud()
+    const parts = calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt')
+    check('jauge DJ consommée 50% : base découpée (capuchons + 2 rails) + overlay',
+      parts.length === 5 && parts[0][2][1] === 0 && parts[0][2][3] === 4)
+    const ov = parts.find(c => c[2][0] === 4)
+    check('jauge DJ 50% : vert à mi-hauteur de TOUT l\'intérieur (source x4 y45 h41)',
+      !!ov && ov[2][1] === 45 && ov[2][3] === 41)
+    // toutes les charges épuisées, timer écoulé : flacon vide (4 parts de cadre), 0 overlay
+    slime.airJumps = 0
+    slime.djCd = 0
+    calls.length = 0
+    drawPowerHud()
+    check('jauge DJ épuisée : 4 parts de cadre, 0 overlay, pas de flacon plein',
+      calls.filter(c => c[0] === 'src' && c[1] === 'gaugeAlt').length === 4 &&
+      calls.filter(c => c[0] === 'img' && c[1] === 'gaugeAlt').length === 0)
+    Sprites.drawSrc = oDS
+    Sprites.drawImage = oDI
+  }
+
+  // --- 16) confort : haptique, pause, réduction d'effets ---
+  {
+    startGame()
+    slime.goldT = 0
+    // haptique : saut simple 8, double saut 14, mort [50,30,80]
+    navigator._vib.length = 0
+    updateCam()
+    let p = w2px(slime.x, slime.y - 30)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    check('haptique : saut simple -> vibrate(8)', navigator._vib.some(v => v === 8))
+    waitLand()
+    navigator._vib.length = 0
+    updateCam()
+    p = w2px(slime.x + 30, slime.y - 60)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0) // saut au sol -> en l'air
+    p = w2px(slime.x + 40, slime.y - 40)
+    tap(p.x, p.y, 1); untap(p.x, p.y, 1) // double saut
+    check('haptique : double saut -> vibrate(14)', navigator._vib.some(v => v === 14))
+    waitLand()
+    navigator._vib.length = 0
+    die()
+    check('haptique : mort -> vibrate([50,30,80])',
+      navigator._vib.some(v => Array.isArray(v) && v.join() === '50,30,80'))
+    startGame()
+    // réduction d'effets : plus de vibration
+    localStorage.setItem('slime_reduced_fx', '1')
+    navigator._vib.length = 0
+    updateCam()
+    p = w2px(slime.x, slime.y - 30)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    check('effets réduits : saut SANS vibration', navigator._vib.length === 0)
+    localStorage.removeItem('slime_reduced_fx')
+    waitLand()
+    // pause : bouton -> gel total -> tap reprend sans viser
+    updateCam()
+    tap(880, 28, 0) // bouton pause (view ~440,14)
+    check('pause : bouton -> paused', paused === true)
+    const cam0 = camX, el0 = elapsed
+    update(1 / 60); update(1 / 60)
+    check('pause : simulation gelée (camX/elapsed)', camX === cam0 && elapsed === el0)
+    tap(500, 300, 0) // n'importe où : reprend (view 250,150)
+    check('pause : tap reprend SANS viser', paused === false && aim.on === false)
+    // auto-pause : onglet caché / écran verrouillé
+    document.hidden = true
+    ;(document._handlers.visibilitychange || []).forEach(fn => fn())
+    check('pause : auto (onglet caché)', paused === true)
+    document.hidden = false
+    tap(500, 300, 0)
+    check('pause : repris pour la suite', paused === false)
+  }
+
+  // --- 17) son (sprites + slider) et jauge vitesse (style planche v3) ---
+  {
+    state = 'title'
+    const calls2 = []
+    const oDS2 = Sprites.drawSrc, oDI2 = Sprites.drawImage
+    Sprites.drawSrc = function (k) { calls2.push(['src', k, Array.prototype.slice.call(arguments, 1)]); return oDS2.apply(Sprites, arguments) }
+    Sprites.drawImage = function (k) { calls2.push(['img', k, Array.prototype.slice.call(arguments, 1)]); return oDI2.apply(Sprites, arguments) }
+    Music.setVolume(0.5) // pas muet
+    drawSoundIcon()
+    check('son : icône sprite sndOn', calls2.filter(c => c[0] === 'img' && c[1] === 'sndOn').length === 1)
+    Music.setVolume(0)
+    calls2.length = 0
+    drawSoundIcon()
+    check('son : muet -> sprite sndOff', calls2.filter(c => c[0] === 'img' && c[1] === 'sndOff').length === 1)
+    // slider : tap à mi-piste (view 59,13 -> canvas 118,26) -> vol 0.5 persisté
+    tap(118, 26, 0)
+    check('slider : tap à mi-piste -> vol 0.5 persisté',
+      Music.vol === 0.5 && localStorage.getItem('slime_vol') === '0.5')
+    check('slider : pas de lancement de run (toujours titre)', state === 'title')
+    // jauge vitesse : panneau flèche + barre segmentée + lecture V:
+    calls2.length = 0
+    window._texts.length = 0
+    window._fills.length = 0
+    drawSpeedGauge(0.7)
+    check('vitesse : icône speedArrow dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'speedArrow').length === 1)
+    check('vitesse : barre gaugeBar dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'gaugeBar').length === 1)
+    check('vitesse : 70% -> 11 cellules colorées (vert/orange/rouge)',
+      window._fills.filter(a => a[4] === C_SLIME || a[4] === C_ORANGE || a[4] === C_RED).length === 11)
+    check('vitesse : lecture V: affichée', window._texts.some(t => String(t).startsWith('V:')))
+    Sprites.drawSrc = oDS2; Sprites.drawImage = oDI2
+    state = 'playing'
+  }
+
   console.log(fails === 0 ? '\nSIM OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')
   if (fails > 0) throw new Error('game_sim failed')
 }
@@ -554,5 +735,47 @@ try {
   fn(...Object.values(litecanvasStubs))
 } catch (e) {
   console.error('EXCEPTION :', e.message)
+  process.exit(1)
+}
+
+// ---------- ?niveau=N : « Tester niveau » lancé depuis l'éditeur ----------
+// Deuxième sandbox avec ?niveau=3 : run DÉCALÉE (elapsed t+6 min -> difficulté
+// et caméra du niveau), visuel manoir silencieux dès le départ, AUCUN code de
+// score. Même harnais, seule location.search change (le ?track/?niveau du
+// run principal reste vide -> les checks historiques ne bougent pas).
+const niveauStubs = {
+  ...litecanvasStubs,
+  window: { location: { search: '?niveau=3' }, innerHeight: 540, innerWidth: 960, addEventListener: noop }
+}
+function niveauDriverFn() {
+  let fails = 0
+  const check = (name, cond) => { if (!cond) { fails++; console.log('FAIL', name) } else console.log('ok  ', name) }
+  init()
+  check('?niveau=3 lu au chargement (index 0-based)', NIVEAU_FORCE === 2)
+  startGame()
+  check('elapsed décalé au début du niveau 3 (t+6 min)', elapsed === 360)
+  check('visuel manoir dès le départ, sans transition', bgTrack === 2 && trackFxT === 0 && COLORS[C_BLUE] === TRACK_PALETTES[2][0])
+  runStarted = true
+  update(1 / 60)
+  check('poll par frame : le niveau forcé tient', bgTrack === 2)
+  // Caméra : la rampe lit elapsed -> vitesse mi-parcours (défauts 80->240)
+  check('caméra : vitesse rampée par elapsed (pas la base)', camSpd > PH().camBase)
+  check('caméra : formule de palier appliquée à elapsed décalé',
+    camSpd === Math.min(PH().camBase + Math.floor(360 / CAM_PALIER_S) *
+      Math.max(1, Math.round((PH().camMax - PH().camBase) * CAM_PALIER_S / PH().camRampDur)), PH().camMax))
+  die()
+  check('niveau forcé : AUCUN code de score (test, pas classement)', scoreCode === null)
+  check('musique : API setStart disponible (no-op en Node)', typeof Music.setStart === 'function')
+  if (fails > 0) throw new Error('game_sim niveau failed')
+  console.log('\nSIM NIVEAU OK — tous les checks passent')
+}
+const fnNiveau = new Function(
+  ...Object.keys(niveauStubs),
+  src + '\n;(' + niveauDriverFn.toString() + ')()'
+)
+try {
+  fnNiveau(...Object.values(niveauStubs))
+} catch (e) {
+  console.error('EXCEPTION niveau :', e.message)
   process.exit(1)
 }

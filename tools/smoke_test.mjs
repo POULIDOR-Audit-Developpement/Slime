@@ -220,13 +220,14 @@ const murBloque = {
 }
 check('mur-bloquant : détecté impossible', Patterns.validatePatternJumps(murBloque).ok === false)
 
-// 8b'. Vérification des sauts OPTIONNELLE : l'admin décide (layout.checkJumps).
-// Le simulateur n'est pas infaillible — coupé, un pattern "impossible" est
-// joué tel quel ; actif (défaut), il est remplacé par la plateforme de repli.
+// 8b'. Vérification des sauts OPTIONNELLE et purement INDICATIVE : l'admin
+// décide (layout.checkJumps, opt-in avancé). Désactivée par défaut — une
+// section spéciale « injoignable » selon le simulateur est jouée telle
+// quelle, jamais écartée du tirage (les ✓/✗ de l'éditeur n'interdisent rien).
 const anchorKo = { x: -128, row: 2, y: rowY(2), baseY: rowY(2), w: 128, type: 'basic', amp: 0, spd: 0, ph: 0 }
 Patterns.pin(murBloque)
 Patterns.setLayout({ checkJumps: true })
-check('vérif active (défaut) : repli sécurité', Patterns.spawnSection(anchorKo, 120).platforms.some(p => p.safety))
+check('vérif active (opt-in) : repli sécurité', Patterns.spawnSection(anchorKo, 120).platforms.some(p => p.safety))
 Patterns.setLayout({ checkJumps: false })
 const secKo = Patterns.spawnSection(anchorKo, 120)
 check('vérif coupée : pattern injoignable joué tel quel',
@@ -234,7 +235,7 @@ check('vérif coupée : pattern injoignable joué tel quel',
   !secKo.platforms.some(p => p.safety))
 check('vérif coupée : réglage persisté', JSON.parse(localStorage.getItem('slime_patterns_v1')).layout.checkJumps === false)
 Patterns.setLayout(null)
-check('vérif : défaut réactivé après reset', Patterns.getLayout().checkJumps === true)
+check('vérif : défaut indicatif après reset (aucune section écartée)', Patterns.getLayout().checkJumps === false)
 Patterns.pin(null)
 
 // 8c. stalactite bloquant un passage bas -> invalide

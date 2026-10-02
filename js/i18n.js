@@ -19,6 +19,9 @@ const I18N = (() => {
       code: 'CODE DE SCORE',
       codehint: 'Scanne le QR ou copie le code',
       time: 'TEMPS',
+      pause: 'PAUSE',
+      resume: 'Touche pour reprendre',
+      fx: 'EFFETS',
       // modal contact (js/contact.js) : Instagram/email pour le giveaway
       contactTitle: 'TON CONTACT',
       contactAsk: 'Instagram ou email, pour te contacter si tu gagnes ?',
@@ -85,6 +88,9 @@ const I18N = (() => {
       code: 'SCORE CODE',
       codehint: 'Scan the QR or copy the code',
       time: 'TIME',
+      pause: 'PAUSED',
+      resume: 'Tap to resume',
+      fx: 'FX',
       // contact modal (js/contact.js): Instagram/email for the giveaway
       contactTitle: 'YOUR CONTACT',
       contactAsk: 'Instagram or email, so we can reach you if you win?',

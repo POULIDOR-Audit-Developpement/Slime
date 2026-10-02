@@ -31,10 +31,36 @@ const Ed = (() => {
     crumble: 'Cassable', phase: 'Phasante', bouncy: 'Rebondissante',
     turbo: 'Turbo', gold: 'Dorée', seesaw: 'Bascule'
   }
+  // décors des planches v5-v7 (extract_decors.py) ajoutés à la liste
   const DECOR_SPRITES = ['bgBig', 'bgPanel1', 'bgPanel2', 'bgPanel3', 'bgPanel4',
     'tileGreen', 'tileBlue', 'tileGray', 'tileGhost', 'tileOrange',
     'tileTurbo', 'tileGold', 'tileSeesaw',
-    'sticky', 'dynStrip', 'voidBand', 'hudHead', 'big', 'mid', 'small', 'splat']
+    'sticky', 'dynStrip', 'voidBand', 'hudHead', 'big', 'mid', 'small', 'splat',
+    'decArmchair', 'decBooks', 'decBush1', 'decBush2', 'decBushFern',
+    'decBushLeafy', 'decBushTrunk', 'decCandle1', 'decCandle2', 'decCandleWall',
+    'decCauldron', 'decChandelierDark1', 'decChandelierDark2', 'decChandelierGold', 'decClock',
+    'decConsole', 'decFan', 'decFlamedrop', 'decFlamedrops', 'decFlowers3',
+    'decFlowers4', 'decFlowers5', 'decFlowers6', 'decFlowers7', 'decFlowersPink',
+    'decFlowersPurple', 'decFlowersWhite', 'decLadder', 'decLavaBubbles', 'decLog1',
+    'decPine1', 'decPine2', 'decPine3', 'decPine4', 'decPine5',
+    'decPine6', 'decPipeElbow', 'decPipeStub', 'decRock3', 'decRockSingle',
+    'decRockpileBig', 'decRockpileMossy', 'decRockpileSmall', 'decSprout1', 'decSprout2',
+    'decSteamPipe', 'decSteamVent', 'decStump1', 'decStumpBig', 'decTree1',
+    'decTree2', 'decTreeBig', 'decTreeCypress', 'decTreeRound', 'decTreeYellow',
+    'decWheel1', 'decWheel2', 'decWheel3', 'hazFlame', 'hazShadowEyes',
+    'platBridge1', 'platBridge2', 'platBridge5', 'platDirtWide', 'platGrass1',
+    'platGrass10', 'platGrass2', 'platGrass3', 'platGrass4', 'platGrass5',
+    'platGrass6', 'platGrass7', 'platGrass8', 'platGrass9', 'platGrass1x1',
+    'platGrass1x1b', 'platGrass2x1', 'platGrass3x1', 'platGrassFlowers1', 'platGrassFlowers2',
+    'platGrassFlowers3', 'platGrassFlowersWide', 'platGrassNue1', 'platGrassNue2', 'platGrateSmall',
+    'platGrid1', 'platGrid2', 'platGrid3', 'platGrid4', 'platGrid5',
+    'platGrid6', 'platGrid7', 'platMini2', 'platMiniGrass2', 'platMiniGrass3',
+    'platMossy1', 'platMossy2', 'platMossy3', 'platMossy5', 'platMossy6',
+    'platPath1', 'platPath2', 'platPath3', 'platPathBroken', 'platPlate',
+    'platSlabMini', 'platStone1x1', 'platStone2x1', 'platStone3x1', 'platStoneBroken',
+    'platStoneWeb', 'platStoneWorn', 'platVentRiveted', 'platVentSmall', 'platVolcanicCorner',
+    'platVolcanicTop', 'platVolcanicWide', 'platWalkway', 'platWood'
+  ]
 
   // ---------- état ----------
   let mode = 'patterns'            // 'patterns' | 'layout' | 'phys'
@@ -481,7 +507,10 @@ const Ed = (() => {
 
   function drawValidation(c, pat) {
     const v = cachedValidate(pat)
-    const inst = Patterns.instantiate(pat, anchorOf(pat))
+    // shift 0 OBLIGATOIRE : sans lui, instantiate applique la transposition
+    // verticale aléatoire (anti-répétition en jeu) et les badges ✓/✗ changent
+    // de rangée à chaque frame — et ne suivent plus les plateformes dessinées.
+    const inst = Patterns.instantiate(pat, anchorOf(pat), { shift: 0 })
     let prev = null
     for (let i = 0; i < inst.platforms.length; i++) {
       const cur = inst.platforms[i]
@@ -920,8 +949,11 @@ const Ed = (() => {
     <div class="chk"><input type="checkbox" id="vShake" ${v.shake ? 'checked' : ''}/> secousse d'écran (dégâts, mort)</div>
     <div class="note">Zoom global de la vue en jeu, centré sur le slime (fixe pendant la partie). ×1 = cadrage complet 480×270. Utile pour bien voir un slime réduit (onglet PHYS, taille 9). L'aperçu au centre de la vue montre la fenêtre visible.</div>
     <h3>Vérification des sauts</h3>
-    <div class="chk"><input type="checkbox" id="vChkJumps" ${L.checkJumps !== false ? 'checked' : ''}/> écarter les sections injoignables au spawn</div>
-    <div class="note">Optionnelle et non infaillible : le simulateur peut se tromper dans les deux sens. Coché, un pattern jugé injoignable depuis la plateforme précédente est retiré du tirage (repli : plateforme de sécurité). Décoché, tout le pool est joué tel quel. Les badges ✓/✗ de l'onglet PATTERNS restent un simple indicateur.</div>
+    <details class="adv">
+      <summary>Options avancées</summary>
+      <div class="chk"><input type="checkbox" id="vChkJumps" ${L.checkJumps === true ? 'checked' : ''}/> écarter les sections injoignables au spawn</div>
+      <div class="note">Désactivée par défaut : les ✓/✗ de l'onglet PATTERNS sont un simple indicateur, et toutes les sections du pool sont jouées telles quelles — y compris celles que le simulateur juge injoignables (sections spéciales). Coché, un pattern jugé injoignable depuis la plateforme précédente est retiré du tirage (repli : plateforme de sécurité).</div>
+    </details>
     <h3>Plateformes (global)</h3>
     <div class="row"><label>Cassable</label><input type="range" id="pCrumb" min="2" max="8" value="${Math.round(L.plat.crumbleT * 10)}"/><span class="val" id="pCrumbV">${L.plat.crumbleT.toFixed(1)} s</span></div>
     <div class="row"><label>Dyn. vit.</label><input type="range" id="pSpdMul" min="5" max="15" value="${Math.round(L.plat.spdMul * 10)}"/><span class="val" id="pSpdMulV">${L.plat.spdMul.toFixed(1)} ×</span></div>
@@ -1523,8 +1555,9 @@ const Ed = (() => {
   function playtest() {
     const p = selPattern()
     if (!p) { flash('Sélectionne un pattern à tester', true); return }
-    if (!cachedValidate(p).ok && !confirm('Ce pattern contient des sauts impossibles même avec les pouvoirs (double saut, rattrape). Tester quand même ?')) return
-    window.open('index.html?pattern=' + encodeURIComponent(Patterns.patternToCode(p)), '_blank')
+    // Les ✓/✗ sont un simple indicateur : on teste toujours, même « KO ».
+    // Le jeu tourne dans play.html (index.html est la vitrine, sans game.js).
+    window.open('play.html?pattern=' + encodeURIComponent(Patterns.patternToCode(p)), '_blank')
   }
 
   // ---------- presse-papiers d'éléments (interne à l'éditeur) ----------
@@ -2182,6 +2215,17 @@ const Ed = (() => {
     document.getElementById('btnCopy').addEventListener('click', copyCode)
     document.getElementById('btnPaste').addEventListener('click', pasteCode)
     document.getElementById('btnPlay').addEventListener('click', playtest)
+    // « Tester niveau » : run COMPLÈTE du pool au niveau choisi (play.html?niveau=N).
+    // Le jeu démarre décalé au niveau (musique bgmN, difficulté et caméra) et
+    // n'enregistre aucun score — c'est un test, pas une run classée.
+    const openNiveau = n => {
+      const m = document.getElementById('menuNiveaux')
+      if (m) m.open = false
+      window.open('play.html?niveau=' + n, '_blank')
+    }
+    for (const [id, n] of [['nNiv1', 1], ['nNiv2', 2], ['nNiv3', 3]]) {
+      document.getElementById(id).addEventListener('click', () => openNiveau(n))
+    }
     fileInput.addEventListener('change', e => {
       const f = e.target.files[0]
       if (!f) return

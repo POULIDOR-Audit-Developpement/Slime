@@ -36,6 +36,9 @@ const Sprites = (() => {
     djPump1: 'dj_pump1',
     timeWarp: 'time_warp',
     gaugeBar: 'gauge_bar',
+    gaugeAlt: 'gauge_alt',
+    sndOn: 'snd_on',
+    sndOff: 'snd_off',
     gaugeSlow: 'gauge_slow',
     gaugeMid: 'gauge_mid',
     gaugeFast: 'gauge_fast',
@@ -53,7 +56,37 @@ const Sprites = (() => {
     // tuiles « basic » des niveaux 2 et 3 (le niveau 1 garde tileGreen)
     tileVolcanic: 'tile_volcanic',
     tileManor: 'tile_manor',
-    needleH: 'needle_h'
+    needleH: 'needle_h',
+    decArmchair: 'dec_armchair', decBooks: 'dec_books', decBush1: 'dec_bush1', decBush2: 'dec_bush2',
+    decBushFern: 'dec_bush_fern', decBushLeafy: 'dec_bush_leafy', decBushTrunk: 'dec_bush_trunk', decCandle1: 'dec_candle1',
+    decCandle2: 'dec_candle2', decCandleWall: 'dec_candle_wall', decCauldron: 'dec_cauldron', decChandelierDark1: 'dec_chandelier_dark1',
+    decChandelierDark2: 'dec_chandelier_dark2', decChandelierGold: 'dec_chandelier_gold', decClock: 'dec_clock', decConsole: 'dec_console',
+    decFan: 'dec_fan', decFlamedrop: 'dec_flamedrop', decFlamedrops: 'dec_flamedrops', decFlowers3: 'dec_flowers3',
+    decFlowers4: 'dec_flowers4', decFlowers5: 'dec_flowers5', decFlowers6: 'dec_flowers6', decFlowers7: 'dec_flowers7',
+    decFlowersPink: 'dec_flowers_pink', decFlowersPurple: 'dec_flowers_purple', decFlowersWhite: 'dec_flowers_white', decLadder: 'dec_ladder',
+    decLavaBubbles: 'dec_lava_bubbles', decLog1: 'dec_log1', decPine1: 'dec_pine1', decPine2: 'dec_pine2',
+    decPine3: 'dec_pine3', decPine4: 'dec_pine4', decPine5: 'dec_pine5', decPine6: 'dec_pine6',
+    decPipeElbow: 'dec_pipe_elbow', decPipeStub: 'dec_pipe_stub', decRock3: 'dec_rock3', decRockSingle: 'dec_rock_single',
+    decRockpileBig: 'dec_rockpile_big', decRockpileMossy: 'dec_rockpile_mossy', decRockpileSmall: 'dec_rockpile_small', decSprout1: 'dec_sprout1',
+    decSprout2: 'dec_sprout2', decSteamPipe: 'dec_steam_pipe', decSteamVent: 'dec_steam_vent', decStump1: 'dec_stump1',
+    decStumpBig: 'dec_stump_big', decTree1: 'dec_tree1', decTree2: 'dec_tree2', decTreeBig: 'dec_tree_big',
+    decTreeCypress: 'dec_tree_cypress', decTreeRound: 'dec_tree_round', decTreeYellow: 'dec_tree_yellow', decWheel1: 'dec_wheel1',
+    decWheel2: 'dec_wheel2', decWheel3: 'dec_wheel3', hazFlame: 'haz_flame', hazShadowEyes: 'haz_shadow_eyes',
+    platBridge1: 'plat_bridge1', platBridge2: 'plat_bridge2', platBridge5: 'plat_bridge5', platDirtWide: 'plat_dirt_wide',
+    platGrass1: 'plat_grass1', platGrass10: 'plat_grass10', platGrass2: 'plat_grass2', platGrass3: 'plat_grass3',
+    platGrass4: 'plat_grass4', platGrass5: 'plat_grass5', platGrass6: 'plat_grass6', platGrass7: 'plat_grass7',
+    platGrass8: 'plat_grass8', platGrass9: 'plat_grass9', platGrass1x1: 'plat_grass_1x1', platGrass1x1b: 'plat_grass_1x1b',
+    platGrass2x1: 'plat_grass_2x1', platGrass3x1: 'plat_grass_3x1', platGrassFlowers1: 'plat_grass_flowers1', platGrassFlowers2: 'plat_grass_flowers2',
+    platGrassFlowers3: 'plat_grass_flowers3', platGrassFlowersWide: 'plat_grass_flowers_wide', platGrassNue1: 'plat_grass_nue1', platGrassNue2: 'plat_grass_nue2',
+    platGrateSmall: 'plat_grate_small', platGrid1: 'plat_grid1', platGrid2: 'plat_grid2', platGrid3: 'plat_grid3',
+    platGrid4: 'plat_grid4', platGrid5: 'plat_grid5', platGrid6: 'plat_grid6', platGrid7: 'plat_grid7',
+    platMini2: 'plat_mini2', platMiniGrass2: 'plat_mini_grass2', platMiniGrass3: 'plat_mini_grass3', platMossy1: 'plat_mossy1',
+    platMossy2: 'plat_mossy2', platMossy3: 'plat_mossy3', platMossy5: 'plat_mossy5', platMossy6: 'plat_mossy6',
+    platPath1: 'plat_path1', platPath2: 'plat_path2', platPath3: 'plat_path3', platPathBroken: 'plat_path_broken',
+    platPlate: 'plat_plate', platSlabMini: 'plat_slab_mini', platStone1x1: 'plat_stone_1x1', platStone2x1: 'plat_stone_2x1',
+    platStone3x1: 'plat_stone_3x1', platStoneBroken: 'plat_stone_broken', platStoneWeb: 'plat_stone_web', platStoneWorn: 'plat_stone_worn',
+    platVentRiveted: 'plat_vent_riveted', platVentSmall: 'plat_vent_small', platVolcanicCorner: 'plat_volcanic_corner', platVolcanicTop: 'plat_volcanic_top',
+    platVolcanicWide: 'plat_volcanic_wide', platWalkway: 'plat_walkway', platWood: 'plat_wood'
   }
   // Frames déclinées en couleurs par recoloration runtime (un palier par
   // entrée de SlimeColors, suffixe de clé _t<index> ; _t0 = PNG d'origine).
@@ -131,7 +164,7 @@ const Sprites = (() => {
         if (++loaded >= keys.length) ready = true
       }
       im.onerror = () => { loaded++ }
-      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261001a'
+      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261001d'
       imgs[k] = im
     }
   }
@@ -240,6 +273,14 @@ const Sprites = (() => {
     return true
   }
 
+  // Enregistre un canvas/image sous une NOUVELLE clé (hors defs : jamais
+  // rechargé) — variantes de tuiles pré-recadrées par niveau (cf. game.js).
+  function register(key, im) {
+    if (!key || !im || !im.width) return false
+    imgs[key] = im
+    return true
+  }
+
   return {
     load,
     setTiers,
@@ -254,6 +295,7 @@ const Sprites = (() => {
     get,
     base,
     setBase,
+    register,
     get ready() { return ready }
   }
 })()

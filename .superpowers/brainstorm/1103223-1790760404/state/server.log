@@ -1,5 +1,0 @@
-{"type":"server-started","port":57318,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:57318/?key=fe36355bfd2a0279ab2562a664b38f6695b8649ea62c9d1ddf853376dc283218","screen_dir":"/home/kkleskk/MyCOMPANY/work/Slime/.superpowers/brainstorm/1103223-1790760404/content","state_dir":"/home/kkleskk/MyCOMPANY/work/Slime/.superpowers/brainstorm/1103223-1790760404/state","idle_timeout_ms":14400000}
-{"type":"screen-added","file":"/home/kkleskk/MyCOMPANY/work/Slime/.superpowers/brainstorm/1103223-1790760404/content/bg-styles.html"}
-{"type":"screen-updated","file":"/home/kkleskk/MyCOMPANY/work/Slime/.superpowers/brainstorm/1103223-1790760404/content/bg-styles.html"}
-{"source":"user-event","type":"click","text":"D — Complet (reco)A + B + C : les trois couches ensemble. L'écran est habillé du haut au bas, chaque couche défile à sa vitesse.","choice":"D-complet","id":null,"timestamp":1790760984677}
-{"type":"screen-added","file":"/home/kkleskk/MyCOMPANY/work/Slime/.superpowers/brainstorm/1103223-1790760404/content/waiting.html"}
