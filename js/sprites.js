@@ -37,6 +37,8 @@ const Sprites = (() => {
     timeWarp: 'time_warp',
     gaugeBar: 'gauge_bar',
     gaugeAlt: 'gauge_alt',
+    sndOn: 'snd_on',
+    sndOff: 'snd_off',
     gaugeSlow: 'gauge_slow',
     gaugeMid: 'gauge_mid',
     gaugeFast: 'gauge_fast',

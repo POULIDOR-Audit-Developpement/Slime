@@ -20,6 +20,10 @@ const src = files.map(f => readFileSync(new URL('../' + f, import.meta.url), 'ut
 // ---------- stubs litecanvas / DOM ----------
 const W = 960, H = 540
 const noop = () => {}
+const _vib = []        // appels navigator.vibrate (haptique)
+const _texts = []      // chaînes passées à text() (lectures HUD)
+const _fills = []      // args de rectfill (cellules de jauge HUD)
+const docHandlers = {} // listeners document (visibilitychange -> auto-pause)
 const ctxStub = () => {
   const c = {}
   const grad = { addColorStop: noop }
@@ -37,8 +41,10 @@ const litecanvasStubs = {
   W, H, T: 0,
   paint: noop,
   ctx: ctxStub,
-  cls: noop, rectfill: noop, rect: noop, circfill: noop, circ: noop,
-  line: noop, shape: noop, fill: noop, text: noop,
+  cls: noop,
+  rectfill: (...a) => _fills.push(a), rect: noop, circfill: noop, circ: noop,
+  line: noop, shape: noop, fill: noop,
+  text: (...a) => _texts.push(a[2]),
   textalign: noop, textsize: noop, alpha: noop, push: noop, pop: noop,
   pal: noop, sfx: noop, volume: noop,
   rand: (a, b) => a + Math.random() * (b - a),
@@ -50,9 +56,11 @@ const litecanvasStubs = {
     getItem: k => s[k] ?? null, setItem: (k, v) => { s[k] = String(v) }, removeItem: k => { delete s[k] }
   } })(),
   window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: noop },
-  navigator: { userAgent: 'node' },
+  navigator: { userAgent: 'node', vibrate: p => _vib.push(p) },
   document: {
     documentElement: {},
+    hidden: false,
+    addEventListener: (t, fn) => { (docHandlers[t] = docHandlers[t] || []).push(fn) },
     body: { appendChild: noop, removeChild: noop },
     // canvas factice : getContext renvoie le proxy no-op — tileVar/recolor
     // s'exécutent pour de vrai (chemins de dessin couverts par les checks)
@@ -67,6 +75,11 @@ const litecanvasStubs = {
     set src(v) { if (this.onload) this.onload() }
   }
 }
+// accès driver : enregistreurs exposés sur les stubs (objets par référence)
+litecanvasStubs.navigator._vib = _vib
+litecanvasStubs.document._handlers = docHandlers
+litecanvasStubs.window._texts = _texts
+litecanvasStubs.window._fills = _fills
 
 // ---------- driver : partage le scope de game.js ----------
 function driverFn() {
@@ -624,6 +637,90 @@ function driverFn() {
       calls.filter(c => c[0] === 'img' && c[1] === 'gaugeAlt').length === 0)
     Sprites.drawSrc = oDS
     Sprites.drawImage = oDI
+  }
+
+  // --- 16) confort : haptique, pause, réduction d'effets ---
+  {
+    startGame()
+    slime.goldT = 0
+    // haptique : saut simple 8, double saut 14, mort [50,30,80]
+    navigator._vib.length = 0
+    updateCam()
+    let p = w2px(slime.x, slime.y - 30)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    check('haptique : saut simple -> vibrate(8)', navigator._vib.some(v => v === 8))
+    waitLand()
+    navigator._vib.length = 0
+    updateCam()
+    p = w2px(slime.x + 30, slime.y - 60)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0) // saut au sol -> en l'air
+    p = w2px(slime.x + 40, slime.y - 40)
+    tap(p.x, p.y, 1); untap(p.x, p.y, 1) // double saut
+    check('haptique : double saut -> vibrate(14)', navigator._vib.some(v => v === 14))
+    waitLand()
+    navigator._vib.length = 0
+    die()
+    check('haptique : mort -> vibrate([50,30,80])',
+      navigator._vib.some(v => Array.isArray(v) && v.join() === '50,30,80'))
+    startGame()
+    // réduction d'effets : plus de vibration
+    localStorage.setItem('slime_reduced_fx', '1')
+    navigator._vib.length = 0
+    updateCam()
+    p = w2px(slime.x, slime.y - 30)
+    tap(p.x, p.y, 0); untap(p.x, p.y, 0)
+    check('effets réduits : saut SANS vibration', navigator._vib.length === 0)
+    localStorage.removeItem('slime_reduced_fx')
+    waitLand()
+    // pause : bouton -> gel total -> tap reprend sans viser
+    updateCam()
+    tap(880, 28, 0) // bouton pause (view ~440,14)
+    check('pause : bouton -> paused', paused === true)
+    const cam0 = camX, el0 = elapsed
+    update(1 / 60); update(1 / 60)
+    check('pause : simulation gelée (camX/elapsed)', camX === cam0 && elapsed === el0)
+    tap(500, 300, 0) // n'importe où : reprend (view 250,150)
+    check('pause : tap reprend SANS viser', paused === false && aim.on === false)
+    // auto-pause : onglet caché / écran verrouillé
+    document.hidden = true
+    ;(document._handlers.visibilitychange || []).forEach(fn => fn())
+    check('pause : auto (onglet caché)', paused === true)
+    document.hidden = false
+    tap(500, 300, 0)
+    check('pause : repris pour la suite', paused === false)
+  }
+
+  // --- 17) son (sprites + slider) et jauge vitesse (style planche v3) ---
+  {
+    state = 'title'
+    const calls2 = []
+    const oDS2 = Sprites.drawSrc, oDI2 = Sprites.drawImage
+    Sprites.drawSrc = function (k) { calls2.push(['src', k, Array.prototype.slice.call(arguments, 1)]); return oDS2.apply(Sprites, arguments) }
+    Sprites.drawImage = function (k) { calls2.push(['img', k, Array.prototype.slice.call(arguments, 1)]); return oDI2.apply(Sprites, arguments) }
+    Music.setVolume(0.5) // pas muet
+    drawSoundIcon()
+    check('son : icône sprite sndOn', calls2.filter(c => c[0] === 'img' && c[1] === 'sndOn').length === 1)
+    Music.setVolume(0)
+    calls2.length = 0
+    drawSoundIcon()
+    check('son : muet -> sprite sndOff', calls2.filter(c => c[0] === 'img' && c[1] === 'sndOff').length === 1)
+    // slider : tap à mi-piste (view 59,13 -> canvas 118,26) -> vol 0.5 persisté
+    tap(118, 26, 0)
+    check('slider : tap à mi-piste -> vol 0.5 persisté',
+      Music.vol === 0.5 && localStorage.getItem('slime_vol') === '0.5')
+    check('slider : pas de lancement de run (toujours titre)', state === 'title')
+    // jauge vitesse : panneau flèche + barre segmentée + lecture V:
+    calls2.length = 0
+    window._texts.length = 0
+    window._fills.length = 0
+    drawSpeedGauge(0.7)
+    check('vitesse : icône speedArrow dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'speedArrow').length === 1)
+    check('vitesse : barre gaugeBar dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'gaugeBar').length === 1)
+    check('vitesse : 70% -> 11 cellules colorées (vert/orange/rouge)',
+      window._fills.filter(a => a[4] === C_SLIME || a[4] === C_ORANGE || a[4] === C_RED).length === 11)
+    check('vitesse : lecture V: affichée', window._texts.some(t => String(t).startsWith('V:')))
+    Sprites.drawSrc = oDS2; Sprites.drawImage = oDI2
+    state = 'playing'
   }
 
   console.log(fails === 0 ? '\nSIM OK — tous les checks passent' : '\n' + fails + ' ÉCHEC(S)')

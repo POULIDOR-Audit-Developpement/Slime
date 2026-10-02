@@ -11,11 +11,13 @@
 // - Onglet masqué : pause/reprise (le chiptune, piloté par rAF, s'arrêtait).
 // - setStart(n) : piste de départ d'une run (?niveau=N, « Tester niveau » de
 //   l'éditeur) — start()/stop() reviennent à bgmN au lieu de bgm1.
+// - setVolume(v) : volume continu (slider HUD), 0 = muet, persisté slime_vol.
 // - Fichier absent/illisible : silence (console.info), jamais bloquant.
 // - Hors navigateur (simulations Node tools/*.mjs) : no-op complet.
 const Music = (() => {
   const TRACKS = ['ASSETS/music/bgm1.mp3', 'ASSETS/music/bgm2.mp3', 'ASSETS/music/bgm3.mp3']
   const VOL = 0.5
+  let vol = VOL // volume continu (slider HUD) — persisté 'slime_vol'
   let audio = null // éléments Audio créés au boot ; null hors navigateur
   let idx = 0
   let startIdx = 0 // piste de départ d'une run (setStart — « Tester niveau » éditeur)
@@ -27,7 +29,7 @@ const Music = (() => {
     audio = TRACKS.map((src, i) => {
       const a = new Audio(src)
       a.preload = 'auto'
-      a.volume = VOL
+      a.volume = vol
       if (i === TRACKS.length - 1) a.loop = true
       a.addEventListener('error', () => console.info('[Music] piste indisponible :', src))
       a.addEventListener('ended', () => {
@@ -82,10 +84,24 @@ const Music = (() => {
 
   // volume() = gain zzfx global (litecanvas) : coupe aussi les SFX. Absent hors
   // navigateur -> garde pour un no-op propre.
-  function setZzfxVol() { if (typeof volume === 'function') volume(muted ? 0 : VOL) }
+  function setZzfxVol() { if (typeof volume === 'function') volume(muted ? 0 : vol) }
+
+  // Volume continu (slider HUD) : 0 = muet, persisté 'slime_vol'. Applique aux
+  // pistes + SFX zzfx ; reprise/pause de la lecture comme toggle().
+  function setVolume(v) {
+    vol = Math.min(1, Math.max(0, Number(v) || 0))
+    muted = vol <= 0.001
+    try { localStorage.setItem('slime_vol', String(Math.round(vol * 100) / 100)) } catch (e) {}
+    setZzfxVol()
+    if (!audio) return
+    for (const a of audio) a.volume = vol
+    if (muted) pauseAll()
+    else if (started) playCur(false)
+  }
 
   function toggle() {
     muted = !muted
+    if (!muted && vol <= 0.001) vol = VOL // démué après un slider à 0 : revenir audible
     try { localStorage.setItem('slime_muted', muted ? '1' : '0') } catch (e) {}
     setZzfxVol()
     if (!audio) return
@@ -97,6 +113,7 @@ const Music = (() => {
     // PAS d'init() ici : la création des <audio> (et leur chargement) attend le
     // premier saut — sur mobile, le burst de 13 Mo au boot coûte des FPS.
     try { muted = localStorage.getItem('slime_muted') === '1' } catch (e) {}
+    try { vol = Math.min(1, Math.max(0, parseFloat(localStorage.getItem('slime_vol')) || VOL)) } catch (e) {}
     setZzfxVol()
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !document.__slimeVisBound) {
       document.__slimeVisBound = true
@@ -113,9 +130,11 @@ const Music = (() => {
     toggle,
     restore,
     setStart,
+    setVolume,
     // Piste courante (0, 1 ou 2) : le jeu la lit chaque frame (lecture
     // gratuite) pour swapper le fond au passage bgm1 -> bgm2 -> bgm3.
     get track() { return idx },
-    get muted() { return muted }
+    get muted() { return muted },
+    get vol() { return vol }
   }
 })()

@@ -173,5 +173,41 @@ function loadMusic() {
   check('rejouer après setStart(0) : bgm1 joue', created[0].paused === false && created[2].paused === true)
 }
 
+// ---- 6. setVolume : volume continu persisté, 0 = muet ----
+{
+  const src = readFileSync(new URL('../js/music.js', import.meta.url), 'utf8')
+  const created = []
+  const vols = []
+  const store = {}
+  class FakeAudio4 {
+    constructor(s) { this.src = s; this.loop = false; this.paused = true; this.handlers = {}; this.volume = 0.5; this.currentTime = 0; created.push(this) }
+    addEventListener(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn) }
+    set currentTime(v) { this._t = v }
+    get currentTime() { return this._t }
+    play() { this.paused = false; return Promise.resolve() }
+    pause() { this.paused = true }
+  }
+  const sandbox = new Function('Audio', 'localStorage', 'volume', 'document', 'console', 'return (() => {' + src + '; return Music })()')
+  const M = sandbox(FakeAudio4, { getItem: k => k in store ? store[k] : null, setItem: (k, v) => { store[k] = String(v) } }, v => vols.push(v), undefined, console)
+  check('setVolume existe (API slider)', typeof M.setVolume === 'function')
+  M.restore()
+  M.start() // crée les 3 pistes
+  M.setVolume(0.3)
+  check('setVolume(0.3) : appliqué aux pistes', created.every(a => Math.abs(a.volume - 0.3) < 0.001))
+  check('setVolume(0.3) : persisté (slime_vol)', store['slime_vol'] === '0.3')
+  check('setVolume(0.3) : SFX zzfx suivent', vols[vols.length - 1] === 0.3)
+  check('setVolume(0.3) : pas muet', M.muted === false)
+  M.setVolume(0)
+  check('setVolume(0) : muet', M.muted === true)
+  M.setVolume(0.7)
+  check('setVolume(0.7) : démué + appliqué + persisté',
+    M.muted === false && Math.abs(created[0].volume - 0.7) < 0.001 && store['slime_vol'] === '0.7')
+  // restauration du volume persisté
+  const store2 = { slime_vol: '0.25' }
+  const M2 = sandbox(FakeAudio4, { getItem: k => k in store2 ? store2[k] : null, setItem: (k, v) => { store2[k] = String(v) } }, () => {}, undefined, console)
+  M2.restore()
+  check('restore : slime_vol lu (Music.vol 0.25)', M2.vol === 0.25)
+}
+
 console.log(fail === 0 ? '\nMUSIC OK — tous les checks passent' : `\n${fail} CHECK(S) EN ÉCHEC`)
 process.exit(fail === 0 ? 0 : 1)

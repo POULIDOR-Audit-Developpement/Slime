@@ -282,6 +282,29 @@ const LETTERS = {
 }
 
 let state = 'title'
+
+// ---------- Confort : haptique, pause, réduction d'effets ----------
+// Effets réduits (persisté 'slime_reduced_fx', bouton EFFETS au titre) :
+// sans shake, sans voile slow-mo, pulsations figées, sans vibration —
+// zéro impact gameplay.
+function reducedFx() {
+  try { return localStorage.getItem('slime_reduced_fx') === '1' } catch (e) { return false }
+}
+function toggleReducedFx() {
+  try { localStorage.setItem('slime_reduced_fx', reducedFx() ? '0' : '1') } catch (e) {}
+}
+// Pulsation HUD standard (0.85..1) : figée à 0.9 si effets réduits.
+function fxPulse() { return reducedFx() ? 0.9 : 0.85 + 0.15 * Math.sin(T * 6) }
+// Haptique mobile : no-op iOS (API absente), hors navigateur, effets réduits.
+function buzz(pattern) {
+  if (reducedFx()) return
+  try { if (navigator.vibrate) navigator.vibrate(pattern) } catch (e) {}
+}
+// Pause : gèle TOUTE la simulation (update) ; draw_ superpose le voile.
+let paused = false
+let volDrag = null // touchId en train de glisser le slider de volume
+// Slider volume (titre + voile pause) : piste 38..80 en coordonnées vue.
+const VOL_X0 = 38, VOL_W = 42
 let runStarted = false
 let camX = 0, camSpd = 80, elapsed = 0 // pré-init : base caméra (PHYS_DEF.camBase)
 // Horloge du jeu ralentie par le slow-mo (oscillation des plateformes...) et
@@ -477,7 +500,9 @@ function damage() {
 function die() {
   if (state === 'over') return
   state = 'over'
+  paused = false
   Music.stop()
+  buzz([50, 30, 80])
   deathT = 0
   aim.on = false
   aimPad = null
@@ -600,10 +625,12 @@ function execJump() {
     slime.pumpT = 0.18
     burst(slime.x, slime.y, C_BLUE_L, 12, 140)
     sfx(SFX_JUMP, 3, 1.15)
+    buzz(14)
   } else {
     slime.grounded = false
     slime.groundPlat = null
     sfx(SFX_JUMP)
+    buzz(8)
   }
   slime.jumpMul = 1
   slime.coyote = 0
@@ -870,6 +897,7 @@ function updBalls() {
         // aucun effet de jeu (le bonus de saut doré reste exclusif à l'or).
         gemsCollected++
         sfx(SFX_COIN, 4, 0.8)
+        buzz(10)
         burst(b.x, b.y, C_GEM, 20, 180)
       } else if (b.life) {
         // Bonus slime « as in HUD » : +1 vie, ou points si déjà au max.
@@ -917,6 +945,8 @@ function update_(dt) {
   if (diagFps || diagProf) diagUps++
   if (dt > 1) dt /= 1000
   if (iskeypressed('m')) Music.toggle()
+  // Pause (bouton / onglet caché) : gel total — caméra, chrono, timers.
+  if (paused) return
   // Slow-mo : la durée décroit en temps réel ; l'échelle de temps du jeu
   // (ts) glisse en douceur vers la cible (1 = vitesse normale).
   if (slowmoT > 0) {
@@ -986,8 +1016,20 @@ function update_(dt) {
 function tap(px, py, touchId) {
   calcView()
   const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
+  // Bouton pause (à côté du plein écran) : toggle — marche aussi pour reprendre.
+  if (state === 'playing' && vx >= VW - 56 && vx <= VW - 36 && vy <= 26) { paused = !paused; return }
+  // Slider de volume : sur le titre, et DANS la pause (régler sans reprendre).
+  if ((state === 'title' || paused) && vx >= 30 && vx <= 88 && vy <= 24) {
+    volDrag = touchId
+    Music.setVolume((vx - VOL_X0) / VOL_W)
+    return
+  }
+  // En pause, tout autre appui reprend — sans déclencher de visée/saut.
+  if (paused) { paused = false; return }
   if ((state === 'title' || state === 'over') && langTapped(vx, vy)) return
   if (vx < 30 && vy < 24) { Music.toggle(); return }
+  // Bouton EFFETS (titre) : bascule effets réduits (persisté).
+  if (state === 'title' && vx >= VW - 110 && vx <= VW - 60 && vy <= 26) { toggleReducedFx(); return }
   if (fsCanEnter() && !fsStandalone() && vx > VW - 34 && vy < 26) { toggleFullscreen(); return }
   if (state === 'title') startGame() // pas de return : ce même appui vise le 1er saut
   if (state === 'over') {
@@ -1021,6 +1063,11 @@ function tap(px, py, touchId) {
 }
 
 function tapping(px, py, touchId) {
+  // Glissement du slider de volume en cours : ajuste et ne vise pas.
+  if (volDrag === touchId) {
+    Music.setVolume(((px - VOX) / VSC - VOL_X0) / VOL_W)
+    return
+  }
   if (aim.on && touchId === aim.id) {
     if (aimPad) {
       // Tactile : le réticule suit le DELTA du doigt, converti en unités monde
@@ -1039,6 +1086,7 @@ function tapping(px, py, touchId) {
 }
 
 function untap(px, py, touchId) {
+  if (volDrag === touchId) { volDrag = null; return }
   if (aim.on && touchId === aim.id) {
     aimPad = null
     execJump()
@@ -1346,6 +1394,8 @@ function drawTitle() {
   drawLogo()
   drawTitleSlime()
   drawLangToggle()
+  drawFxToggle()
+  drawVolSlider()
   textalign('center', 'top')
   textsize(10)
   text(VW / 2, 118, I18N.t('aim'), C_WHITE)
@@ -1954,6 +2004,28 @@ const GAUGE_W = 659, GAUGE_H = 91
 const GAUGE_STATES = ['gaugeSlow', 'gaugeMid', 'gaugeFast', 'gaugeVeryFast']
 
 function drawSpeedGauge(ratio) {
+  // Primaire (style planche v3) : panneau arrondi + icône flèche + barre
+  // segmentée remplie selon la vitesse caméra + lecture « V: NN ». Les
+  // cadrans v4 puis l'arc procédural restent en fallback.
+  const bar = Sprites.get('gaugeBar'), arrow = Sprites.get('speedArrow')
+  if (bar && bar.width && arrow && arrow.width) {
+    rectfill(VW - 102, 8, 94, 30, C_PANEL2, 6)
+    rect(VW - 102, 8, 94, 30, C_BLACK, 2)
+    Sprites.drawImage('speedArrow', VW - 96, 12, 16)
+    const bw = 54, bh = 9, bx = VW - 76, by = 12
+    Sprites.drawImage('gaugeBar', bx, by, bw)
+    const filled = Math.round(ratio * GAUGE_CELLS.length)
+    for (let i = 0; i < filled; i++) {
+      const c = GAUGE_CELLS[i]
+      const col = i < 7 ? C_SLIME : i < 11 ? C_ORANGE : C_RED
+      rectfill(bx + c[0] / GAUGE_W * bw + 0.5, by + c[2] / GAUGE_H * bh + 0.4,
+        (c[1] - c[0]) / GAUGE_W * bw - 1, (GAUGE_H - c[2]) / GAUGE_H * bh - 0.8, col)
+    }
+    textsize(7)
+    textalign('start', 'top')
+    text(bx, 25, 'V: ' + Math.round(camSpd), C_WHITE)
+    return
+  }
   const gkey = GAUGE_STATES[Math.min(3, Math.max(0, Math.floor(ratio * 4)))]
   const dial = Sprites.get(gkey)
   if (dial && dial.width) {
@@ -2025,7 +2097,7 @@ function drawHUD() {
     textalign('start', 'top')
   }
   if (slime.x - slime.r < camX + 40) {
-    alpha(0.4 + 0.3 * Math.sin(T * 12))
+    alpha(reducedFx() ? 0.55 : 0.4 + 0.3 * Math.sin(T * 12))
     rectfill(0, -12, 5, VH + 24, C_RED)
     textalign('center', 'top')
     textsize(10)
@@ -2054,7 +2126,7 @@ function drawPowerHud() {
   const x = 12 + 3 * 28 + 6, y = VH - 30
   const ready = canDoubleJump()
   const f = ready ? 1 : slime.djCd > 0 && dj.cooldown > 0 ? 1 - slime.djCd / dj.cooldown : 0
-  const pulse = 0.85 + 0.15 * Math.sin(T * 6)
+  const pulse = fxPulse()
   const vial = Sprites.get('gaugeAlt')
   if (vial && vial.width) {
     // Chevrons (1 par charge, empilés autour du centre du bloc 24 px).
@@ -2232,6 +2304,13 @@ function drawOver() {
 }
 
 function drawSoundIcon() {
+  // Sprite pixel-art (snd_on/snd_off, planche maison) ; vectoriel en secours.
+  if (Sprites.ready && Sprites.get('sndOn')) {
+    alpha(0.9)
+    Sprites.drawImage(Music.muted || Music.vol <= 0.001 ? 'sndOff' : 'sndOn', 8, 5, 18)
+    alpha(1)
+    return
+  }
   alpha(0.85)
   rectfill(9, 10, 4, 6, C_WHITE)
   shape([13, 10, 19, 4, 19, 22, 13, 16])
@@ -2244,6 +2323,42 @@ function drawSoundIcon() {
     circ(20, 13, 5.5, C_WHITE)
   }
   alpha(1)
+}
+
+// Slider de volume (titre + voile pause) : piste + niveau + poignée.
+function drawVolSlider() {
+  const v = Music.vol
+  rectfill(34, VOL_Y, VOL_W + 10, 8, C_FRAME, 4)
+  rectfill(36, VOL_Y + 2, Math.max(3, (VOL_W - 2) * v + 2), 4, Music.muted ? C_GRAY : C_WHITE, 2)
+  const kx = 38 + (VOL_W - 4) * v
+  circfill(kx, VOL_Y + 4, 4.5, C_WHITE)
+  circ(kx, VOL_Y + 4, 4.5, C_BLACK)
+}
+const VOL_Y = 10
+
+// Bouton EFFETS (titre) : bascule effets réduits — point d'état à droite.
+function drawFxToggle() {
+  const on = !reducedFx()
+  rectfill(VW - 110, 4, 50, 20, C_FRAME, 6)
+  rect(VW - 110, 4, 50, 20, C_BLACK, 2)
+  textsize(8)
+  text(VW - 104, 9, I18N.t('fx'), on ? C_SLIME : C_GRAY, 'bold')
+  circfill(VW - 68, 14, 3.2, on ? C_SLIME : C_RED)
+  circ(VW - 68, 14, 3.2, C_BLACK)
+}
+
+// Voile de pause : titre + reprise + slider volume (réglable en pause).
+function drawPauseOverlay() {
+  alpha(0.6)
+  rectfill(0, -12, VW, VH + 24, C_BLACK)
+  alpha(1)
+  textalign('center', 'top')
+  textsize(22)
+  text(VW / 2, 92, I18N.t('pause'), C_WHITE, '900')
+  textsize(9)
+  text(VW / 2, 124, I18N.t('resume'), C_GOLD)
+  drawVolSlider()
+  textalign('start', 'top')
 }
 
 // ---------- Plein écran (mobile) ----------
@@ -2492,7 +2607,7 @@ function drawOffscreen() {
   const vy = VH / 2 + (slime.y - camCy) / ky
   if (vy - slime.r / kx > 6) return
   const vx = clamp(VW / 2 + (slime.x - camCx) / kx, 18, VW - 18)
-  alpha(0.55 + 0.45 * Math.sin(T * 10))
+  alpha(reducedFx() ? 0.8 : 0.55 + 0.45 * Math.sin(T * 10))
   shape([vx - 7, 15, vx, 5, vx + 7, 15]); fill(C_WHITE)
   circfill(vx, 21, 6, C_SLIME)
   circ(vx, 21, 6, C_BLACK)
@@ -2510,7 +2625,7 @@ function drawOffscreen() {
 
 // Voile bleu pendant le slow-mo (bullet time du double saut).
 function drawSlowmoOverlay() {
-  if (ts >= 0.995) return
+  if (ts >= 0.995 || reducedFx()) return
   alpha(Math.min(0.28, (1 - ts) * 0.55))
   rectfill(0, 0, VW, VH, C_BLUE_HI)
   alpha(1)
@@ -2552,8 +2667,8 @@ function draw_() {
   drawBG()
   const q2 = diagProf ? performance.now() : 0
   if (state !== 'title') {
-    const shx = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
-    const shy = VIEW.shake && shakeT > 0 ? rand(-3, 3) : 0
+    const shx = VIEW.shake && !reducedFx() && shakeT > 0 ? rand(-3, 3) : 0
+    const shy = VIEW.shake && !reducedFx() && shakeT > 0 ? rand(-3, 3) : 0
     // Monde : fenêtre zoomée centrée sur le slime (identité à zoom 1).
     c.save()
     c.translate(VW / 2 + shx, VH / 2 + shy)
@@ -2588,6 +2703,7 @@ function draw_() {
     drawTitle()
   }
   if (state === 'over') drawOver()
+  if (paused && state === 'playing') drawPauseOverlay()
   drawSoundIcon()
   drawFsIcon()
   drawVignette()
@@ -2660,6 +2776,14 @@ function init() {
   } catch (e) {}
   try {
     best = parseInt(localStorage.getItem('slime_best') || '0', 10) || 0
+  } catch (e) {}
+  // Auto-pause : onglet masqué ou écran verrouillé pendant une run -> pause.
+  try {
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && state === 'playing') paused = true
+      })
+    }
   } catch (e) {}
   const st = Patterns.load()
   if (st === 'recupere') console.warn('SLIME : stockage illisible — backup restauré')

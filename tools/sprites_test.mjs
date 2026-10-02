@@ -65,6 +65,11 @@ check('sprites prêts (chargement synchrone)', Sprites.ready)
 // (elle alimente la jauge de recharge du double saut dans le HUD).
 check('gauge_alt enregistrée (gaugeAlt dessinable)', Sprites.get('gaugeAlt') !== undefined && Sprites.drawImage('gaugeAlt', 0, 0, 10) === true)
 
+// snd_on/snd_off : les sprites du haut-parleur (icône son + slider HUD).
+check('snd_on/snd_off enregistrés (sprites son)',
+  Sprites.get('sndOn') !== undefined && Sprites.get('sndOff') !== undefined &&
+  Sprites.drawImage('sndOn', 0, 0, 10) === true && Sprites.drawImage('sndOff', 0, 0, 10) === true)
+
 const v1 = Sprites.get('idle0_t1')
 check('variante t1 générée (canvas sans complete)', !!v1 && v1.width === 64 && v1.complete === undefined)
 check('variantes t1..t5 générées (6 paliers)', [1, 2, 3, 4, 5].every(i => !!Sprites.get('idle0_t' + i)))
