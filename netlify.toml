@@ -1,0 +1,52 @@
+# SLIME — déploiement Netlify (site public).
+# Site 100 % statique, sans build : la racine du dépôt est publiée telle quelle.
+#
+# La commande de build RETIRE de la copie déployée les outils internes — ils
+# restent dans git et utilisables en LAN/local (node server.mjs) :
+#   editor.html        éditeur de patterns (protégé, interne)
+#   decode.html        scan QR / classement du créateur (interne)
+#   server.mjs         serveur LAN + API de sync du pool (inutile en ligne)
+#   js/editor.js       JS de l'éditeur (chargé uniquement par editor.html)
+#   js/ranking.js      JS du classement (chargé uniquement par decode.html)
+#   tools/             générateurs + tests Node
+#   docs/              specs internes
+#   AGENTS.md          règles agents/workflow (interne)
+#   README.md          documentation interne (LAN, éditeur, tests)
+#   ASSETS/planches/   planches sources (seules sprites/ et music/ servent en jeu)
+# En ligne, ces chemins répondent 404. Le jeu publie : index.html, play.html,
+# js/, css/, vendor/, ASSETS/sprites/, ASSETS/music/.
+#
+# La sync du pool entre appareils (/api/*) n'existe qu'en LAN : en ligne, le
+# pool servi est le pool par défaut embarqué (js/patterns-defaults.js) — pour
+# mettre les patterns en ligne à jour : commit + push sur main.
+[build]
+  publish = "."
+  command = "rm -rf editor.html decode.html server.mjs js/editor.js js/ranking.js tools docs AGENTS.md README.md ASSETS/planches"
+
+# HTML jamais cachés : un push sur main est visible immédiatement.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# JS + vendor : tous les chargements portent ?v= (cache-busting du projet)
+# -> cache long sûr.
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Sprites / musiques / CSS : cache d'un jour (certaines images de la vitrine
+# sont chargées sans ?v= — pas de cache long ici).
+[[headers]]
+  for = "/ASSETS/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

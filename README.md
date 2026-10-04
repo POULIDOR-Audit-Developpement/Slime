@@ -8,6 +8,12 @@ Ouvrir `index.html` : c'est la **page de présentation** (vitrine animée avec l
 
 Le jeu affiche le même univers (fond sombre, panneaux flottants, sol en tuiles) et un sélecteur de langue EN / FR sur le titre et l'écran de game over.
 
+### Version en ligne (Netlify)
+
+Le jeu est hébergé sur **Netlify**, branché sur `main` de ce dépôt : chaque `git push` sur `main` redéploie automatiquement le site (~1 min). En ligne, le pool servi est le **pool par défaut embarqué** (`js/patterns-defaults.js`) — pour mettre les patterns à jour en ligne : modifier le pool puis pousser sur `main` (choix assumé : pas de sync à chaud).
+
+Les **outils internes ne sont pas déployés** (404 en ligne) : `editor.html`, `decode.html`, `server.mjs`, `tools/`, `docs/`, `AGENTS.md`, `README.md`, `ASSETS/planches/` — la commande de build de `netlify.toml` les retire de la copie publiée ; ils restent utilisables en LAN/local. La sync du pool entre appareils (`/api/*`) n'existe qu'en LAN, et la vitrine publique n'affiche plus la section éditeur.
+
 ### Jouer / éditer depuis le réseau local (LAN), pool synchronisé
 
 ```
