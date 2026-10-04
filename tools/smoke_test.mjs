@@ -359,5 +359,49 @@ Patterns.setLayout(null)
   check('espacement : >= 6 cellules entre gemmes', !badSpacing)
 }
 
+// 11. Murs (colonnes au sol) dans le pool GÉNÉRÉ (spec 2026-10-03) : nus en
+// T2-T3 (sommet = palier bonus), piqués en T4-T5 (flancs mortels), aucun en
+// T1. Posés uniquement dans les gaps ENTRE plateformes consécutives (jamais
+// avant la 1re ni après la dernière), espacés d'au moins 6 cellules. Le
+// déterminisme global est déjà vérifié au check 10 : le JSON des patterns
+// inclut désormais les murs.
+{
+  const genSrc = [
+    'js/physics.js',
+    'tools/gen-core.js'
+  ].map(f => readFileSync(new URL('../' + f, import.meta.url), 'utf8')).join('\n')
+  const gen = new Function(genSrc.replace(/if \(typeof module[^]*$/, '') + '\nreturn generateDefaultPool;')()
+  const pool = gen({ perTier: 6, seed: 20260930 }).patterns
+  const wallsByTier = {}, spikedByTier = {}
+  let badKind = false, badPlace = false, badSpacing = false
+  for (const p of pool) {
+    const walls = p.walls || []
+    const plats = p.platforms.slice().sort((a, b) => a.x - b.x)
+    for (let i = 0; i < walls.length; i++) {
+      const wl = walls[i]
+      wallsByTier[p.difficulty] = (wallsByTier[p.difficulty] || 0) + 1
+      if (wl.spiked) spikedByTier[p.difficulty] = (spikedByTier[p.difficulty] || 0) + 1
+      if (wl.kind !== 'ground') badKind = true
+      const x1 = wl.x, x2 = wl.x + wl.cells * CELL
+      const inGap = plats.some((b, j) => {
+        if (j === 0) return false
+        const ga = plats[j - 1].x + plats[j - 1].cells * CELL
+        return x1 >= ga + 8 && x2 <= b.x - 8
+      })
+      if (!inGap) badPlace = true
+      for (let k = i + 1; k < walls.length; k++)
+        if (Math.abs(walls[k].x - wl.x) < 6 * CELL) badSpacing = true
+    }
+  }
+  check('murs : colonnes au sol uniquement', !badKind)
+  check('murs : encastrés dans un gap entre plateformes', !badPlace)
+  check('murs : >= 6 cellules entre deux murs', !badSpacing)
+  check('T1 : zéro mur', !wallsByTier[1])
+  check('T2 : >= 1 mur nu', (wallsByTier[2] || 0) >= 1 && !spikedByTier[2])
+  check('T3 : >= 1 mur nu', (wallsByTier[3] || 0) >= 1 && !spikedByTier[3])
+  check('T4 : >= 1 mur piqué', (spikedByTier[4] || 0) >= 1)
+  check('T5 : >= 1 mur piqué', (spikedByTier[5] || 0) >= 1)
+}
+
 console.log(fails === 0 ? '\nTOUS LES TESTS PASSENT' : `\n${fails} ÉCHEC(S)`)
 process.exit(fails === 0 ? 0 : 1)

@@ -1017,7 +1017,10 @@ function tap(px, py, touchId) {
   calcView()
   const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
   // Bouton pause (à côté du plein écran) : toggle — marche aussi pour reprendre.
-  if (state === 'playing' && vx >= VW - 56 && vx <= VW - 36 && vy <= 26) { paused = !paused; return }
+  if (state === 'playing' && vx >= VW - 56 && vx <= VW - 36 && vy <= 26) {
+    if (paused && fsReenterArmed) { fsReenterArmed = false; fsEnterVideo() } // reprise = retour plein écran dans le geste
+    paused = !paused; return
+  }
   // Slider de volume : sur le titre, et DANS la pause (régler sans reprendre).
   if ((state === 'title' || paused) && vx >= 30 && vx <= 88 && vy <= 24) {
     volDrag = touchId
@@ -1025,7 +1028,13 @@ function tap(px, py, touchId) {
     return
   }
   // En pause, tout autre appui reprend — sans déclencher de visée/saut.
-  if (paused) { paused = false; return }
+  // Reprise d'une sortie involontaire du plein écran : retour dans le geste
+  // (webkitEnterFullscreen exige un geste utilisateur — c'est le cas ici).
+  if (paused) {
+    if (fsReenterArmed) { fsReenterArmed = false; fsEnterVideo() }
+    paused = false
+    return
+  }
   if ((state === 'title' || state === 'over') && langTapped(vx, vy)) return
   if (vx < 30 && vy < 24) { Music.toggle(); return }
   // Bouton EFFETS (titre) : bascule effets réduits (persisté).
@@ -2369,6 +2378,11 @@ let fsVideo = null
 let fsVideoOn = false
 let fsVideoBound = false
 let fsMouseDown = false
+// Sortie involontaire (swipe down / « Done » du lecteur système iOS — geste
+// impossible à bloquer) : le jeu se met en pause et le prochain toucher
+// (reprise de la pause) repasse plein écran DANS le geste (exigence iOS).
+let fsUserExit = false     // posé par fsExit() : la sortie est volontaire
+let fsReenterArmed = false // re-plein-écran armé, consommé au prochain tap
 
 function fsSupported() {
   const el = document.documentElement
@@ -2417,6 +2431,7 @@ function fsEnterNative() {
 }
 
 function fsExit() {
+  fsUserExit = true // sortie demandée par le jeu : pas de pause ni de retour
   if (fsVideoOn && fsVideo) {
     try { if (fsVideo.webkitExitFullscreen) fsVideo.webkitExitFullscreen() } catch (e) {}
     try { if (document.webkitExitFullscreen) document.webkitExitFullscreen() } catch (e) {}
@@ -2431,6 +2446,7 @@ function fsExit() {
 function fsEnterVideo() {
   const cv = canvas()
   if (!cv.captureStream) return
+  fsUserExit = false // nouvelle entrée : le prochain exit redevient « à qualifier »
   try {
     if (!fsVideo) {
       fsVideo = document.createElement('video')
@@ -2466,7 +2482,17 @@ function fsVideoState() {
   if (on === fsVideoOn) return
   fsVideoOn = on
   if (on) fsVideoBind()
-  else fsVideoUnbind()
+  else {
+    fsVideoUnbind()
+    // Sortie involontaire (geste système iOS) : pause + ré-armement du
+    // retour plein écran au prochain toucher (uniquement en pleine run).
+    const voluntary = fsUserExit
+    fsUserExit = false
+    if (!voluntary && state === 'playing') {
+      paused = true
+      fsReenterArmed = true
+    }
+  }
 }
 
 // Pendant le plein écran vidéo, la vidéo capte les touchers à la place du
@@ -2596,6 +2622,7 @@ function drawFsDbg() {
   text(6, 44, 'nat(req/webkit)=' + nat + ' vid=' + vid + ' cs=' + cs, C_WHITE)
   text(6, 56, 'sa(nav/dm)=' + sa + ' canEnter=' + ce + ' standalone=' + st, C_WHITE)
   text(6, 68, 'icone=' + (ce && !st ? 'ON' : 'OFF'), ce && !st ? C_WHITE : C_RED)
+  text(6, 80, 'videoOn=' + (fsVideoOn ? 1 : 0) + ' reenter=' + (fsReenterArmed ? 1 : 0), C_WHITE)
   textsize(9)
 }
 

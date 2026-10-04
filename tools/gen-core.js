@@ -166,23 +166,137 @@ function generateDefaultPool(opts) {
   const DJ_TIERS = 4
   const DJ_CFG = { powerMul: 1 }
 
-  function reachOk(a, b, budget) {
+  function reachOk(a, b, budget, walls) {
     const t = targetOfRaw(b)
     const mul = a.type === 'sticky' ? Phys.phys().stickyMul : 1
     if (a.type === 'bouncy') {
-      if (Phys.canReachBounce(a, t)) return true
-      if (budget && budget.dj > 0 && Phys.canReachBounceExt(a, t, null, DJ_CFG)) {
+      if (Phys.canReachBounce(a, t, walls)) return true
+      if (budget && budget.dj > 0 && Phys.canReachBounceExt(a, t, walls, DJ_CFG)) {
         budget.dj--
         return true
       }
       return false
     }
-    if (Phys.canReach(a, t, mul, 1)) return true
-    if (budget && budget.dj > 0 && Phys.canReachDouble(a, t, mul, 1, null, DJ_CFG)) {
+    if (Phys.canReach(a, t, mul, 1, walls)) return true
+    if (budget && budget.dj > 0 && Phys.canReachDouble(a, t, mul, 1, walls, DJ_CFG)) {
       budget.dj--
       return true
     }
     return false
+  }
+
+  // Miroir EXACT de jumpOk (js/patterns.js) : mêmes routes dans le même
+  // ordre (saut visé -> rattrape de bord -> double saut -> double+rattrape ;
+  // famille rebond pour bouncy/seesaw avec les vitesses BASCULE), pouvoirs
+  // par défaut (DJ ×1.15, rattrape 5). Uniquement pour la validation des
+  // murs : la génération garde reachOk (sa philosophie de tier stricte),
+  // les patterns murés doivent eux passer la marche gourmande du jeu.
+  // Retourne { ok, cost } — cost = double saut consommé (0/1).
+  function jumpOkGame(a, b, walls, budget) {
+    const tgt = targetOfRaw(b)
+    const opts = { ledge: 5, catchable: true }
+    const noLedge = { catchable: true }
+    const djFull = { enabled: true, cooldown: 0.5, charges: 2, powerMul: 1.15 }
+    if (a.type === 'bouncy' || a.type === 'seesaw') {
+      const bascule = a.type === 'seesaw'
+      const vx = bascule ? BASCULE_VX : undefined
+      const vy = bascule ? -Phys.phys().bounceVy * BASCULE_VY_MUL : undefined
+      if (Phys.canReachBounce(a, tgt, walls, opts, vx, vy)) return { ok: true, cost: 0 }
+      if (budget.dj > 0 && Phys.canReachBounceExt(a, tgt, walls, djFull, opts, vx, vy)) {
+        budget.dj--
+        return { ok: true, cost: 1 }
+      }
+      return { ok: false }
+    }
+    const mul = a.type === 'sticky' ? Phys.phys().stickyMul : 1
+    if (Phys.canReach(a, tgt, mul, 1, walls)) return { ok: true, cost: 0 }
+    if (Phys.canReach(a, tgt, mul, 1, walls, opts)) return { ok: true, cost: 0 }
+    if (budget.dj > 0) {
+      if (Phys.canReachDouble(a, tgt, mul, 1, walls, djFull, noLedge)) {
+        budget.dj--
+        return { ok: true, cost: 1 }
+      }
+      if (Phys.canReachDouble(a, tgt, mul, 1, walls, djFull, opts)) {
+        budget.dj--
+        return { ok: true, cost: 1 }
+      }
+    }
+    return { ok: false }
+  }
+
+  // Revalidation complète de la chaîne avec murs : marche identique à
+  // validateInstance côté jeu (sommets de colonnes = paliers optionnels,
+  // UN double saut par chaîne) sur les positions canoniques. Un mur qui
+  // casse un saut requis est abandonné, jamais publié cassé.
+  function chainOkWalls(chain, wallsRaw, budget) {
+    const walls = wallsRaw.map(wl => ({
+      x: wl.x, w: wl.cells * CELL, spiked: wl.spiked, y1: rowY(wl.row), y2: VH
+    }))
+    const nodes = chain.map(p => ({ x: p.x, top: false, p }))
+    for (const wl of wallsRaw) {
+      nodes.push({
+        x: wl.x, top: true,
+        p: { x: wl.x, row: wl.row, y: rowY(wl.row), baseY: rowY(wl.row), w: wl.cells * CELL, type: 'basic', amp: 0, spd: 0, ph: 0 }
+      })
+    }
+    nodes.sort((a, b) => a.x - b.x)
+    let prev = chain[0]
+    for (let i = 1; i < nodes.length; i++) {
+      const n = nodes[i]
+      const r = jumpOkGame(prev, n.p, walls, budget)
+      if (!r.ok && n.top) continue
+      if (!r.ok) return false
+      prev = n.p
+    }
+    return true
+  }
+
+  // Murs — colonnes au sol (spec 2026-10-03) : nus en T2-T3 (sommet = palier
+  // bonus, parfois une ligne au-dessus : escalade invitaire), piqués en
+  // T4-T5 (flancs mortels, sommet toujours atterrissable et sûr). Appelé
+  // APRÈS simSpawnGems : plateformes, billes et gemmes restent identiques
+  // bit à bit — les murs sont des ajouts purs. Chaque pose est suivie d'une
+  // revalidation complète (chainOkWalls) : un mur qui casse un saut requis
+  // est abandonné, jamais publié cassé.
+  function simSpawnWalls(A, chain, balls, tier) {
+    if (tier < 2 || chain.length < 2) return []
+    const share = tier === 2 ? 0.55 : tier === 3 ? 0.55 : tier === 4 ? 0.55 : 0.7
+    const nMax = tier === 5 ? 2 : 1
+    const spiked = tier >= 4
+    if (A.rand() >= share) return []
+    // Candidats : gaps entre plateformes consécutives, assez larges pour une
+    // marge de saut de part et d'autre de la colonne.
+    const spots = []
+    for (let j = 1; j < chain.length; j++) {
+      const a = chain[j - 1], b = chain[j]
+      const ga = a.x + a.w, gap = b.x - ga
+      if (gap >= 3 * CELL) spots.push({ ga, gb: b.x, row: Math.max(a.row, b.row) })
+    }
+    if (!spots.length) return []
+    const walls = []
+    const n = Math.min(A.randi(1, nMax), spots.length)
+    for (let k = 0; k < n && spots.length; k++) {
+      const s = spots.splice(A.randi(0, spots.length - 1), 1)[0]
+      const cells = s.gb - s.ga >= 4 * CELL && A.rand() < 0.35 ? 2 : 1
+      const w = cells * CELL
+      // Colonne centrée dans le gap (marge >= 8 px de chaque côté assurée
+      // par le filtre des candidats + le centre : gap 3 cells -> marge 16 px).
+      const x = Math.round(s.ga + (s.gb - s.ga - w) / 2)
+      // Sommet : niveau de la plateforme la plus basse (l'arc de saut passe
+      // au-dessus) ; un mur nu peut dépasser d'une ligne, jamais un piqué.
+      let row = s.row
+      if (!spiked && row > 0 && A.rand() < 0.4) row--
+      // Pas de bille/gemme dans la zone bloquée (au-dessus du sommet : OK,
+      // c'est le spot high-risk du mur).
+      const topY = rowY(row)
+      if (balls.some(bl => bl.x > x - 14 && bl.x < x + w + 14 && bl.y > topY - 14)) continue
+      const wl = { x, cells, row, kind: 'ground', spiked }
+      // Revalidation avec ce mur : saut requis bloqué -> abandon. Budget de
+      // double saut = celui du jeu (djBudget : 1 par chaîne, pouvoirs défaut).
+      if (!chainOkWalls(chain, walls.concat([wl]), { dj: 1 })) continue
+      walls.push(wl)
+    }
+    return walls
   }
 
   // Génère perTier sections par difficulté. Retourne { patterns, rejected }.
@@ -221,6 +335,10 @@ function generateDefaultPool(opts) {
         // de plateformes/billes ci-dessus restent identiques bit à bit).
         simSpawnGems(A, chain, balls, tier)
 
+        // Murs : APRÈS les gemmes (mêmes garanties — les murs sont des
+        // ajouts purs, jamais un déplacement de ce qui existe).
+        const wallsRaw = simSpawnWalls(A, chain, balls, tier)
+
         const platforms = chain.map(p => {
           const q = {
             x: Math.round(p.x), row: p.row, cells: Math.round(p.w / CELL),
@@ -240,7 +358,8 @@ function generateDefaultPool(opts) {
         })
         let width = CELL
         for (const q of platforms) width = Math.max(width, q.x + q.cells * CELL)
-        patterns.push({
+        for (const q of wallsRaw) width = Math.max(width, q.x + q.cells * CELL)
+        const section = {
           id: 'gen-t' + tier + '-' + (i + 1),
           name: 'T' + tier + ' · ' + (i + 1),
           difficulty: tier,
@@ -249,7 +368,11 @@ function generateDefaultPool(opts) {
           balls: ballsRel,
           decor: [],
           width: width + CELL
-        })
+        }
+        // Murs : champ émis seulement s'il y en a (pool compact, diff de
+        // régénération limité aux patterns réellement murés).
+        if (wallsRaw.length) section.walls = wallsRaw
+        patterns.push(section)
       }
     }
     return { patterns, rejected }

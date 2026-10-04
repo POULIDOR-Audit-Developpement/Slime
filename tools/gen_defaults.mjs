@@ -27,15 +27,18 @@ if (!patterns.length) {
 // Largeur totale et stats par tier
 const byTier = {}
 for (const p of patterns) {
-  byTier[p.difficulty] = byTier[p.difficulty] || { n: 0, plats: 0, balls: 0, gems: 0 }
-  byTier[p.difficulty].n++
-  byTier[p.difficulty].plats += p.platforms.length
-  byTier[p.difficulty].balls += p.balls.length
-  byTier[p.difficulty].gems += p.balls.filter(b => b.gem).length
+  byTier[p.difficulty] = byTier[p.difficulty] || { n: 0, plats: 0, balls: 0, gems: 0, walls: 0, spiked: 0 }
+  const s = byTier[p.difficulty]
+  s.n++
+  s.plats += p.platforms.length
+  s.balls += p.balls.length
+  s.gems += p.balls.filter(b => b.gem).length
+  s.walls += (p.walls || []).length
+  s.spiked += (p.walls || []).filter(w => w.spiked).length
 }
 for (const t of Object.keys(byTier).sort()) {
   const s = byTier[t]
-  console.log(`tier ${t} : ${s.n} sections, ${s.plats} plateformes, ${s.balls} billes (dont ${s.gems} gemmes)`)
+  console.log(`tier ${t} : ${s.n} sections, ${s.plats} plateformes, ${s.balls} billes (dont ${s.gems} gemmes), ${s.walls} murs (dont ${s.spiked} piqués)`)
 }
 console.log(`total : ${patterns.length} sections (rejetées : ${rejected})`)
 
