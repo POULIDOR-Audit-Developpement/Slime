@@ -1014,6 +1014,7 @@ function update_(dt) {
 }
 
 function tap(px, py, touchId) {
+  if (!Sprites.ready) return // chargement : aucune entrée (pas de run en fallback)
   calcView()
   const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
   // Bouton pause (à côté du plein écran) : toggle — marche aussi pour reprendre.
@@ -2002,49 +2003,82 @@ function drawFrameEdges() {
   drawDamageBand(0, VH - 8, VW, 8, null)
 }
 
+// ---------- HUD progression des niveaux ----------
+// Barre « NIVEAUX » (haut centre) : un SEGMENT fin — pas une bulle — divisé
+// en 3 sections colorées (1 vert / 2 rouge / 3 violet foncé), remplies au
+// fil du temps de run (elapsed) ; un niveau terminé reste visible, atténué.
+// Un mini-slime curseur reprend les sprites d'animation du slime courant
+// (idle/jump/fall/land + palier de couleur) et « pousse » le remplissage,
+// miroir rigolo de la vraie boule. Vectoriel pur + 1 drawImage par frame :
+// coût négligeable, aucune régénération de canvas (règles perf AGENTS.md) —
+// les clés réutilisent celles déjà dessinées par drawSlime, donc tickAnimated
+// n'a RIEN de plus à refaire.
+const LVLBAR_N = TRACK_PALETTES.length
+const LVLBAR = { w: 150, h: 5, pad: 1, gap: 2, miniW: 11 }
+// Sections : vert (plaines) / rouge (magma) / violet foncé (manoir).
+const LVLBAR_COLS = [C_GREEN, C_RED, TRACK_PALETTES[2][0] || '#5c3f96']
+
+function drawLevelBar() {
+  if (state !== 'playing') return
+  // Mode TEST : sous la bannière centrale (rectfill VW/2-90, 8, 180, 20).
+  const y = testMode ? 32 : 8
+  const x = VW / 2 - LVLBAR.w / 2
+  rectfill(x, y, LVLBAR.w, LVLBAR.h, C_PANEL2, 1)
+  const inX = x + LVLBAR.pad, inW = LVLBAR.w - 2 * LVLBAR.pad
+  const segW = (inW - (LVLBAR_N - 1) * LVLBAR.gap) / LVLBAR_N
+  for (let i = 0; i < LVLBAR_N; i++) {
+    const f = clamp((elapsed - i * NIVEAU_LEN) / NIVEAU_LEN, 0, 1)
+    if (f <= 0) continue
+    if (f >= 1 && i < LVLBAR_N - 1) alpha(0.55) // niveau terminé : atténué
+    rectfill(inX + i * (segW + LVLBAR.gap), y + LVLBAR.pad, segW * f, LVLBAR.h - 2 * LVLBAR.pad,
+      LVLBAR_COLS[i], 1)
+    alpha(1)
+  }
+  // Curseur mini-slime : même sélection d'animation que drawSlime (mêmes clés
+  // -> aucun surcoût tickAnimated), orienté vers l'avant (la run avance à
+  // droite), pieds au bord bas de la barre (couture AA masquée, cf. drawSlime).
+  const p = clamp(elapsed / (LVLBAR_N * NIVEAU_LEN), 0, 1)
+  const cx = inX + p * inW
+  const feet = y + LVLBAR.h - 1
+  const suffix = tierSuffix(scoreTierIdx())
+  let key
+  if (slime.squashT > 0) key = 'land' + suffix
+  else if (!slime.grounded) key = (slime.vy < 60 ? 'jump' : 'fall') + suffix
+  else key = (Math.floor(T * 3) % 2 ? 'idle0' : 'idle1') + suffix
+  if (Sprites.ready) {
+    if (Sprites.draw(key, cx, feet, LVLBAR.miniW, 1, 1)) return
+    // Variante de couleur absente -> repli sur le sprite de base (jamais invisible).
+    if (Sprites.draw(key.replace(/_t\d+$/, ''), cx, feet, LVLBAR.miniW, 1, 1)) return
+  }
+  circfill(cx, feet - 4, 3.5, tierCol(scoreTierIdx()))
+}
+
 // ---------- HUD vitesse (compact) ----------
-// Jauge « VITESSE » v4 : cadran pré-rendu selon l'état (LENT / MOYEN /
-// RAPIDE / TRÈS RAPIDE — pointes rouges), choisi par quartile de camRatio().
-// Fallback : barre segmentée v3 en escalier (asset gauge_bar) remplie de
-// vert à rouge ; puis mini-arc procédural avec aiguille (ancien style).
+// Jauge « VITESSE » v4 (style planche d'origine, rétablie) : cadran pré-rendu
+// selon l'état (LENT / MOYEN / RAPIDE / TRÈS RAPIDE — pointes rouges), choisi
+// par quartile de camRatio(). Fallbacks : barre segmentée v3 en escalier
+// (asset gauge_bar) remplie de vert à rouge ; puis mini-arc procédural avec
+// aiguille (ancien style).
 // 15 cellules de l'asset gauge_bar (659x91) : [x0, x1, yHaut], bas commun 91.
 const GAUGE_CELLS = [[5, 38, 41], [46, 84, 40], [92, 126, 34], [134, 172, 34], [180, 214, 29], [222, 256, 29], [264, 302, 23], [310, 344, 23], [352, 389, 17], [397, 431, 17], [439, 477, 12], [485, 520, 11], [528, 565, 6], [573, 607, 5], [615, 652, 0]]
 const GAUGE_W = 659, GAUGE_H = 91
 const GAUGE_STATES = ['gaugeSlow', 'gaugeMid', 'gaugeFast', 'gaugeVeryFast']
 
 function drawSpeedGauge(ratio) {
-  // Primaire (style planche v3) : panneau arrondi + icône flèche + barre
-  // segmentée remplie selon la vitesse caméra + lecture « V: NN ». Les
-  // cadrans v4 puis l'arc procédural restent en fallback.
-  const bar = Sprites.get('gaugeBar'), arrow = Sprites.get('speedArrow')
-  if (bar && bar.width && arrow && arrow.width) {
-    rectfill(VW - 102, 8, 94, 30, C_PANEL2, 6)
-    rect(VW - 102, 8, 94, 30, C_BLACK, 2)
-    Sprites.drawImage('speedArrow', VW - 96, 12, 16)
-    const bw = 54, bh = 9, bx = VW - 76, by = 12
-    Sprites.drawImage('gaugeBar', bx, by, bw)
-    const filled = Math.round(ratio * GAUGE_CELLS.length)
-    for (let i = 0; i < filled; i++) {
-      const c = GAUGE_CELLS[i]
-      const col = i < 7 ? C_SLIME : i < 11 ? C_ORANGE : C_RED
-      rectfill(bx + c[0] / GAUGE_W * bw + 0.5, by + c[2] / GAUGE_H * bh + 0.4,
-        (c[1] - c[0]) / GAUGE_W * bw - 1, (GAUGE_H - c[2]) / GAUGE_H * bh - 0.8, col)
-    }
-    textsize(7)
-    textalign('start', 'top')
-    text(bx, 25, 'V: ' + Math.round(camSpd), C_WHITE)
-    return
-  }
+  // Primaire (sprite d'origine) : cadran peint choisi par quartile de
+  // camRatio + étiquette « VITESSE ». Barre v3 puis arc procédural restent
+  // en fallback si les cadrans manquent.
   const gkey = GAUGE_STATES[Math.min(3, Math.max(0, Math.floor(ratio * 4)))]
   const dial = Sprites.get(gkey)
   if (dial && dial.width) {
     textsize(7)
+    textalign('start', 'top')
     text(VW - 70, 18, I18N.t('speed'), C_WHITE)
     const dh = 22, dw = dh * dial.width / dial.height
     Sprites.drawImage(gkey, VW - 8 - dw, 10, dw)
   } else {
-    const bar = Sprites.get('gaugeBar')
-    if (bar && bar.width) {
+    const bar = Sprites.get('gaugeBar'), arrow = Sprites.get('speedArrow')
+    if (bar && bar.width && arrow && arrow.width) {
       textsize(7)
       text(VW - 70, 18, I18N.t('speed'), C_WHITE)
       Sprites.drawImage('speedArrow', VW - 70, 26, 12)
@@ -2673,8 +2707,29 @@ function draw() {
   diagDnMs += performance.now() - t0
 }
 
+// Écran de chargement : affiché tant que les sprites PNG ne sont pas prêts
+// (Sprites.ready) — un écran sobre à la place des fallbacks vectoriels qui
+// s'affichaient puis « sautaient » vers les sprites (états à moitié chargés
+// qui brouillaient captures et tests). Vectoriel pur : 1 rectfill + 1 texte.
+function drawLoading() {
+  calcView()
+  const c = ctx()
+  c.setTransform(VSC, 0, 0, VSC, VOX, VOY)
+  rectfill(-2, -2, VW + 4, VH + 4, C_BLACK)
+  textalign('center', 'middle')
+  textsize(12)
+  text(VW / 2, VH / 2, I18N.t('loading'), C_WHITE, 'bold')
+  textalign('start', 'top')
+}
+
 function draw_() {
   if (diagFps || diagProf) diagDrs++
+  // Sprites pas prêts : écran de chargement sobre, ni sim ni entrées —
+  // jamais d'état à moitié chargé à l'écran (cf. drawLoading).
+  if (!Sprites.ready) {
+    drawLoading()
+    return
+  }
   const q0 = diagProf ? performance.now() : 0
   // Effets de couleur animés (rainbow/brillant/étoilé) : ~10 fps, coût nul
   // si aucun palier animé. Le temps de jeu T les ralentit en bullet-time.
@@ -2725,6 +2780,7 @@ function draw_() {
     drawFrameEdges()
     if (state === 'playing' && !runStarted) drawReadyHint()
     drawHUD()
+    drawLevelBar()
   } else {
     // Titre : espace vue (le parallax de fond défile via camX).
     drawTitle()

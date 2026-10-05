@@ -709,16 +709,16 @@ function driverFn() {
     check('slider : tap à mi-piste -> vol 0.5 persisté',
       Music.vol === 0.5 && localStorage.getItem('slime_vol') === '0.5')
     check('slider : pas de lancement de run (toujours titre)', state === 'title')
-    // jauge vitesse : panneau flèche + barre segmentée + lecture V:
+    // jauge vitesse : cadran peint (sprite d'origine) choisi par quartile
     calls2.length = 0
     window._texts.length = 0
     window._fills.length = 0
     drawSpeedGauge(0.7)
-    check('vitesse : icône speedArrow dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'speedArrow').length === 1)
-    check('vitesse : barre gaugeBar dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'gaugeBar').length === 1)
-    check('vitesse : 70% -> 11 cellules colorées (vert/orange/rouge)',
-      window._fills.filter(a => a[4] === C_SLIME || a[4] === C_ORANGE || a[4] === C_RED).length === 11)
-    check('vitesse : lecture V: affichée', window._texts.some(t => String(t).startsWith('V:')))
+    check('vitesse : cadran gaugeFast dessiné (70% -> quartile 2)',
+      calls2.filter(c => c[0] === 'img' && c[1] === 'gaugeFast').length === 1)
+    check('vitesse : étiquette VITESSE affichée', window._texts.some(t => String(t) === I18N.t('speed')))
+    check('vitesse : fallbacks flèche/barre non dessinés',
+      calls2.filter(c => c[0] === 'img' && (c[1] === 'speedArrow' || c[1] === 'gaugeBar')).length === 0)
     Sprites.drawSrc = oDS2; Sprites.drawImage = oDI2
     state = 'playing'
   }

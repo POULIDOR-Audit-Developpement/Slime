@@ -164,7 +164,7 @@ const Sprites = (() => {
         if (++loaded >= keys.length) ready = true
       }
       im.onerror = () => { loaded++ }
-      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261001d'
+      im.src = 'ASSETS/sprites/game/' + defs[k] + '.png?v=20261005a'
       imgs[k] = im
     }
   }
