@@ -78,11 +78,21 @@ const beforeW = {}
 for (const p of poolW) beforeW[p.id] = Patterns.weightOf(p, 200)
 let last2 = { x: 16, row: 2, y: rowY(2), w: 5 * CELL }
 const drawnPats = []
-for (let i = 0; i < 12 && drawnPats.length < 2; i++) {
+for (let i = 0; i < 200 && drawnPats.length < 2; i++) {
   const sec = Patterns.spawnSection(last2, 200)
-  const sig = sec.platforms.map(p => p.type + Math.round(p.w / 32)).join('-')
-  const pat = sigMap[sig]
-  if (pat && pat.id !== (drawnPats[0] && drawnPats[0].id)) drawnPats.push(pat)
+  // Section de sécurité : retournée sans tirage (aucun pattern validé),
+  // elle n'entre pas dans l'historique interne — neutre, on l'ignore.
+  const isSafety = sec.platforms.length === 1 && sec.platforms[0].safety
+  if (!isSafety) {
+    const sig = sec.platforms.map(p => p.type + Math.round(p.w / 32)).join('-')
+    const pat = sigMap[sig]
+    // La chaîne du test ne vaut que si CHAQUE tirage validé est reconnu :
+    // un tirage hors mapping s'intercale dans l'historique interne et
+    // décale les pénalités (A tiré, X non reconnu, B -> A ×0.3, pas ×0.2).
+    // On repart de zéro plutôt que de conclure sur une paire non contiguë.
+    if (!pat) drawnPats.length = 0
+    else if (!drawnPats.length || pat.id !== drawnPats[drawnPats.length - 1].id) drawnPats.push(pat)
+  }
   last2 = sec.platforms[sec.platforms.length - 1] || last2
 }
 check('2 patterns distincts tirés', drawnPats.length === 2)
