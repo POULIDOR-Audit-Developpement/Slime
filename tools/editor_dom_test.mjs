@@ -333,22 +333,32 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   check('vue pleine page COULEURS : titre + boutons', ch.includes('Couleurs du slime') && ch.includes('btnAddTier') && ch.includes('btnApplyColors') && ch.includes('btnResetColors'))
   check('6 paliers par défaut rendus', (ch.match(/tierRow/g) || []).length === 6)
   check('palier 0 verrouillé (inputs disabled)', ch.includes('id="tc_hex_0"') && /id="tc_min_0"[^>]*disabled/.test(ch))
-  check('les autres paliers sont éditables', !/id="tc_min_1"[^>]*disabled/.test(ch))
-  // AJOUT : le 7e palier doit apparaître immédiatement
+  // Seuils AUTOMATIQUES : plus édités (tous désactivés), dérivés en échelle
+  // log — premier palier à la base (100), sommet au score prédit d'une run
+  // complète de 9 min (pool + caméra courants).
+  check('seuils automatiques : min désactivés sur tous les paliers', [1, 2, 3, 4, 5].every(i => new RegExp('id="tc_min_' + i + '"[^>]*disabled').test(ch)))
+  const maxPts = Math.round(Patterns.runPrediction(540).avg)
+  check('seuil auto : premier palier = base log (100)', new RegExp('value="100"[^>]*id="tc_min_1"').test(ch))
+  check('seuil auto : sommet = run 9 min prédite', new RegExp('value="' + maxPts + '"[^>]*id="tc_min_5"').test(ch))
+  // AJOUT : le 7e palier doit apparaître immédiatement (et l'échelle se
+  // redériver sur 0 -> maxPts avec 7 paliers)
   els.btnAddTier.handlers.click()
   const ch1 = els.props.innerHTML
   check('+ Ajouter : 7e palier rendu', (ch1.match(/tierRow/g) || []).length === 7)
   check('+ Ajouter : input du 7e palier présent', ch1.includes('id="tc_min_6"') && ch1.includes('id="tc_del_6"'))
-  // édition du seuil : brouillon dirty, stockage intact
-  els['tc_min_6'].value = '1000'
-  els['tc_min_6'].handlers.input()
-  check('seuil édité -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
-  check('seuil édité -> stockage inchangé', localStorage.getItem('slime_tiers') === null)
-  // APPLIQUER -> 7 paliers persistés
+  check('+ Ajouter : échelle redérivée (sommet toujours la run prédite)', new RegExp('value="' + maxPts + '"[^>]*id="tc_min_6"').test(ch1))
+  // édition d'une COULEUR : brouillon dirty, stockage intact (les seuils ne
+  // sont plus éditables — source de dirty = couleurs/effets uniquement)
+  els['tc_hex_1'].value = '#123456'
+  els['tc_hex_1'].handlers.input()
+  check('couleur éditée -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
+  check('couleur éditée -> stockage inchangé', localStorage.getItem('slime_tiers') === null)
+  // APPLIQUER -> 7 paliers persistés AVEC l'échelle auto dérivée
   els.btnApplyColors.handlers.click()
   const saved7 = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
   check('appliquer -> 7 paliers en stockage', saved7.length === 7)
-  check('appliquer -> seuil 1000 persisté', saved7.some(t => t.min === 1000))
+  check('appliquer -> échelle auto persistée (premier = base, sommet = run prédite)',
+    saved7[1].min === SlimeColors.TIER_LOG_BASE && saved7[saved7.length - 1].min === maxPts)
   check('appliquer -> bouton plus dirty', !els.btnApplyColors.classList.contains('dirty'))
   check('appliquer -> message succès', els.status.textContent === 'Couleurs appliquées au jeu')
   // re-rendu depuis le stockage : les 7 paliers sont bien là
@@ -376,8 +386,6 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   els['tc_h_6_2'].value = '#00ff00'
   els['tc_h_6_2'].handlers.input()
   check('3e couleur éditée -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
-  els['tc_min_6'].value = '1000'
-  els['tc_min_6'].handlers.input()
   els.btnApplyColors.handlers.click()
   const sg = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
   check('dégradé persisté (3 stops)', sg.some(t => t.type === 'gradient' && t.hexes.length === 3 && t.hexes[2] === '#00ff00'))

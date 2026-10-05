@@ -145,6 +145,78 @@ const Patterns = (() => {
     return w + CELL
   }
 
+  // ---------- scoring ----------
+  // Valeurs des collectibles en UN seul endroit : le jeu (game.js : score
+  // courant + théorique anti-triche) et l'éditeur (points par pattern,
+  // fourchette prédictive) lisent la même source — un total affiché en
+  // éditeur est donc exactement celui compté en jeu.
+  // gold : GOLD_PTS (physics.js, partagé jeu/éditeur/outils).
+  const PTS = { ball: 10, gold: GOLD_PTS, life: 30, gem: 250 }
+
+  // Points total d'un pattern = somme de ses collectibles (bille 10 / or 50 /
+  // bonus vie 30 / gemme 250). Priorité identique à l'instanciation et au
+  // ramassage côté jeu (gem > gold > life > ball).
+  function patternPoints(p) {
+    let pts = 0
+    for (const b of (p && p.balls) || []) pts += b.gem ? PTS.gem : (b.gold ? PTS.gold : (b.life ? PTS.life : PTS.ball))
+    return pts
+  }
+
+  // Stats du pool réellement joué (pool utilisateur, sinon défauts — même
+  // règle que currentPool) : min / moyenne / max de points par pattern,
+  // écart-type (sd), total et largeur moyenne (pour estimer le nombre de
+  // sections d'une run).
+  function poolPointsStats() {
+    const user = store && store.patterns
+    const pool = (user && user.length ? user : defaults()) || []
+    if (!pool.length) return { n: 0, min: 0, avg: 0, max: 0, sd: 0, total: 0, avgW: 0 }
+    let min = Infinity, max = 0, total = 0, wSum = 0
+    for (const p of pool) {
+      const pts = patternPoints(p)
+      if (pts < min) min = pts
+      if (pts > max) max = pts
+      total += pts
+      wSum += patternWidth(p)
+    }
+    const avg = total / pool.length
+    let varSum = 0
+    for (const p of pool) { const d = patternPoints(p) - avg; varSum += d * d }
+    return { n: pool.length, min, max, avg, sd: Math.sqrt(varSum / pool.length), total, avgW: wSum / pool.length }
+  }
+
+  // Prédiction de score pour une run de T s (défaut 540 = 9 min) : part
+  // distance EXACTE (rampe caméra camBase -> camMax sur camRampDur, / 10
+  // comme currentScore) + collectibles estimés (nombre de sections ≈
+  // distance parcourue / largeur moyenne, × points du pattern).
+  // - min/max : bornes EXTRÊMES du tirage (toutes les sections au pire /
+  //   au meilleur pattern) — jamais atteint sur une vraie run.
+  // - lo/hi : bande RÉALISTE (~90 % des runs) = moyenne ± 1,645·σ·√n
+  //   (théorème central limite, clampée aux extrêmes) — c'est ELLE qu'on
+  //   cherche à resserrer pour neutraliser le RNG entre joueurs.
+  // Ordre de grandeur indicatif : le tirage réel est pondéré (difficulté,
+  // fenêtres de tier, anti-répétition) et chaque instance est revalidée.
+  function runPrediction(T) {
+    T = Math.max(0, +T || 0) || 540
+    const ph = Phys.phys()
+    const cb = ph.camBase, cm = Math.max(ph.camMax, ph.camBase), rd = Math.max(1, ph.camRampDur)
+    const ramp = Math.min(T, rd)
+    let px = cb * ramp + (cm - cb) * ramp * ramp / (2 * rd)
+    if (T > rd) px += cm * (T - rd)
+    const distPts = Math.floor(px / 10)
+    const s = poolPointsStats()
+    const n = s.avgW > 0 ? px / s.avgW : 0
+    const collectMin = Math.round(n * s.min), collectAvg = Math.round(n * s.avg), collectMax = Math.round(n * s.max)
+    const spread = s.n > 1 ? 1.645 * s.sd * Math.sqrt(n) : 0
+    const collectLo = Math.round(Math.max(collectMin, collectAvg - spread))
+    const collectHi = Math.round(Math.min(collectMax, collectAvg + spread))
+    return {
+      distPts, patterns: n,
+      collectMin, collectAvg, collectMax, collectLo, collectHi,
+      min: distPts + collectMin, avg: distPts + collectAvg, max: distPts + collectMax,
+      lo: distPts + collectLo, hi: distPts + collectHi
+    }
+  }
+
   function entryRow(p) {
     const r = p.entry && p.entry.row != null ? p.entry.row : (p.platforms[0] ? p.platforms[0].row : 2)
     return clampN(r | 0, 0, 4)
@@ -799,6 +871,7 @@ const Patterns = (() => {
     usingDefaults, installDefaults, resetUser,
     defaults, sortPool, validatePattern, validatePatternJumps,
     UNLOCK_T, typeUnlockOk, weightOf,
+    PTS, patternPoints, poolPointsStats, runPrediction,
     patternWidth, entryRow, emptyPattern, uid,
     instantiate, jumpOk, targetOf,
     spawnSection, pin, getPinned,

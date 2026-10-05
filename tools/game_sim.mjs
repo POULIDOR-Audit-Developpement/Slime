@@ -24,6 +24,7 @@ const _vib = []        // appels navigator.vibrate (haptique)
 const _texts = []      // chaînes passées à text() (lectures HUD)
 const _fills = []      // args de rectfill (cellules de jauge HUD)
 const docHandlers = {} // listeners document (visibilitychange -> auto-pause)
+const winHandlers = {} // listeners window (storage, focus, keydown Espace)
 const ctxStub = () => {
   const c = {}
   const grad = { addColorStop: noop }
@@ -55,7 +56,7 @@ const litecanvasStubs = {
   localStorage: (() => { const s = {}; return {
     getItem: k => s[k] ?? null, setItem: (k, v) => { s[k] = String(v) }, removeItem: k => { delete s[k] }
   } })(),
-  window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: noop },
+  window: { location: { search: '' }, innerHeight: 540, innerWidth: 960, addEventListener: (t, fn) => { (winHandlers[t] = winHandlers[t] || []).push(fn) } },
   navigator: { userAgent: 'node', vibrate: p => _vib.push(p) },
   document: {
     documentElement: {},
@@ -78,6 +79,7 @@ const litecanvasStubs = {
 // accès driver : enregistreurs exposés sur les stubs (objets par référence)
 litecanvasStubs.navigator._vib = _vib
 litecanvasStubs.document._handlers = docHandlers
+litecanvasStubs.window._handlers = winHandlers
 litecanvasStubs.window._texts = _texts
 litecanvasStubs.window._fills = _fills
 
@@ -104,6 +106,14 @@ function driverFn() {
     POWERS.slowmo.scale === 0.05 && POWERS.slowmo.duration === 2 &&
     POWERS.ledge.pullT === 0.3 && POWERS.ledge.window === 5)
   check('slime.r = 11 (défaut réduit)', slime.r === 11)
+  // Échelle auto des couleurs : seuils dérivés au boot (init -> rescaleTiers)
+  // — premier palier à la base log (100), sommet au score prédit d'une run
+  // complète de 9 min (meilleure slime en fin de run à bonne collecte).
+  check('paliers : premier seuil = base log (100)', TIERS.length > 1 && TIERS[1].min === SlimeColors.TIER_LOG_BASE)
+  check('paliers : sommet = score prédit 9 min (' + Patterns.runPrediction().avg + ')',
+    TIERS[TIERS.length - 1].min === Patterns.runPrediction().avg)
+  check('paliers : top couleur atteint au score prédit',
+    SlimeColors.tierIndex(TIERS, Patterns.runPrediction().avg) === TIERS.length - 1)
 
   // --- 1) saut visé vers le haut-droite (distance moyenne) ---
   {
@@ -690,6 +700,37 @@ function driverFn() {
     check('pause : repris pour la suite', paused === false)
   }
 
+  // --- 16b) clavier PC : Espace multi-usage — titre -> start, jeu <-> pause,
+  // over après délai -> rejoue. Le handler est enregistré par game.js sur
+  // window (stub enregistreur) ; on dispatche des événements factices.
+  {
+    const key = ev => { for (const fn of (window._handlers.keydown || [])) fn(ev) }
+    const sp = rep => ({ code: 'Space', key: ' ', repeat: !!rep, target: { tagName: 'BODY' }, preventDefault: () => {} })
+    startGame(); state = 'title'
+    key(sp())
+    check('clavier : espace au titre -> startGame', state === 'playing')
+    key(sp())
+    check('clavier : espace en jeu -> pause', paused === true)
+    const camK0 = camX, elK0 = elapsed
+    update(1 / 60)
+    check('clavier : pause -> simulation gelée', camX === camK0 && elapsed === elK0)
+    key(sp())
+    check('clavier : espace en pause -> reprise', paused === false)
+    key(sp(true))
+    check('clavier : e.repeat ignoré (pas de re-toggle)', paused === false)
+    die() // score nul ici : aucune modal contact
+    check('clavier : état over prêt', state === 'over')
+    key(sp())
+    check('clavier : espace over pendant le délai -> rien', state === 'over')
+    deathT = OVER_DELAY + 0.8
+    key(sp())
+    check('clavier : espace over après délai -> rejoue', state === 'playing')
+    // Frappe dans un champ (modal contact) : l'espace ne touche pas au jeu.
+    const evIn = sp(); evIn.target = { tagName: 'INPUT' }
+    key(evIn)
+    check('clavier : espace dans un input ignoré', paused === false && state === 'playing')
+  }
+
   // --- 17) son (sprites + slider) et jauge vitesse (style planche v3) ---
   {
     state = 'title'
@@ -709,16 +750,16 @@ function driverFn() {
     check('slider : tap à mi-piste -> vol 0.5 persisté',
       Music.vol === 0.5 && localStorage.getItem('slime_vol') === '0.5')
     check('slider : pas de lancement de run (toujours titre)', state === 'title')
-    // jauge vitesse : panneau flèche + barre segmentée + lecture V:
+    // jauge vitesse : cadran peint (sprite d'origine) choisi par quartile
     calls2.length = 0
     window._texts.length = 0
     window._fills.length = 0
     drawSpeedGauge(0.7)
-    check('vitesse : icône speedArrow dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'speedArrow').length === 1)
-    check('vitesse : barre gaugeBar dessinée', calls2.filter(c => c[0] === 'img' && c[1] === 'gaugeBar').length === 1)
-    check('vitesse : 70% -> 11 cellules colorées (vert/orange/rouge)',
-      window._fills.filter(a => a[4] === C_SLIME || a[4] === C_ORANGE || a[4] === C_RED).length === 11)
-    check('vitesse : lecture V: affichée', window._texts.some(t => String(t).startsWith('V:')))
+    check('vitesse : cadran gaugeFast dessiné (70% -> quartile 2)',
+      calls2.filter(c => c[0] === 'img' && c[1] === 'gaugeFast').length === 1)
+    check('vitesse : étiquette VITESSE affichée', window._texts.some(t => String(t) === I18N.t('speed')))
+    check('vitesse : fallbacks flèche/barre non dessinés',
+      calls2.filter(c => c[0] === 'img' && (c[1] === 'speedArrow' || c[1] === 'gaugeBar')).length === 0)
     Sprites.drawSrc = oDS2; Sprites.drawImage = oDI2
     state = 'playing'
   }
