@@ -10,6 +10,7 @@
 #   js/ranking.js      JS du classement (chargé uniquement par decode.html)
 #   tools/             générateurs + tests Node
 #   docs/              specs internes
+#   .superpowers/      state interne des sessions agents (tokens, pids)
 #   AGENTS.md          règles agents/workflow (interne)
 #   README.md          documentation interne (LAN, éditeur, tests)
 #   ASSETS/planches/   planches sources (seules sprites/ et music/ servent en jeu)
@@ -21,7 +22,7 @@
 # mettre les patterns en ligne à jour : commit + push sur main.
 [build]
   publish = "."
-  command = "rm -rf editor.html decode.html server.mjs js/editor.js js/ranking.js tools docs AGENTS.md README.md ASSETS/planches"
+  command = "rm -rf editor.html decode.html server.mjs js/editor.js js/ranking.js tools docs AGENTS.md README.md ASSETS/planches .superpowers"
 
 # HTML jamais cachés : un push sur main est visible immédiatement.
 [[headers]]
