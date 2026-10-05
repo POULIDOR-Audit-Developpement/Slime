@@ -43,7 +43,7 @@ function drawOuterFrame() {
   c.fillRect(0, 0, W, H)
   c.restore()
 }
-const VERSION = '5.0'
+const VERSION = '5.1'
 // Murs de damage latéraux issus du layout éditable (onglet VUE de l'éditeur).
 // Plus de plafond : le haut du monde est ouvert (grands sauts autorisés).
 let WALL = { left: WALL_DEF.left, right: WALL_DEF.right }
