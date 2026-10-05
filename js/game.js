@@ -126,10 +126,13 @@ function applyLayout() {
 }
 
 // Recharge le stockage (éditeur ouvert dans un autre onglet) et ré-applique
-// tout le layout en cours de partie : physique, pouvoirs, vue, murs, pool.
+// tout le layout en cours de partie : physique, pouvoirs, vue, murs, pool —
+// et re-dérive l'échelle des paliers (elle dépend de la vitesse caméra et
+// du pool via le score prédit).
 function refreshLayout() {
   Patterns.load()
   applyLayout()
+  rescaleTiers()
 }
 
 const COLORS = [
@@ -224,13 +227,24 @@ const NIVEAU_FORCE = (() => {
 })()
 const NIVEAU_LEN = 180 // ~3 min par piste BGM (durée des mp3) : décalage/niveau
 
-// ---------- Paliers score -> couleur (éditables dans settings.html) ----------
+// ---------- Paliers score -> couleur (couleurs éditables, seuils AUTO) ----------
 // La couleur du slime dépend du score courant (plus de la vie). Tier 0 = art
 // d'origine (vert) ; les teintes suivantes sont recolorées au chargement.
+// Les SEUILS ne sont plus édités : échelle logarithmique recalculée
+// (rescaleTiers) entre 100 pts et le score prédit d'une run complète de
+// 9 min avec bonne collecte (Patterns.runPrediction().avg) — la meilleure
+// slime tombe en fin de run complète, et ajouter une couleur redescend
+// automatiquement l'échelle sur 0 -> maxPts.
 // Pour les fallbacks procéduraux, chaque palier pousse 3 entrées en fin de
 // palette (teinte / claire / sombre) installées par applyTiers() dans init().
 const TIERS = SlimeColors.load()
 let C_TIER = 0
+
+// Recalcule les seuils log des paliers (en place) d'après le score prédit
+// d'une run complète : pool courant + physique courante (vitesse caméra).
+function rescaleTiers() {
+  SlimeColors.applyLogMins(TIERS, Patterns.runPrediction().avg)
+}
 
 function applyTiers() {
   if (C_TIER) COLORS.length = C_TIER
@@ -256,6 +270,7 @@ function refreshTiers() {
   if (JSON.stringify(nt) === JSON.stringify(TIERS)) return
   TIERS.length = 0
   for (const t of nt) TIERS.push(t)
+  rescaleTiers() // les seuils restent dérivés (log 0 -> run prédite)
   applyTiers()
   Sprites.setTiers(nt)
 }
@@ -302,6 +317,14 @@ function buzz(pattern) {
 }
 // Pause : gèle TOUTE la simulation (update) ; draw_ superpose le voile.
 let paused = false
+// Bascule pause/reprise, partagée par le bouton tactile ET le clavier
+// (Espace). Reprise d'une sortie involontaire du plein écran : retour plein
+// écran dans le même geste (webkitEnterFullscreen iOS exige un geste
+// utilisateur — un keydown en est un aussi).
+function togglePause() {
+  if (paused && fsReenterArmed) { fsReenterArmed = false; fsEnterVideo() }
+  paused = !paused
+}
 let volDrag = null // touchId en train de glisser le slider de volume
 // Slider volume (titre + voile pause) : piste 38..80 en coordonnées vue.
 const VOL_X0 = 38, VOL_W = 42
@@ -327,9 +350,11 @@ const AIM_SENS = 1.1
 const CAM_PALIER_S = 10
 let aimPad = null
 let ballsCollected = 0, goldsCollected = 0, bonusCollected = 0, scoreCode = null, deathT = 0, shakeT = 0, copiedT = 0
-// Gemme high-risk (spec 2026-09-30) : scoring côté jeu (GOLD_PTS vit dans
-// physics.js, mais la gemme n'y a pas sa place — pur scoring).
-const GEM_PTS = 250
+// Gemme high-risk (spec 2026-09-30) : scoring côté jeu — les VALEURS des
+// collectibles (bille 10 / or GOLD_PTS / vie 30 / gemme 250) vivent dans
+// Patterns.PTS (patterns.js) : le théorique anti-triche, l'éditeur (points
+// par pattern, fourchette prédictive) et le jeu lisent la même source.
+const GEM_PTS = Patterns.PTS.gem
 // Anti-triche : points théoriques spawnés (bille 10 / or 50 / bonus 30) et
 // nombre de sections jouées — embarqués dans le code signé v3 à la mort.
 let theoPts = 0, patternsSpawned = 0
@@ -349,7 +374,7 @@ const CONTACT = typeof Contact !== 'undefined' ? Contact : null
 
 function slimeR() { return PH().slimeR }
 function slimeDrawW() { return SLIME_DRAW_W * (slimeR() / 18) }
-function currentScore() { return Math.floor(camX / 10) + ballsCollected * 10 + goldsCollected * GOLD_PTS + bonusCollected * 30 + gemsCollected * GEM_PTS }
+function currentScore() { return Math.floor(camX / 10) + ballsCollected * Patterns.PTS.ball + goldsCollected * Patterns.PTS.gold + bonusCollected * Patterns.PTS.life + gemsCollected * GEM_PTS }
 function camRatio() {
   const P = PH()
   return clamp((camSpd - P.camBase) / Math.max(1, P.camMax - P.camBase), 0, 1)
@@ -402,8 +427,8 @@ function spawnNext() {
   for (const b of sec.balls) {
     balls.push(b)
     // Théorique anti-triche : tout collectible spawné compte dans le total
-    // possible (mêmes valeurs que currentScore : 10 / GOLD_PTS / 30 / GEM_PTS).
-    theoPts += b.gem ? GEM_PTS : (b.gold ? GOLD_PTS : (b.life ? 30 : 10))
+    // possible (mêmes valeurs que currentScore : Patterns.PTS).
+    theoPts += b.gem ? GEM_PTS : (b.gold ? GOLD_PTS : (b.life ? Patterns.PTS.life : Patterns.PTS.ball))
   }
   for (const d of sec.decor) decors.push(d)
   for (const wl of sec.walls || []) wallsArr.push(wl)
@@ -1019,8 +1044,7 @@ function tap(px, py, touchId) {
   const vx = (px - VOX) / VSC, vy = (py - VOY) / VSC
   // Bouton pause (à côté du plein écran) : toggle — marche aussi pour reprendre.
   if (state === 'playing' && vx >= VW - 56 && vx <= VW - 36 && vy <= 26) {
-    if (paused && fsReenterArmed) { fsReenterArmed = false; fsEnterVideo() } // reprise = retour plein écran dans le geste
-    paused = !paused; return
+    togglePause(); return
   }
   // Slider de volume : sur le titre, et DANS la pause (régler sans reprendre).
   if ((state === 'title' || paused) && vx >= 30 && vx <= 88 && vy <= 24) {
@@ -1029,13 +1053,7 @@ function tap(px, py, touchId) {
     return
   }
   // En pause, tout autre appui reprend — sans déclencher de visée/saut.
-  // Reprise d'une sortie involontaire du plein écran : retour dans le geste
-  // (webkitEnterFullscreen exige un geste utilisateur — c'est le cas ici).
-  if (paused) {
-    if (fsReenterArmed) { fsReenterArmed = false; fsEnterVideo() }
-    paused = false
-    return
-  }
+  if (paused) { togglePause(); return }
   if ((state === 'title' || state === 'over') && langTapped(vx, vy)) return
   if (vx < 30 && vy < 24) { Music.toggle(); return }
   // Bouton EFFETS (titre) : bascule effets réduits (persisté).
@@ -2872,6 +2890,7 @@ function init() {
   if (st === 'recupere') console.warn('SLIME : stockage illisible — backup restauré')
   else if (st === 'invalide' || st === 'corrompu') console.warn('SLIME : stockage illisible — réglages par défaut utilisés')
   applyLayout()
+  rescaleTiers() // seuils des couleurs : log 0 -> score prédit (pool + caméra courants)
   setupTestMode()
   Music.restore()
   if (NIVEAU_FORCE >= 0) Music.setStart(NIVEAU_FORCE) // « Tester niveau » : la run démarre sur bgmN
@@ -2888,5 +2907,24 @@ function init() {
     })
     window.addEventListener('focus', () => { refreshLayout(); refreshTiers() })
     if (Patterns.lanOnChange) Patterns.lanOnChange(refreshLayout)
+    // Clavier PC — Espace multi-usage : lance au titre, pause/reprise en jeu,
+    // rejoue sur l'écran de fin (même garde d'affichage que les boutons).
+    // Jamais pendant la frappe (modal contact) ni avec la modal ouverte.
+    window.addEventListener('keydown', e => {
+      if (!e || e.repeat) return
+      if (e.code !== 'Space' && e.key !== ' ' && e.key !== 'Spacebar') return
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      try {
+        if (document.querySelector && document.querySelector('.slime-modal')) return
+      } catch (e2) {}
+      e.preventDefault()
+      if (state === 'title') { startGame(); return }
+      if (state === 'over') {
+        if (deathT >= OVER_DELAY + 0.7) startGame()
+        return
+      }
+      if (state === 'playing') togglePause()
+    })
   } catch (e) {}
 }

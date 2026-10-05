@@ -87,6 +87,20 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
 
   const fmtTime = s => { const t = Math.max(0, Math.floor(+s || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') }
 
+  // Plafond de points distance pour t s de jeu : rampe caméra PAR DÉFAUT du
+  // layout (50 -> 250 px/s sur 540 s, intégrée en continu puis palier),
+  // divisée par 10 comme currentScore côté jeu. decode ne connaît pas le
+  // layout de la run : un layout édité (PHYS) peut déplacer le plafond — on
+  // reste sur les défauts, d'où le statut de plafond indicatif.
+  const CAM_DEF = { base: 50, max: 250, ramp: 540 }
+  function maxDistPts(t) {
+    t = Math.max(0, +t || 0)
+    const r = Math.min(t, CAM_DEF.ramp)
+    let px = CAM_DEF.base * r + (CAM_DEF.max - CAM_DEF.base) * r * r / (2 * CAM_DEF.ramp)
+    if (t > CAM_DEF.ramp) px += CAM_DEF.max * (t - CAM_DEF.ramp)
+    return Math.floor(px / 10)
+  }
+
   function show(kind, html) { res.className = kind; res.innerHTML = html }
 
   // Vérifie un code et l'ajoute au classement. Renvoie true si valide.
@@ -115,11 +129,12 @@ tr:first-child td.sc{color:#fff;background:#8f6a0f;border-radius:3px}
     bits.push('Contact : <b>' + (entry.contact ? esc(entry.contact) : '— (pas de contact)') + '</b>')
     // Stats anti-triche (code v3) : le jeu embarque les points théoriques
     // (collectibles spawnés) et le nb de patterns joués. Le « possible »
-    // affiché est le VRAI plafond — collectibles + distance max (caméra à
-    // fond du départ = 40 pts/s par défaut) — pour qu'un score honnête
-    // vérifie toujours score ≤ possible à la lecture comme au calcul.
+    // affiché est le VRAI plafond — collectibles + distance max avec la
+    // rampe caméra PAR DÉFAUT (35 -> 400 px/s sur 540 s, formule continue
+    // du jeu ; decode ne connaît pas le layout de la run, on reste sur un
+    // plafond) — pour qu'un score honnête vérifie toujours score ≤ possible.
     if (out.v === 3) {
-      const maxDist = 40 * Math.max(0, entry.elapsed)
+      const maxDist = maxDistPts(entry.elapsed)
       const maxPossible = out.theo + maxDist
       bits.push('Possible : <b>' + maxPossible + '</b> pts max (' + out.theo + ' collectibles + ' + maxDist + ' distance) · patterns : <b>' + out.patterns + '</b>')
       if (out.score > maxPossible) {

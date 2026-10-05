@@ -1,8 +1,9 @@
-// Smoke test Node : charge physics + patterns et simule une partie complète.
+// Smoke test Node : charge physics + slime-colors + patterns et simule une partie complète.
 import { readFileSync } from 'fs'
 
 const src = [
   'js/physics.js',
+  'js/slime-colors.js',
   'js/patterns-defaults.js',
   'js/patterns.js'
 ].map(f => readFileSync(new URL('../' + f, import.meta.url), 'utf8')).join('\n')
@@ -15,8 +16,8 @@ global.localStorage = {
 }
 global.window = { location: { search: '' } }
 
-const api = new Function(src + '\nreturn { Patterns, Phys, rowY, CELL }')()
-const { Patterns, Phys, rowY, CELL } = api
+const api = new Function(src + '\nreturn { Patterns, Phys, SlimeColors, rowY, CELL }')()
+const { Patterns, Phys, SlimeColors, rowY, CELL } = api
 
 let fails = 0
 const check = (name, cond) => { if (!cond) { fails++; console.log('FAIL', name) } }
@@ -28,6 +29,66 @@ const defs = Patterns.defaults()
 check('pool par défaut >= 30 sections', defs.length >= 30)
 check('default pool valide', defs.every(p => Patterns.validatePattern(p).length === 0))
 check('chaînage interne valide', defs.every(p => Patterns.validatePatternJumps(p).ok))
+
+// 1b. Scoring centralisé (Patterns.PTS) : points par pattern, stats du pool
+// joué et prédiction de run — l'éditeur affiche exactement ce que le jeu compte.
+check('PTS : bille 10 / or 50 / vie 30 / gemme 250',
+  Patterns.PTS.ball === 10 && Patterns.PTS.gold === 50 && Patterns.PTS.life === 30 && Patterns.PTS.gem === 250)
+{
+  const p = { balls: [{ x: 0 }, { x: 8, gold: true }, { x: 16, life: true }, { x: 24, gem: true }] }
+  check('patternPoints : 10+50+30+250 = 340', Patterns.patternPoints(p) === 340)
+  check('patternPoints : priorité gem > gold > life > ball',
+    Patterns.patternPoints({ balls: [{ x: 0, gem: true, gold: true }] }) === 250 &&
+    Patterns.patternPoints({ balls: [{ x: 0, gold: true, life: true }] }) === 50)
+  check('patternPoints : vide/null -> 0', Patterns.patternPoints({}) === 0 && Patterns.patternPoints(null) === 0)
+
+  const stats = Patterns.poolPointsStats() // store vide -> pool par défaut
+  const sumPts = defs.reduce((a, p) => a + Patterns.patternPoints(p), 0)
+  check('poolPointsStats : défauts joués (n = pool)', stats.n === defs.length)
+  check('poolPointsStats : total/moyenne cohérents', stats.total === sumPts && Math.abs(stats.avg - sumPts / defs.length) < 1e-9)
+  check('poolPointsStats : min <= avg <= max', stats.min <= stats.avg && stats.avg <= stats.max)
+
+  const r = Patterns.runPrediction(540)
+  check('runPrediction 540 s : distance = 8100 pts (rampe 50->250 sur 540)', r.distPts === 8100)
+  check('runPrediction : min <= avg <= max', r.min <= r.avg && r.avg <= r.max)
+  check('runPrediction : bande réaliste dans les extrêmes (min <= lo <= avg <= hi <= max)',
+    r.min <= r.lo && r.lo <= r.avg && r.avg <= r.hi && r.hi <= r.max)
+  check('runPrediction : fourchette = distance + collectibles',
+    r.min === r.distPts + r.collectMin && r.avg === r.distPts + r.collectAvg && r.max === r.distPts + r.collectMax &&
+    r.lo === r.distPts + r.collectLo && r.hi === r.distPts + r.collectHi)
+  check('runPrediction : sections estimées > 0', r.patterns > 0)
+  check('runPrediction 180 s : distance = 1500 pts', Patterns.runPrediction(180).distPts === 1500)
+  check('runPrediction 0/absent -> défaut 9 min', Patterns.runPrediction(0).distPts === 8100 && Patterns.runPrediction().distPts === 8100)
+
+  // Échelle automatique des couleurs (log) : sommet = score prédit d'une
+  // run complète de 9 min ; ajouter une couleur redescend l'échelle.
+  const mkTiers = n => Array.from({ length: n }, () => ({ min: 0, type: 'flat', hex: '#3ecb3e' }))
+  const lt = mkTiers(6)
+  SlimeColors.applyLogMins(lt, 21000)
+  check('applyLogMins : tier 0 à 0', lt[0].min === 0)
+  check('applyLogMins : premier palier = base (100)', lt[1].min === SlimeColors.TIER_LOG_BASE && lt[1].min === 100)
+  check('applyLogMins : sommet = maxPts', lt[5].min === 21000)
+  check('applyLogMins : strictement croissant', lt.every((t, i) => i === 0 || t.min > lt[i - 1].min))
+  const lt7 = mkTiers(7)
+  SlimeColors.applyLogMins(lt7, 21000)
+  check('applyLogMins : 7 paliers -> échelle redescendue (base .. maxPts, croissant)',
+    lt7[6].min === 21000 && lt7[1].min === 100 && lt7.every((t, i) => i === 0 || t.min > lt7[i - 1].min))
+  const lt2 = mkTiers(2)
+  SlimeColors.applyLogMins(lt2, 21000)
+  check('applyLogMins : 2 paliers -> [0, maxPts]', lt2[0].min === 0 && lt2[1].min === 21000)
+  const rt = Patterns.runPrediction(540)
+  const tt = mkTiers(6)
+  SlimeColors.applyLogMins(tt, rt.avg)
+  check('applyLogMins : sommet = avg de runPrediction (meilleure slime en fin de run 9 min)', tt[5].min === rt.avg)
+
+  // Pool réduit à UN pattern : zéro RNG de tirage -> fourchette plate.
+  Patterns.setPatternsRaw([JSON.parse(JSON.stringify(defs[0]))])
+  const s1 = Patterns.poolPointsStats()
+  check('pool 1 pattern : min = avg = max', s1.n === 1 && s1.min === s1.avg && s1.avg === s1.max)
+  const r1 = Patterns.runPrediction(540)
+  check('pool 1 pattern : fourchette plate', r1.min === r1.avg && r1.avg === r1.max && r1.lo === r1.avg && r1.hi === r1.avg)
+  Patterns.setPatternsRaw([]) // retour aux défauts
+}
 
 // 2. Simulation de partie : 400 sections sur 0 -> 200 s
 let last = { x: 16, row: 2, y: rowY(2), w: 5 * CELL }
@@ -113,14 +174,17 @@ const phDef = Phys.phys()
 check('phys défauts (slime 11, grav 620)', phDef.slimeR === 11 && phDef.grav === 620 && phDef.vmin === 170 && phDef.vmax === 380)
 check('layout.phys normalisé par défaut', Patterns.getLayout().phys.slimeR === 11 && Patterns.getLayout().phys.aimMin === 30 && Patterns.getLayout().phys.aimMax === 90)
 
-// 6b''. Caméra : défauts feeling (35/400), migrations des anciennes bases
-// (40/120 puis 80/240) vers les défauts courants.
-check('caméra : défauts feeling (35/400)', phDef.camBase === 35 && phDef.camMax === 400)
+// 6b''. Caméra : défauts « feeling » officiels — le layout local de l'admin
+// (base 50 / plafond 250) est le nouveau défaut code — et migrations des
+// anciennes bases (40/120, 80/240, 35/400).
+check('caméra : défauts locaux officiels (50/250)', phDef.camBase === 50 && phDef.camMax === 250)
 check('caméra : durée jusqu\'au max par défaut (540 s = 9 min)', phDef.camRampDur === 540)
 Phys.setPhys({ camBase: 40, camMax: 120 })
-check('caméra : ancienne base (40/120) migrée vers 35/400', Phys.phys().camBase === 35 && Phys.phys().camMax === 400)
+check('caméra : ancienne base (40/120) migrée vers 50/250', Phys.phys().camBase === 50 && Phys.phys().camMax === 250)
 Phys.setPhys({ camBase: 80, camMax: 240 })
-check('caméra : base officielle précédente (80/240) migrée vers 35/400', Phys.phys().camBase === 35 && Phys.phys().camMax === 400)
+check('caméra : base officielle précédente (80/240) migrée vers 50/250', Phys.phys().camBase === 50 && Phys.phys().camMax === 250)
+Phys.setPhys({ camBase: 35, camMax: 400 })
+check('caméra : ancienne base (35/400) migrée vers 50/250', Phys.phys().camBase === 50 && Phys.phys().camMax === 250)
 Phys.setPhys({ camBase: 200, camMax: 600 })
 check('caméra : bornes hautes accessibles (200/600)', Phys.phys().camBase === 200 && Phys.phys().camMax === 600)
 Phys.setPhys({ camBase: 300, camMax: 900 })
@@ -132,7 +196,7 @@ check('caméra : durée jusqu\'au max plancher (60 s)', Phys.phys().camRampDur =
 Phys.setPhys({ camRampT: 12 })
 check('caméra : ancien camRampT abandonné -> défaut camRampDur', Phys.phys().camRampDur === 540 && !('camRampT' in Phys.phys()))
 Phys.setPhys(null)
-check('caméra : retour aux défauts feeling', Phys.phys().camBase === 35 && Phys.phys().camMax === 400)
+check('caméra : retour aux défauts feeling', Phys.phys().camBase === 50 && Phys.phys().camMax === 250)
 
 Phys.setPhys({ grav: 800, slimeR: 10 })
 check('setPhys appliqué', Phys.phys().grav === 800 && Phys.phys().slimeR === 10 && Phys.phys().vmin === 170)
@@ -182,7 +246,7 @@ check('layout par défaut restauré', Patterns.getLayout().phys.slimeR === 11)
 // saves de l'éditeur appliquent l'ancienne vitesse » qui doit disparaître.
 storeStub[storeKey] = JSON.stringify({ format: Patterns.FORMAT, patterns: [], layout: { phys: { camBase: 40, camMax: 120, camRampT: 10 } } })
 Patterns.load()
-check('ancien save éditeur : caméra migrée (35/400)', Patterns.getLayout().phys.camBase === 35 && Patterns.getLayout().phys.camMax === 400)
+check('ancien save éditeur : caméra migrée (50/250)', Patterns.getLayout().phys.camBase === 50 && Patterns.getLayout().phys.camMax === 250)
 check('ancien save éditeur : camRampT abandonné (camRampDur 540)', !('camRampT' in Patterns.getLayout().phys) && Patterns.getLayout().phys.camRampDur === 540)
 Patterns.setLayout(null)
 
