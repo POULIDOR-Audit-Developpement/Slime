@@ -1306,12 +1306,22 @@ const Ed = (() => {
     // suppression) pour préserver leurs mutations — sinon relu du stockage.
     draft = draft || SlimeColors.load()
     colorsDraft = draft
-    const saved = () => JSON.stringify(SlimeColors.load())
+    // Seuils AUTOMATIQUES (échelle log) : premier palier à TIER_LOG_BASE
+    // (100 pts), dernier au score prédit d'une run complète de 9 min avec
+    // bonne collecte (pool + vitesse caméra courants). Ajouter/retirer une
+    // couleur redescend l'échelle — les `min` ne s'éditent plus.
+    const maxPts = Math.round(Patterns.runPrediction(540).avg)
+    SlimeColors.applyLogMins(draft, maxPts)
+    const saved = () => {
+      const l = SlimeColors.load()
+      SlimeColors.applyLogMins(l, maxPts)
+      return JSON.stringify(l)
+    }
     const isDirty = () => JSON.stringify(draft) !== saved()
     let html = `<div class="physHead">
       <div>
         <h3>Couleurs du slime</h3>
-        <div class="note">La couleur du slime dépend du <b>score</b> : il change de teinte en direct dès qu'un palier est franchi (le score n'est jamais affiché — la couleur est un indice, pas un chiffre). La preview applique le <b>même moteur que le jeu</b> aux sprites idle. Effets : <b>Dégradé</b> (fondu haut→bas), <b>Multicolore</b> (bandes verticales, 2 à ${SlimeColors.MAX_STOPS} couleurs), <b>Arc-en-ciel / Brillant / Étoilé</b> (animés en jeu). Le palier 0 est l'art d'origine : verrouillé. « Appliquer » écrit le stockage local — le jeu ouvert se met à jour dès qu'on revient sur son onglet.</div>
+        <div class="note">La couleur du slime dépend du <b>score</b> : il change de teinte en direct dès qu'un palier est franchi (le score n'est jamais affiché — la couleur est un indice, pas un chiffre). La preview applique le <b>même moteur que le jeu</b> aux sprites idle. Effets : <b>Dégradé</b> (fondu haut→bas), <b>Multicolore</b> (bandes verticales, 2 à ${SlimeColors.MAX_STOPS} couleurs), <b>Arc-en-ciel / Brillant / Étoilé</b> (animés en jeu). Le palier 0 est l'art d'origine : verrouillé. <b>Seuils automatiques</b> (échelle logarithmique) : premier palier à ${SlimeColors.TIER_LOG_BASE} pts, dernier au score prédit d'une run de 9 min (<b>${maxPts.toLocaleString('fr-FR')} pts</b> avec le pool et la caméra courants) — ajouter ou retirer une couleur redistribue l'échelle. « Appliquer » écrit le stockage local — le jeu ouvert se met à jour dès qu'on revient sur son onglet.</div>
       </div>
       <div class="applyCol">
         <span class="dirtyNote" id="colDirtyNote" style="display:none">● modifications non appliquées</span>
@@ -1326,7 +1336,7 @@ const Ed = (() => {
     draft.forEach((t, i) => {
       html += `<div class="tierRow" data-i="${i}">
         <canvas width="96" height="96"></canvas>
-        <div class="col"><span>dès</span><input type="number" min="0" step="10" value="${t.min}" id="tc_min_${i}" ${i === 0 ? 'disabled' : ''}/></div>
+        <div class="col"><span>dès</span><input type="number" min="0" step="10" value="${t.min}" id="tc_min_${i}" disabled title="Seuil automatique (échelle log) : ${SlimeColors.TIER_LOG_BASE} pts -> ${maxPts.toLocaleString('fr-FR')} pts (run 9 min prédite)"/></div>
         ${tierEffectFields(t, i)}
         <span class="range" id="tc_range_${i}">${tierRangeText(draft, i)}</span>
         ${i > 0 ? `<button class="del" id="tc_del_${i}" title="Supprimer ce palier">✕</button>` : ''}
@@ -1336,23 +1346,12 @@ const Ed = (() => {
     propsEl.innerHTML = html
 
     const mark = () => markApplyDirty('btnApplyColors', 'colDirtyNote', isDirty())
-    const refreshRanges = () => {
-      draft.forEach((t, i) => {
-        const el = document.getElementById('tc_range_' + i)
-        if (el) el.textContent = tierRangeText(draft, i)
-      })
-    }
     const repaintRow = i => {
       const row = propsEl.querySelector(`.tierRow[data-i="${i}"]`)
       if (row) paintTierPreview(row.querySelector('canvas'), draft[i], performance.now() / 1000)
     }
     const struct = () => { renderPropsColors(draft); mark() }
     draft.forEach((t, i) => {
-      const minEl = document.getElementById('tc_min_' + i)
-      if (minEl) minEl.addEventListener('input', () => {
-        draft[i].min = Math.max(0, Math.floor(+minEl.value || 0))
-        refreshRanges(); mark()
-      })
       const typeEl = document.getElementById('tc_type_' + i)
       if (typeEl) typeEl.addEventListener('change', () => {
         draft[i] = Object.assign({ min: draft[i].min, type: typeEl.value }, SlimeColors.EFFECT_DEFAULTS[typeEl.value])
@@ -1434,10 +1433,10 @@ const Ed = (() => {
       ? 'Jeu : pool PAR DÉFAUT (' + Patterns.defaults().length + ' sections) — tes patterns remplaceront le pool dès qu\'il en contient.'
       : 'Jeu : TON pool (' + patterns.length + ' sections)') + storeNote + lanNote
     if (!patterns.length) {
-      listEl.innerHTML = `<div class="hint">Aucun pattern personnel.<br><br>Le jeu tourne avec le <b>pool par défaut</b> (20 sections validées).<br><br>« + Nouveau » pour créer, ou « Restaurer défauts » pour copier les 20 sections dans ta liste et les éditer.</div>`
+      listEl.innerHTML = poolStatsHtml() + `<div class="hint">Aucun pattern personnel.<br><br>Le jeu tourne avec le <b>pool par défaut</b> (${Patterns.defaults().length} sections validées).<br><br>« + Nouveau » pour créer, ou « Restaurer défauts » pour copier les ${Patterns.defaults().length} sections dans ta liste et les éditer.</div>`
       return
     }
-    listEl.innerHTML = patterns.map((p, i) => {
+    listEl.innerHTML = poolStatsHtml() + patterns.map((p, i) => {
       const t = clampN(p.difficulty | 0, 1, 5)
       const { bad, pwr } = valStats(cachedValidate(p))
       const state = bad
@@ -1447,10 +1446,26 @@ const Ed = (() => {
           : '✓'
       return `<div class="item ${p.id === selId ? 'sel' : ''}" data-i="${i}">
         <div class="tier" style="background:${TIER_COLORS[t - 1]}">${t}</div>
-        <div class="nm"><b>${esc(p.name || 'Sans nom')}</b><span>${p.platforms.length} plat · largeur ${Patterns.patternWidth(p)} ${bad || pwr ? '· ' + state : ' · ✓'}</span></div>
+        <div class="nm"><b>${esc(p.name || 'Sans nom')}</b><span>${p.platforms.length} plat · largeur ${Patterns.patternWidth(p)} · ${Patterns.patternPoints(p)} pts ${bad || pwr ? '· ' + state : ' · ✓'}</span></div>
         <div class="mini"><button data-act="dup" data-i="${i}" title="Dupliquer">⧉</button><button data-act="del" data-i="${i}" class="danger" title="Supprimer">✕</button></div>
       </div>`
     }).join('')
+  }
+
+  // En-tête de la liste PATTERNS : points par pattern (moy/min/max) du pool
+  // RÉELLEMENT joué (pool utilisateur, sinon défauts) + fourchette de score
+  // prédite pour une run complète. Outil d'équilibrage : resserrer min–max
+  // réduit l'effet du RNG de tirage entre les joueurs (cf. runPrediction).
+  function poolStatsHtml() {
+    const s = Patterns.poolPointsStats()
+    if (!s.n) return ''
+    const r = Patterns.runPrediction(540)
+    const f = n => Math.round(n).toLocaleString('fr-FR')
+    return `<div class="hint" style="margin-bottom:8px">
+      <b>Points</b> : moy <b>${Math.round(s.avg)}</b>/section · min ${s.min} · max ${s.max} (${s.n} sections)<br>
+      <b>Run 9 min estimée</b> : moy <b>${f(r.avg)}</b> pts · réaliste ~${f(r.lo)}–${f(r.hi)} · extrêmes ${f(r.min)}–${f(r.max)}<br>
+      <span style="opacity:.7">distance ${f(r.distPts)} + collectibles ~${f(r.collectAvg)} (${Math.round(r.patterns)} sections jouées) — équilibre tes patterns pour resserrer la fourchette réaliste (RNG)</span>
+    </div>`
   }
 
 // ---------- actions ----------
@@ -1495,7 +1510,7 @@ const Ed = (() => {
   }
 
   function installDefaults() {
-    if (patterns.length && !confirm('Remplacer ta liste actuelle (' + patterns.length + ' pattern(s)) par les 20 sections du pool par défaut ?\nLes patterns actuels seront perdus.')) return
+    if (patterns.length && !confirm('Remplacer ta liste actuelle (' + patterns.length + ' pattern(s)) par les ' + Patterns.defaults().length + ' sections du pool par défaut ?\nLes patterns actuels seront perdus.')) return
     const n = Patterns.installDefaults()
     patterns = Patterns.getPatterns()
     refreshList()

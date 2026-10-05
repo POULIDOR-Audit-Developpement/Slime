@@ -204,6 +204,39 @@ const SlimeColors = (() => {
     return idx
   }
 
+  // ---------- échelle automatique (logarithmique) ----------
+  // Score du PREMIER palier jouable : le reste est réparti en log jusqu'au
+  // sommet (progression ressentie régulière : chaque palier demande ~×2-4
+  // le précédent, quoique petit au début).
+  const TIER_LOG_BASE = 100
+  // Répartit les seuils des paliers en échelle log : tier 0 à 0 (art
+  // d'origine), premier palier jouable à `base`, DERNIER pile sur `maxPts`
+  // — le score prédit d'une run complète de 9 min avec bonne collecte
+  // (Patterns.runPrediction côté appelant). Ajouter/retirer une couleur
+  // redescend l'échelle : quel que soit le nombre de paliers, 0 -> maxPts
+  // est couvert et la meilleure slime tombe en fin de run complète.
+  // Mutation en place (retourné pour chaînage). Les `min` stockés ne sont
+  // plus qu'un reflet : la source de vérité est (nombre de couleurs, maxPts).
+  function applyLogMins(list, maxPts, base) {
+    maxPts = Math.max(2, Math.floor(+maxPts || 0))
+    base = Math.floor(+base || 0)
+    if (base < 1) base = TIER_LOG_BASE
+    if (base >= maxPts) base = Math.max(1, Math.floor(maxPts / 2))
+    const n = list.length
+    if (!n) return list
+    list[0].min = 0
+    if (n === 1) return list
+    if (n === 2) { list[1].min = maxPts; return list }
+    for (let i = 1; i < n; i++) {
+      const f = (i - 1) / (n - 2) // 0 (1er palier) .. 1 (sommet)
+      let v = Math.round(base * Math.pow(maxPts / base, f))
+      if (i === n - 1) v = maxPts
+      if (v <= list[i - 1].min) v = list[i - 1].min + 1 // garde strictement croissante
+      list[i].min = v
+    }
+    return list
+  }
+
   // Recoloration : teinte uniquement les pixels verts (g dominant) en
   // préservant les ombrages via un facteur de luminance k = 0.55 + 0.65*L ;
   // yeux, contours et bloc brun intacts. tier = objet palier (ou hex string
@@ -285,5 +318,5 @@ const SlimeColors = (() => {
     return '#' + [mx(r), mx(g), mx(b)].map(v => v.toString(16).padStart(2, '0')).join('')
   }
 
-  return { KEY, DEFAULTS, MAX_STOPS, EFFECTS, EFFECT_LIST, EFFECT_DEFAULTS, load, save, clear, normalize, sanitizeTier, tierIndex, isAnimated, primary, recolor, recolorBlue, shade }
+  return { KEY, DEFAULTS, MAX_STOPS, EFFECTS, EFFECT_LIST, EFFECT_DEFAULTS, TIER_LOG_BASE, applyLogMins, load, save, clear, normalize, sanitizeTier, tierIndex, isAnimated, primary, recolor, recolorBlue, shade }
 })()

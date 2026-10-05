@@ -219,7 +219,7 @@
   </div>
   <span class="spacer"></span>
   <button id="btnNew">+ Nouveau</button>
-  <button id="btnDefaults" title="Remplace ta liste par les 20 sections du pool par défaut (⚠ les patterns actuels sont perdus)">Restaurer défauts</button>
+  <button id="btnDefaults" title="Remplace ta liste par les sections du pool par défaut (⚠ les patterns actuels sont perdus)">Restaurer défauts</button>
   <button id="btnExport" title="Télécharger tes patterns en .json (les réglages du jeu ne sont pas exportés)">Exporter patterns .json</button>
   <label class="filebtn" for="fileImport" title="Importer des patterns depuis un .json (les réglages du jeu ne sont pas touchés)">Importer patterns .json</label>
   <input type="file" id="fileImport" accept=".json,application/json"/>
@@ -251,11 +251,11 @@
   <span id="storeInfo"></span>
   <button id="btnLock" title="Verrouiller l'editeur (oublier le mot de passe)">🔒</button>
 </footer>
-<script src="js/physics.js?v=20260930a"></script>
-<script src="js/slime-colors.js?v=20260930b"></script>
+<script src="js/physics.js?v=20261005c"></script>
+<script src="js/slime-colors.js?v=20261005c"></script>
 <script src="js/sprites.js?v=20261001f"></script>
 <script src="js/patterns-defaults.js?v=20261003a"></script>
-<script src="js/patterns.js?v=20261001a"></script>
+<script src="js/patterns.js?v=20261005c"></script>
 <script src="js/crypto.js?v=20260930b"></script>
 <script>
 // ---------- portail : editor.js n'est charge qu'apres le bon mot de passe ----------
@@ -274,7 +274,7 @@
   }
   function loadEditor() {
     var s = document.createElement('script')
-    s.src = 'js/editor.js?v=20261001d'
+    s.src = 'js/editor.js?v=20261005c'
     document.body.appendChild(s)
   }
   function fail(msg) {

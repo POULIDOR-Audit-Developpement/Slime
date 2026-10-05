@@ -40,7 +40,9 @@ const PHYS_DEF = {
   bounceVy: BOUNCE_VY, bounceVx: BOUNCE_VX, stickyMul: STICKY_MUL,
   invuln: 1.3, hurtRecoil: 0.8,
   coyote: 0.07,
-  camBase: 35, camMax: 400, camRampDur: 540
+  // Défauts « feeling » officiels (depuis le layout local de l'admin) :
+  // base 50 px/s -> plafond 250 px/s sur 9 min.
+  camBase: 50, camMax: 250, camRampDur: 540
 }
 
 // Borne une valeur numérique ; hors bornes ou non numérique -> défaut.
@@ -79,11 +81,12 @@ function normPhys(n) {
     camRampDur: physBound(n.camRampDur, d.camRampDur, 60, 1020)
   }
   // Migrations : les anciennes bases stockées dans des saves (40/120, puis
-  // 80/240) sont considérées non personnalisées -> défauts feeling courants.
-  // L'ancien réglage camRampT (intervalle entre paliers) est abandonné sans
-  // migration : sémantique incompatible avec la durée jusqu'au max.
-  if (out.camBase === 40 || out.camBase === 80) out.camBase = d.camBase
-  if (out.camMax === 120 || out.camMax === 240) out.camMax = d.camMax
+  // 80/240, puis 35/400) sont considérées non personnalisées -> défauts
+  // feeling courants. L'ancien réglage camRampT (intervalle entre paliers)
+  // est abandonné sans migration : sémantique incompatible avec la durée
+  // jusqu'au max.
+  if (out.camBase === 40 || out.camBase === 80 || out.camBase === 35) out.camBase = d.camBase
+  if (out.camMax === 120 || out.camMax === 240 || out.camMax === 400) out.camMax = d.camMax
   // Garde-fou : la puissance max doit rester discriminante face au min.
   if (out.vmax < out.vmin + 50) out.vmax = Math.min(600, out.vmin + 50)
   // Garde-fou : la portée max de visée doit dépasser la portée min.
