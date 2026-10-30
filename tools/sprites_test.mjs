@@ -178,6 +178,21 @@ check('speed clampée / NaN -> défaut', (() => {
 })())
 check('normalize null si pas un tableau', SlimeColors.normalize('oops') === null)
 
+// ---------- effectDefaults : copie PROFONDE (paliers jumeaux) ----------
+// Bug éditeur 2026-10-30 : Object.assign(...) copiait `hexes` PAR RÉFÉRENCE —
+// deux paliers multi (ou dégradé) partageaient LE même tableau : changer une
+// couleur de l'un changeait l'autre, impossible de les différencier.
+{
+  const a = SlimeColors.effectDefaults('multi')
+  const b = SlimeColors.effectDefaults('multi')
+  a.hexes[0] = '#123456'
+  check('effectDefaults : hexes neuf à chaque appel (paliers indépendants)', a.hexes !== b.hexes && b.hexes[0] === '#e53935')
+  check('effectDefaults : registre EFFECT_DEFAULTS non pollué', SlimeColors.EFFECT_DEFAULTS.multi.hexes[0] === '#e53935')
+  const g = SlimeColors.effectDefaults('gradient')
+  check('effectDefaults : dégradé copié (pas la référence du registre)', g.hexes !== SlimeColors.EFFECT_DEFAULTS.gradient.hexes && g.hexes.join() === '#ff5f6d,#ffc371')
+  check('effectDefaults : scalaires recopiés (flat/rainbow/shine/star)', SlimeColors.effectDefaults('flat').hex === '#3ecb3e' && SlimeColors.effectDefaults('rainbow').speed === 0.15 && SlimeColors.effectDefaults('shine').speed === 0.3 && SlimeColors.effectDefaults('star').hex === '#2b5876')
+}
+
 // ---------- tickAnimated : régénération + throttle ----------
 SlimeColors.save([
   { min: 0, type: 'flat', hex: '#3ecb3e' },

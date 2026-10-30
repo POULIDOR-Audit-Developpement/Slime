@@ -1354,7 +1354,10 @@ const Ed = (() => {
     draft.forEach((t, i) => {
       const typeEl = document.getElementById('tc_type_' + i)
       if (typeEl) typeEl.addEventListener('change', () => {
-        draft[i] = Object.assign({ min: draft[i].min, type: typeEl.value }, SlimeColors.EFFECT_DEFAULTS[typeEl.value])
+        // Copie PROFONDE des défauts (effectDefaults) : un Object.assign
+        // direct partageait le tableau `hexes` entre tous les paliers du
+        // même effet — éditer l'un réécrivait l'autre (bug 2026-10-30).
+        draft[i] = Object.assign({ min: draft[i].min, type: typeEl.value }, SlimeColors.effectDefaults(typeEl.value))
         struct()
       })
       const hexEl = document.getElementById('tc_hex_' + i)

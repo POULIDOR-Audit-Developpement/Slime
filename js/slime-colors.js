@@ -133,6 +133,16 @@ const SlimeColors = (() => {
   }
 
   const hexOk = h => typeof h === 'string' && /^#[0-9a-fA-F]{6}$/.test(h)
+  // Défauts d'un effet en COPIE PROFONDE : `hexes` (dégradé/multicolore) est
+  // un tableau MUTABLE — recopié par référence, tous les paliers passés au
+  // même effet partageaient LE même tableau (changer une couleur de l'un
+  // changeait l'autre : impossible de différencier deux paliers). Chaque
+  // palier créé doit recevoir son propre tableau ; le registre reste intact.
+  function effectDefaults(type) {
+    const d = EFFECT_DEFAULTS[type]
+    if (!d) return {}
+    return d.hexes ? Object.assign({}, d, { hexes: d.hexes.slice() }) : Object.assign({}, d)
+  }
   const hexOf = (v, fb) => (hexOk(v) ? v.toLowerCase() : fb)
   const isAnimated = t => !!(t && EFFECTS[t.type] && EFFECTS[t.type].animated)
   const primary = t => (t && EFFECTS[t.type] ? EFFECTS[t.type].primary(t) : DEFAULTS[0].hex)
@@ -318,5 +328,5 @@ const SlimeColors = (() => {
     return '#' + [mx(r), mx(g), mx(b)].map(v => v.toString(16).padStart(2, '0')).join('')
   }
 
-  return { KEY, DEFAULTS, MAX_STOPS, EFFECTS, EFFECT_LIST, EFFECT_DEFAULTS, TIER_LOG_BASE, applyLogMins, load, save, clear, normalize, sanitizeTier, tierIndex, isAnimated, primary, recolor, recolorBlue, shade }
+  return { KEY, DEFAULTS, MAX_STOPS, EFFECTS, EFFECT_LIST, EFFECT_DEFAULTS, effectDefaults, TIER_LOG_BASE, applyLogMins, load, save, clear, normalize, sanitizeTier, tierIndex, isAnimated, primary, recolor, recolorBlue, shade }
 })()

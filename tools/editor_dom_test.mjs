@@ -401,6 +401,36 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   els.btnApplyColors.handlers.click()
   check('nettoyage : 6 paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === 6)
 
+  // --- COULEURS : deux paliers du MÊME effet restent INDÉPENDANTS ---
+  // Régression (bug 2026-10-30) : le <select> de type recopiait
+  // EFFECT_DEFAULTS[type] par référence — tous les paliers multi (resp.
+  // dégradé) partageaient LE même tableau hexes : changer une couleur de
+  // l'un changeait l'autre, impossible de différencier les deux paliers.
+  els.btnAddTier.handlers.click() // 7e palier (indice 6)
+  els['tc_type_5'].value = 'multi'
+  els['tc_type_5'].handlers.change()
+  els['tc_type_6'].value = 'multi'
+  els['tc_type_6'].handlers.change()
+  check('2 paliers multi rendus (indices 5 et 6)', els.props.innerHTML.includes('id="tc_h_5_0"') && els.props.innerHTML.includes('id="tc_h_6_0"'))
+  els['tc_h_5_0'].value = '#123456'
+  els['tc_h_5_0'].handlers.input() // n'édite QUE le palier 5
+  els.btnApplyColors.handlers.click()
+  const sv = JSON.parse(localStorage.getItem('slime_tiers') || '[]').filter(t => t.type === 'multi')
+  check('multi : 2 paliers persistés avec des couleurs DIFFÉRENTES', sv.length === 2 && sv.some(t => t.hexes[0] === '#123456') && sv.some(t => t.hexes[0] === '#e53935'))
+  check('multi : EFFECT_DEFAULTS intact (pas de pollution de session)', SlimeColors.EFFECT_DEFAULTS.multi.hexes[0] === '#e53935')
+  // même indépendance pour le dégradé
+  els['tc_type_5'].value = 'gradient'
+  els['tc_type_5'].handlers.change()
+  els['tc_type_6'].value = 'gradient'
+  els['tc_type_6'].handlers.change()
+  els['tc_h_6_1'].value = '#abcdef'
+  els['tc_h_6_1'].handlers.input() // n'édite QUE le palier 6
+  els.btnApplyColors.handlers.click()
+  const sg2 = JSON.parse(localStorage.getItem('slime_tiers') || '[]').filter(t => t.type === 'gradient')
+  check('dégradé : 2 paliers persistés avec des couleurs DIFFÉRENTES', sg2.length === 2 && sg2.some(t => t.hexes[1] === '#abcdef') && sg2.some(t => t.hexes[1] === '#ffc371'))
+  // nettoyage : retour aux défauts pour la suite du test
+  els.btnResetColors.handlers.click()
+
   Ed.setMode('patterns')
   check('retour patterns : classe colors retirée', !main.classList.contains('colors'))
 
