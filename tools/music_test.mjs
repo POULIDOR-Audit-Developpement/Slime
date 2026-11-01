@@ -110,6 +110,7 @@ function loadMusic() {
     const M3 = sandbox3(undefined, undefined, undefined, undefined)
     M3.restore(); M3.start(); M3.stop(); M3.toggle()
     M3.setStart(2) // ?niveau=N : API no-op hors navigateur
+    M3.setRate(0.05); M3.setRate(1) // slow-mo : API no-op hors navigateur
     if (M3.track !== 0) throw new Error('track hors navigateur')
   } catch (e) { threw = true }
   check('hors navigateur : no-op sans exception (track 0)', !threw)
@@ -207,6 +208,200 @@ function loadMusic() {
   const M2 = sandbox(FakeAudio4, { getItem: k => k in store2 ? store2[k] : null, setItem: (k, v) => { store2[k] = String(v) } }, () => {}, undefined, console)
   M2.restore()
   check('restore : slime_vol lu (Music.vol 0.25)', M2.vol === 0.25)
+}
+
+// ---- 8. setRate : la musique suit le slow-mo (échelle de temps ts) ----
+// Courbe adoucie (design 2026-11-01) : rate = 1 − (1−ts)×0.55, borné [0.5 ; 1]
+// — sous 0.5× les navigateurs coupent le son du <audio>. Pitch NON préservé
+// (preservesPitch = false) : effet vinyle/bullet-time.
+{
+  const src = readFileSync(new URL('../js/music.js', import.meta.url), 'utf8')
+  const created = []
+  const rateSets = [] // chaque assignation playbackRate (idempotence attendue)
+  class FakeAudioR {
+    constructor(s) { this.src = s; this.loop = false; this.paused = true; this.handlers = {}; this.currentTime = 0; this._rate = 1; this.preservesPitch = true; created.push(this) }
+    addEventListener(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn) }
+    set currentTime(v) { this._t = v }
+    get currentTime() { return this._t }
+    set playbackRate(v) { this._rate = v; rateSets.push(v) }
+    get playbackRate() { return this._rate }
+    play() { this.paused = false; return Promise.resolve() }
+    pause() { this.paused = true }
+  }
+  const sandbox = new Function('Audio', 'localStorage', 'volume', 'document', 'console', 'return (() => {' + src + '; return Music })()')
+  const M = sandbox(FakeAudioR, { getItem: () => null, setItem: () => {} }, () => {}, undefined, console)
+  if (typeof M.setRate !== 'function') {
+    check('setRate existe (API slow-mo)', false)
+  } else {
+    M.restore()
+    M.start() // crée les 3 pistes
+    check('création : playbackRate 1 et preservesPitch false (effet vinyle)',
+      created.length === 3 && created.every(a => a.playbackRate === 1 && a.preservesPitch === false))
+    check('création : aucune assignation playbackRate superflue', rateSets.length === 0)
+    M.setRate(0.35) // slow-mo éditeur ×0.35
+    check('setRate(0.35) : courbe adoucie 0.6425 quantifiée -> 0.65 sur les 3 pistes',
+      created.every(a => Math.abs(a.playbackRate - 0.65) < 0.0001) && Math.abs(M.rate - 0.65) < 0.0001)
+    const n = rateSets.length
+    M.setRate(0.35)
+    M.setRate(0.35)
+    check('setRate idempotent : pas de réassignation à valeur égale', rateSets.length === n)
+    M.setRate(0.05) // défaut bullet-time : la courbe (0.4775) touche le plancher
+    check('setRate(0.05) : planché à 0.5 (jamais sous — son garanti partout)', M.rate === 0.5 && created[0].playbackRate === 0.5)
+    M.setRate(0.7)
+    check('setRate(0.7) : courbe 0.835 quantifiée -> 0.85', Math.abs(M.rate - 0.85) < 0.0001)
+    M.setRate(1)
+    check('setRate(1) : vitesse normale', M.rate === 1 && created.every(a => a.playbackRate === 1))
+    M.setRate(5)
+    check('setRate(5) : clampé à 1 (jamais accéléré)', M.rate === 1)
+    M.setRate(NaN)
+    check('setRate(NaN) : rate 1 (entrée invalide)', M.rate === 1)
+    // Régression « petit freeze au retour » : le lerp de game.js (ts 0.05 -> 1,
+    // lerp ×12/s, snap 1 %) change à chaque tick de sim (240 Hz) — si setRate
+    // réassignait playbackRate à chaque tick (~267 écritures/transition), le
+    // pipeline média des navigateurs s'accroche (glitch audible). La vitesse
+    // est quantifiée (pas 0.05) : le même retour complet ne doit produire
+    // qu'une poignée d'écritures, paliers stables que le navigateur ramp
+    // proprement.
+    M.setRate(0.05) // slow-mo actif : rate au plancher 0.5
+    const avant = rateSets.length
+    let ts = 0.05
+    const dt = 1 / 240
+    for (let t = 0; t < 1; t += dt) { // sortie de slow-mo, boucle exacte de game.js
+      ts += (1 - ts) * Math.min(1, dt * 12)
+      if (Math.abs(ts - 1) < 0.01) ts = 1
+      M.setRate(ts)
+    }
+    const nWrites = rateSets.length - avant
+    const paliers = new Set(rateSets.slice(avant)).size
+    check(`retour complet 0.5->1 : écritures limitées (${nWrites} totales, ${paliers} paliers <= 13)`,
+      paliers <= 13 && nWrites <= paliers * 3)
+    check('retour : rate finit exactement à 1 (recalage au settle)', M.rate === 1 && created[0].playbackRate === 1)
+    check('retour : toutes les valeurs dans [0.5 ; 1]', rateSets.slice(avant).every(v => v >= 0.5 - 1e-9 && v <= 1 + 1e-9))
+    M.setRate(0.35)
+    M.stop()
+    check('stop() : rate remis à 1 partout (partie suivante normale)',
+      M.rate === 1 && created.every(a => a.playbackRate === 1))
+    M.start()
+    check('rejouer : rate reste 1 après stop()/start()', M.rate === 1 && created[0].playbackRate === 1)
+  }
+}
+
+// ---- 9. setPaused : la pause jeu gèle la BGM (reprise à l'endroit exact) ----
+{
+  const src = readFileSync(new URL('../js/music.js', import.meta.url), 'utf8')
+  const created = []
+  const calls = { seeks: 0, plays: 0, pauses: 0 }
+  const docHandlers = {}
+  class FakeAudioP {
+    constructor(s) { this.src = s; this.loop = false; this.paused = true; this.handlers = {}; this.currentTime = 0; created.push(this) }
+    addEventListener(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn) }
+    set currentTime(v) { this._t = v; calls.seeks++ }
+    get currentTime() { return this._t }
+    play() { this.paused = false; calls.plays++; return Promise.resolve() }
+    pause() { if (!this.paused) calls.pauses++; this.paused = true }
+  }
+  const sandbox = new Function('Audio', 'localStorage', 'volume', 'document', 'console', 'return (() => {' + src + '; return Music })()')
+  const doc = { addEventListener: (ev, fn) => { docHandlers[ev] = fn } }
+  const M = sandbox(FakeAudioP, { getItem: () => null, setItem: () => {} }, () => {}, doc, console)
+  if (typeof M.setPaused !== 'function') {
+    check('setPaused existe (API pause jeu)', false)
+  } else {
+    M.restore()
+    check('hors run : setPaused no-op (rien ne joue)', (M.setPaused(true), M.setPaused(false), created.length === 0))
+    M.start() // 1er saut : 3 pistes, bgm1 joue
+    calls.pauses = 0
+    M.setPaused(true)
+    check('pause jeu : toutes les pistes en pause', created.every(a => a.paused))
+    const seeksAtPause = calls.seeks
+    M.setPaused(false)
+    check('reprise : bgm1 rejoue SANS seek (à l\'endroit exact)', created[0].paused === false && created[1].paused && created[2].paused && calls.seeks === seeksAtPause)
+    // muet : la reprise ne doit pas sonner
+    M.setVolume(0)
+    M.setPaused(true)
+    M.setPaused(false)
+    check('muet : setPaused(false) ne joue pas', created[0].paused === true)
+    M.setVolume(0.5)
+    // onglet redevient visible pendant le gel : PAS de reprise musicale
+    M.setPaused(true)
+    docHandlers.visibilitychange()
+    check('onglet visible mais jeu gelé : la musique reste en pause', created[0].paused === true)
+    M.setPaused(false)
+    check('dégel : la musique reprend', created[0].paused === false)
+  }
+}
+
+// ---- 10. Node pur : setPaused no-op ----
+{
+  const src = readFileSync(new URL('../js/music.js', import.meta.url), 'utf8')
+  const sandbox = new Function('Audio', 'localStorage', 'volume', 'document', 'return (() => {' + src + '; return Music })()')
+  let threw = false
+  try {
+    const M = sandbox(undefined, undefined, undefined, undefined)
+    M.restore(); M.start(); M.setPaused(true); M.setPaused(false); M.stop()
+  } catch (e) { threw = true }
+  check('hors navigateur : setPaused no-op sans exception', !threw)
+}
+
+// ---- 11. Firefox (Gecko) : « temps suspendu » — pause pendant le slow-mo ----
+// Tout changement de vitesse d'un élément média gèle le sink de Gecko
+// (~1 s, MESURÉ joueur — même via pause->vitesse->play). Mais laisser la
+// musique jouer à 1× pendant le ralenti la fait dériver EN AVANCE sur le
+// temps de jeu (le monde est quasi figé). Sur Firefox : la musique se met
+// en pause à l'engagement du slow-mo et reprend à la libération, à
+// l'endroit exact — synchro musique/temps de jeu préservée, zéro
+// playbackRate touché, zéro gel. Chromium garde le vinyle ralenti.
+{
+  const src = readFileSync(new URL('../js/music.js', import.meta.url), 'utf8')
+  const created = []
+  const rateSets = []
+  const calls = { plays: 0, pauses: 0, seeks: 0 }
+  class FakeAudioF {
+    constructor(s) { this.src = s; this.loop = false; this.paused = true; this.handlers = {}; this.currentTime = 0; this._rate = 1; created.push(this) }
+    addEventListener(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn) }
+    set currentTime(v) { this._t = v; calls.seeks++ }
+    get currentTime() { return this._t }
+    set playbackRate(v) { this._rate = v; rateSets.push(v) }
+    get playbackRate() { return this._rate }
+    play() { this.paused = false; calls.plays++; return Promise.resolve() }
+    pause() { if (!this.paused) calls.pauses++; this.paused = true }
+  }
+  const sandbox = new Function('Audio', 'localStorage', 'volume', 'document', 'console', 'navigator', 'return (() => {' + src + '; return Music })()')
+  const M = sandbox(FakeAudioF, { getItem: () => null, setItem: () => {} }, () => {}, undefined, console, { userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0' })
+  if (typeof M.setRate !== 'function') {
+    check('Firefox : setRate existe', false)
+  } else {
+    M.restore()
+    M.start() // bgm1 joue
+    calls.plays = 0; calls.pauses = 0; calls.seeks = 0
+    // engagement : la musique se SUSPEND (pause, zéro playbackRate)
+    M.setRate(0.97, 0.05)
+    check('Firefox engagement : musique en pause, 0 write, 0 seek',
+      rateSets.length === 0 && M.rate === 1 && calls.plays === 0 && calls.seeks === 0 &&
+      created[0].paused === true && created[1].paused && created[2].paused)
+    M.setRate(0.8, 0.05) // ralenti en cours…
+    M.setRate(0.6, 0.05)
+    check('Firefox : ralenti en cours, la musique reste suspendue', rateSets.length === 0 && calls.plays === 0 && created[0].paused === true)
+    // libération : reprise à l'endroit exact (play, pas de seek)
+    M.setRate(0.9, 1)
+    check('Firefox libération : reprise sans seek, rate toujours 1',
+      rateSets.length === 0 && M.rate === 1 && calls.plays === 1 && calls.seeks === 0 && created[0].paused === false)
+    // muet pendant le slow-mo : la libération ne doit pas faire sonner
+    M.setRate(0.97, 0.05) // re-suspension…
+    M.setVolume(0) // mute : tout en pause, préférence enregistrée
+    M.setRate(0.9, 1) // libération pendant mute
+    check('Firefox : libération pendant mute -> pas de son', created[0].paused === true && M.rate === 1)
+    M.setVolume(0.5) // dé-muet : la musique peut revenir (comportement unmute standard)
+    // pause jeu pendant le slow-mo : pas de reprise musicale au dégel du slow-mo
+    M.setRate(0.97, 0.05) // re-suspension…
+    M.setPaused(true)
+    M.setRate(0.9, 1) // libération pendant gel jeu
+    check('Firefox : libération pendant pause jeu -> pas de reprise', created[0].paused === true)
+    M.setPaused(false) // dégel : la musique reprend (comportement pause standard)
+    check('Firefox : dégel jeu -> musique revient sans seek', created[0].paused === false && calls.seeks === 0)
+    // jamais aucun playbackRate ni rate ≠ 1 sur tout le cycle de vie
+    check('Firefox : zéro playbackRate touché, rate constant 1',
+      rateSets.length === 0 && M.rate === 1)
+  }
 }
 
 console.log(fail === 0 ? '\nMUSIC OK — tous les checks passent' : `\n${fail} CHECK(S) EN ÉCHEC`)

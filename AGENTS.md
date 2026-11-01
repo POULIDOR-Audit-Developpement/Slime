@@ -38,6 +38,11 @@ sprite) :
 - `?sim=N` : force la cadence de simulation (ex. `?sim=60` — défaut 240 Hz)
 - `?fsdbg` : panneau diagnostic plein écran (valeurs brutes des API fullscreen/
   captureStream/standalone + verdict du garde de l'icône) — pour iPhone.
+- `?audio=1` : sonde audio BGM (overlay DOM) — stalls de l'élément `<audio>`
+  (currentTime plat ≥ 40 ms), écritures de `playbackRate`, événements média
+  (ratechange/waiting/stalled). Pour diagnostiquer le slow-mo musical.
+- `?slowmo=S` : pulse automatiquement le slow-mo toutes les S secondes (≥ 2)
+  pendant la run — boucle les cycles BGM pour mesurer avec `?audio=1`.
 
 Méthode : **mesurer avant/après sur le mobile cible**. Ce dossier a coûté
 plusieurs allers-retours en hypothèses non mesurées ; un seul `?prof` a

@@ -93,7 +93,7 @@ Rendu natif 960×540 avec logique interne en coordonnées virtuelles 480×270 (z
 
 ### Musique & record
 
-- BGM : 3 fichiers `ASSETS/music/bgm1..3.mp3` (~3 min, BPM fixe) joués en séquence pendant la partie — démarrage au 1er saut, arrêt à la mort, « Rejouer » repart de la piste 1 ; la 3e boucle si tu survies au-delà de 9 min. Touche 'm' ou coin haut-gauche : mute (coupe aussi les SFX, préférence persistée). Fichier absent = silence, jamais bloquant
+- BGM : 3 fichiers `ASSETS/music/bgm1..3.mp3` (~3 min, BPM fixe) joués en séquence pendant la partie — démarrage au 1er saut, arrêt à la mort, « Rejouer » repart de la piste 1 ; la 3e boucle si tu survies au-delà de 9 min. Touche 'm' ou coin haut-gauche : mute (coupe aussi les SFX, préférence persistée). Fichier absent = silence, jamais bloquant. **Pause** (bouton, Espace, plein écran perdu, onglet masqué) : la BGM gèle et reprend à l'endroit exact. **Slow-mo** : la musique suit le temps de jeu — Chromium : vinyle ralenti (courbe adoucie `rate = 1−(1−ts)×0.55`, plancher 0.5× — sous ce seuil les navigateurs coupent le son, pitch qui descend, vitesse écrite en paliers de 0.05) ; **Firefox : « temps suspendu »** — tout changement de vitesse d'un élément média gèle le sink audio de Gecko (mesuré joueur), la musique s'y met donc **en pause** pendant le ralenti et reprend à l'endroit exact à la libération (synchro musique/temps de jeu préservée) ; `stop()` remet la vitesse à 1 pour la partie suivante
 - Meilleur score sauvegardé localement mais **jamais affiché en clair** ; à l'écran titre, le gros slime porte la **couleur du palier de ton record** (et « NOUVEAU RECORD ! » signale quand tu bats le mien, sans le chiffre)
 
 ## Éditeur & patterns (créateur de jeu)

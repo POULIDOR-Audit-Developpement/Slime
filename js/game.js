@@ -8,6 +8,14 @@ let voidPattern = null
 // Diagnostic perf (?fps ?sim=N ?prof) : compteurs incrémentés dans update()/draw().
 let diagFps = false, diagSimTxt = '', diagUps = 0, diagDrs = 0, diagT0 = 0, diagShown = ''
 let diagProf = false, diagUpMs = 0, diagDnMs = 0, diagGapMs = 0, diagGapMax = 0, diagLastDraw = 0
+// ?slowmo=S : diagnostic — pulse automatiquement le slow-mo toutes les S
+// secondes pendant la run (sans viser) : boucle les cycles BGM pour mesurer
+// les stalls avec ?audio=1 (music.js).
+let DIAG_SLOWMO = 0, diagSlowmoT = 0
+try {
+  const v = parseFloat(new URLSearchParams(location.search).get('slowmo'))
+  if (isFinite(v) && v >= 2) DIAG_SLOWMO = v
+} catch (e) {}
 let diagFsDbg = false
 let diagSecAn = 0, diagSecOf = 0, diagSecBg = 0, diagSecSc = 0, diagSecRe = 0
 
@@ -324,6 +332,7 @@ let paused = false
 function togglePause() {
   if (paused && fsReenterArmed) { fsReenterArmed = false; fsEnterVideo() }
   paused = !paused
+  Music.setPaused(paused) // la BGM gèle/reprend à l'endroit exact avec le jeu
 }
 let volDrag = null // touchId en train de glisser le slider de volume
 // Slider volume (titre + voile pause) : piste 38..80 en coordonnées vue.
@@ -526,6 +535,7 @@ function die() {
   if (state === 'over') return
   state = 'over'
   paused = false
+  Music.setPaused(false) // oubli du gel éventuel (Music.stop() coupe tout de suite après)
   Music.stop()
   buzz([50, 30, 80])
   deathT = 0
@@ -978,9 +988,15 @@ function update_(dt) {
     slowmoT -= dt
     if (slowmoT <= 0) slowmoT = 0
   }
+  // ?slowmo=S (diagnostic) : pulse le ralenti toutes les S secondes
+  if (DIAG_SLOWMO > 0 && runStarted && state === 'playing') {
+    diagSlowmoT -= dt
+    if (diagSlowmoT <= 0) { diagSlowmoT = DIAG_SLOWMO; slowmoT = POWERS.slowmo.duration }
+  }
   const target = slowmoT > 0 && POWERS.slowmo.enabled ? POWERS.slowmo.scale : 1
   ts += (target - ts) * Math.min(1, dt * 12)
   if (Math.abs(ts - target) < 0.01) ts = target
+  Music.setRate(ts, target) // BGM : suit le slow-mo (vinyle Chromium, temps suspendu Firefox)
   const dts = dt * ts
   gameT += dts
   if (state === 'title') { camX += 14 * dt; return }
@@ -2542,6 +2558,7 @@ function fsVideoState() {
     fsUserExit = false
     if (!voluntary && state === 'playing') {
       paused = true
+      Music.setPaused(true) // plein écran perdu : la BGM gèle avec le jeu
       fsReenterArmed = true
     }
   }
@@ -2766,6 +2783,12 @@ function draw_() {
   c.clip()
   drawBG()
   const q2 = diagProf ? performance.now() : 0
+  // q3 (fin de section scène) : déclaré au niveau des autres chrono — sur le
+  // titre il n'y a pas de section scène, il reste à l'instant courant (≈0).
+  // Historique : déclaré DANS la branche monde, le bloc ?prof référençait
+  // `q3` hors portée sur le titre -> ReferenceError chaque frame, overlay
+  // jamais affiché (et exception silencieuse : la frame était déjà peinte).
+  let q3 = diagProf ? performance.now() : 0
   if (state !== 'title') {
     const shx = VIEW.shake && !reducedFx() && shakeT > 0 ? rand(-3, 3) : 0
     const shy = VIEW.shake && !reducedFx() && shakeT > 0 ? rand(-3, 3) : 0
@@ -2791,7 +2814,7 @@ function draw_() {
     }
     drawDamageWalls()
     c.restore()
-    const q3 = diagProf ? performance.now() : 0
+    q3 = diagProf ? performance.now() : 0
     drawOffscreen()
     drawSlowmoOverlay()
     drawTrackFx()
@@ -2882,7 +2905,7 @@ function init() {
   try {
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden && state === 'playing') paused = true
+        if (document.hidden && state === 'playing') { paused = true; Music.setPaused(true) }
       })
     }
   } catch (e) {}
