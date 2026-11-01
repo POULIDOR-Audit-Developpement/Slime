@@ -1,6 +1,6 @@
 # SLIME
 
-Endless runner rétro pixel-art : guide un slime le plus loin possible alors que la caméra accélère sans pitié.
+Endless runner rétro pixel-art: guide un slime le plus loin possible alors que la caméra accélère sans pitié.
 
 ## Jouer
 
