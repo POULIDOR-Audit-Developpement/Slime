@@ -329,105 +329,113 @@ const fn = new Function('document', 'window', 'localStorage', 'confirm', 'Image'
   // qui relisait le stockage -> la mutation était perdue (palier jamais créé).
   Ed.setMode('colors')
   check('classe colors sur <main>', main.classList.contains('colors'))
+  // N = paliers par défaut (palette atelier publiée 2026-11-01 : 21) — les
+  // attentes dérivent de N pour survivre à la prochaine palette publiée.
+  const N = SlimeColors.DEFAULTS.length
+  const AI = N // indice du palier créé par « + Ajouter » (dernier + 1)
   const ch = els.props.innerHTML
   check('vue pleine page COULEURS : titre + boutons', ch.includes('Couleurs du slime') && ch.includes('btnAddTier') && ch.includes('btnApplyColors') && ch.includes('btnResetColors'))
-  check('6 paliers par défaut rendus', (ch.match(/tierRow/g) || []).length === 6)
+  check(N + ' paliers par défaut rendus', (ch.match(/tierRow/g) || []).length === N)
   check('palier 0 verrouillé (inputs disabled)', ch.includes('id="tc_hex_0"') && /id="tc_min_0"[^>]*disabled/.test(ch))
   // Seuils AUTOMATIQUES : plus édités (tous désactivés), dérivés en échelle
   // log — premier palier à la base (100), sommet au score prédit d'une run
   // complète de 9 min (pool + caméra courants).
-  check('seuils automatiques : min désactivés sur tous les paliers', [1, 2, 3, 4, 5].every(i => new RegExp('id="tc_min_' + i + '"[^>]*disabled').test(ch)))
+  check('seuils automatiques : min désactivés sur tous les paliers', Array.from({ length: N - 1 }, (_, k) => k + 1).every(i => new RegExp('id="tc_min_' + i + '"[^>]*disabled').test(ch)))
   const maxPts = Math.round(Patterns.runPrediction(540).avg)
   check('seuil auto : premier palier = base log (100)', new RegExp('value="100"[^>]*id="tc_min_1"').test(ch))
-  check('seuil auto : sommet = run 9 min prédite', new RegExp('value="' + maxPts + '"[^>]*id="tc_min_5"').test(ch))
-  // AJOUT : le 7e palier doit apparaître immédiatement (et l'échelle se
-  // redériver sur 0 -> maxPts avec 7 paliers)
+  check('seuil auto : sommet = run 9 min prédite', new RegExp('value="' + maxPts + '"[^>]*id="tc_min_' + (N - 1) + '"').test(ch))
+  // AJOUT : le palier supplémentaire doit apparaître immédiatement (et
+  // l'échelle se redériver sur 0 -> maxPts avec un palier de plus)
   els.btnAddTier.handlers.click()
   const ch1 = els.props.innerHTML
-  check('+ Ajouter : 7e palier rendu', (ch1.match(/tierRow/g) || []).length === 7)
-  check('+ Ajouter : input du 7e palier présent', ch1.includes('id="tc_min_6"') && ch1.includes('id="tc_del_6"'))
-  check('+ Ajouter : échelle redérivée (sommet toujours la run prédite)', new RegExp('value="' + maxPts + '"[^>]*id="tc_min_6"').test(ch1))
+  check('+ Ajouter : palier ' + (AI + 1) + 'e rendu', (ch1.match(/tierRow/g) || []).length === N + 1)
+  check('+ Ajouter : input du palier ajouté présent', ch1.includes('id="tc_min_' + AI + '"') && ch1.includes('id="tc_del_' + AI + '"'))
+  check('+ Ajouter : échelle redérivée (sommet toujours la run prédite)', new RegExp('value="' + maxPts + '"[^>]*id="tc_min_' + AI + '"').test(ch1))
   // édition d'une COULEUR : brouillon dirty, stockage intact (les seuils ne
   // sont plus éditables — source de dirty = couleurs/effets uniquement)
   els['tc_hex_1'].value = '#123456'
   els['tc_hex_1'].handlers.input()
   check('couleur éditée -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
   check('couleur éditée -> stockage inchangé', localStorage.getItem('slime_tiers') === null)
-  // APPLIQUER -> 7 paliers persistés AVEC l'échelle auto dérivée
+  // APPLIQUER -> N+1 paliers persistés AVEC l'échelle auto dérivée
   els.btnApplyColors.handlers.click()
   const saved7 = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
-  check('appliquer -> 7 paliers en stockage', saved7.length === 7)
+  check('appliquer -> ' + (N + 1) + ' paliers en stockage', saved7.length === N + 1)
   check('appliquer -> échelle auto persistée (premier = base, sommet = run prédite)',
     saved7[1].min === SlimeColors.TIER_LOG_BASE && saved7[saved7.length - 1].min === maxPts)
   check('appliquer -> bouton plus dirty', !els.btnApplyColors.classList.contains('dirty'))
   check('appliquer -> message succès', els.status.textContent === 'Couleurs appliquées au jeu')
-  // re-rendu depuis le stockage : les 7 paliers sont bien là
+  // re-rendu depuis le stockage : les paliers sont bien là
   Ed.setMode('colors')
-  check('re-rendu : 7 paliers depuis le stockage', (els.props.innerHTML.match(/tierRow/g) || []).length === 7)
-  // SUPPRESSION du 7e palier puis application
-  els['tc_del_6'].handlers.click()
-  check('suppression : 6 paliers rendus', (els.props.innerHTML.match(/tierRow/g) || []).length === 6)
+  check('re-rendu : ' + (N + 1) + ' paliers depuis le stockage', (els.props.innerHTML.match(/tierRow/g) || []).length === N + 1)
+  // SUPPRESSION du palier ajouté puis application
+  els['tc_del_' + AI].handlers.click()
+  check('suppression : ' + N + ' paliers rendus', (els.props.innerHTML.match(/tierRow/g) || []).length === N)
   els.btnApplyColors.handlers.click()
-  check('suppression appliquée : 6 paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === 6)
+  check('suppression appliquée : ' + N + ' paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === N)
   // RESET -> défauts, clé retirée du stockage
   els.btnResetColors.handlers.click()
   check('reset : clé slime_tiers retirée', localStorage.getItem('slime_tiers') === null)
-  check('reset : 6 paliers par défaut', (els.props.innerHTML.match(/tierRow/g) || []).length === 6)
+  check('reset : ' + N + ' paliers par défaut', (els.props.innerHTML.match(/tierRow/g) || []).length === N)
   check('reset : message', els.status.textContent === 'Couleurs réinitialisées')
 
   // --- COULEURS : effets spéciaux (type, N couleurs, vitesse) ---
   els.btnAddTier.handlers.click()
-  els['tc_type_6'].value = 'gradient'
-  els['tc_type_6'].handlers.change()
-  check('type dégradé : 2 pickers + boutons +/-', els.props.innerHTML.includes('id="tc_h_6_0"') && els.props.innerHTML.includes('id="tc_h_6_1"') && els.props.innerHTML.includes('id="tc_add_6"') && els.props.innerHTML.includes('id="tc_rm_6"'))
-  check('dégradé : bouton − désactivé à 2 couleurs', /id="tc_rm_6"[^>]*disabled/.test(els.props.innerHTML))
-  els['tc_add_6'].handlers.click()
-  check('dégradé : 3e couleur ajoutée', els.props.innerHTML.includes('id="tc_h_6_2"') && !/id="tc_rm_6"[^>]*disabled/.test(els.props.innerHTML))
-  els['tc_h_6_2'].value = '#00ff00'
-  els['tc_h_6_2'].handlers.input()
+  els['tc_type_' + AI].value = 'gradient'
+  els['tc_type_' + AI].handlers.change()
+  check('type dégradé : 2 pickers + boutons +/-', els.props.innerHTML.includes('id="tc_h_' + AI + '_0"') && els.props.innerHTML.includes('id="tc_h_' + AI + '_1"') && els.props.innerHTML.includes('id="tc_add_' + AI + '"') && els.props.innerHTML.includes('id="tc_rm_' + AI + '"'))
+  check('dégradé : bouton − désactivé à 2 couleurs', new RegExp('id="tc_rm_' + AI + '"[^>]*disabled').test(els.props.innerHTML))
+  els['tc_add_' + AI].handlers.click()
+  check('dégradé : 3e couleur ajoutée', els.props.innerHTML.includes('id="tc_h_' + AI + '_2"') && !new RegExp('id="tc_rm_' + AI + '"[^>]*disabled').test(els.props.innerHTML))
+  els['tc_h_' + AI + '_2'].value = '#00ff00'
+  els['tc_h_' + AI + '_2'].handlers.input()
   check('3e couleur éditée -> bouton dirty', els.btnApplyColors.classList.contains('dirty'))
   els.btnApplyColors.handlers.click()
   const sg = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
   check('dégradé persisté (3 stops)', sg.some(t => t.type === 'gradient' && t.hexes.length === 3 && t.hexes[2] === '#00ff00'))
-  els['tc_type_6'].value = 'rainbow'
-  els['tc_type_6'].handlers.change()
-  check('type rainbow : slider de vitesse', els.props.innerHTML.includes('id="tc_spd_6"') && els.props.innerHTML.includes('id="tc_spd_6V"'))
-  els['tc_spd_6'].value = '0.3'
-  els['tc_spd_6'].handlers.input()
-  check('vitesse affichée à jour', els['tc_spd_6V'].textContent === '×0.30')
+  els['tc_type_' + AI].value = 'rainbow'
+  els['tc_type_' + AI].handlers.change()
+  check('type rainbow : slider de vitesse', els.props.innerHTML.includes('id="tc_spd_' + AI + '"') && els.props.innerHTML.includes('id="tc_spd_' + AI + 'V"'))
+  els['tc_spd_' + AI].value = '0.3'
+  els['tc_spd_' + AI].handlers.input()
+  check('vitesse affichée à jour', els['tc_spd_' + AI + 'V'].textContent === '×0.30')
   els.btnApplyColors.handlers.click()
   check('rainbow persisté (speed 0.3)', JSON.parse(localStorage.getItem('slime_tiers') || '[]').some(t => t.type === 'rainbow' && t.speed === 0.3))
-  els['tc_del_6'].handlers.click()
+  els['tc_del_' + AI].handlers.click()
   els.btnApplyColors.handlers.click()
-  check('nettoyage : 6 paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === 6)
+  check('nettoyage : ' + N + ' paliers en stockage', JSON.parse(localStorage.getItem('slime_tiers') || '[]').length === N)
 
   // --- COULEURS : deux paliers du MÊME effet restent INDÉPENDANTS ---
   // Régression (bug 2026-10-30) : le <select> de type recopiait
   // EFFECT_DEFAULTS[type] par référence — tous les paliers multi (resp.
   // dégradé) partageaient LE même tableau hexes : changer une couleur de
   // l'un changeait l'autre, impossible de différencier les deux paliers.
-  els.btnAddTier.handlers.click() // 7e palier (indice 6)
-  els['tc_type_5'].value = 'multi'
-  els['tc_type_5'].handlers.change()
-  els['tc_type_6'].value = 'multi'
-  els['tc_type_6'].handlers.change()
-  check('2 paliers multi rendus (indices 5 et 6)', els.props.innerHTML.includes('id="tc_h_5_0"') && els.props.innerHTML.includes('id="tc_h_6_0"'))
-  els['tc_h_5_0'].value = '#123456'
-  els['tc_h_5_0'].handlers.input() // n'édite QUE le palier 5
+  els.btnAddTier.handlers.click() // palier ajouté (indice AI)
+  els['tc_type_' + (N - 1)].value = 'multi'
+  els['tc_type_' + (N - 1)].handlers.change()
+  els['tc_type_' + AI].value = 'multi'
+  els['tc_type_' + AI].handlers.change()
+  check('2 paliers multi rendus (indices ' + (N - 1) + ' et ' + AI + ')', els.props.innerHTML.includes('id="tc_h_' + (N - 1) + '_0"') && els.props.innerHTML.includes('id="tc_h_' + AI + '_0"'))
+  els['tc_h_' + (N - 1) + '_0'].value = '#123456'
+  els['tc_h_' + (N - 1) + '_0'].handlers.input() // n'édite QUE le palier N-1
   els.btnApplyColors.handlers.click()
-  const sv = JSON.parse(localStorage.getItem('slime_tiers') || '[]').filter(t => t.type === 'multi')
-  check('multi : 2 paliers persistés avec des couleurs DIFFÉRENTES', sv.length === 2 && sv.some(t => t.hexes[0] === '#123456') && sv.some(t => t.hexes[0] === '#e53935'))
+  // (la palette publiée contient déjà des multi : on vérifie les DEUX derniers
+  // paliers — ceux créés/édités ici — et non le total du stockage)
+  const svAll = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
+  const svA = svAll[svAll.length - 2], svB = svAll[svAll.length - 1]
+  check('multi : 2 paliers persistés avec des couleurs DIFFÉRENTES', svA.type === 'multi' && svB.type === 'multi' && svA.hexes[0] === '#123456' && svB.hexes[0] === '#e53935')
   check('multi : EFFECT_DEFAULTS intact (pas de pollution de session)', SlimeColors.EFFECT_DEFAULTS.multi.hexes[0] === '#e53935')
   // même indépendance pour le dégradé
-  els['tc_type_5'].value = 'gradient'
-  els['tc_type_5'].handlers.change()
-  els['tc_type_6'].value = 'gradient'
-  els['tc_type_6'].handlers.change()
-  els['tc_h_6_1'].value = '#abcdef'
-  els['tc_h_6_1'].handlers.input() // n'édite QUE le palier 6
+  els['tc_type_' + (N - 1)].value = 'gradient'
+  els['tc_type_' + (N - 1)].handlers.change()
+  els['tc_type_' + AI].value = 'gradient'
+  els['tc_type_' + AI].handlers.change()
+  els['tc_h_' + AI + '_1'].value = '#abcdef'
+  els['tc_h_' + AI + '_1'].handlers.input() // n'édite QUE le palier ajouté
   els.btnApplyColors.handlers.click()
-  const sg2 = JSON.parse(localStorage.getItem('slime_tiers') || '[]').filter(t => t.type === 'gradient')
-  check('dégradé : 2 paliers persistés avec des couleurs DIFFÉRENTES', sg2.length === 2 && sg2.some(t => t.hexes[1] === '#abcdef') && sg2.some(t => t.hexes[1] === '#ffc371'))
+  const sg2All = JSON.parse(localStorage.getItem('slime_tiers') || '[]')
+  const sgA = sg2All[sg2All.length - 2], sgB = sg2All[sg2All.length - 1]
+  check('dégradé : 2 paliers persistés avec des couleurs DIFFÉRENTES', sgA.type === 'gradient' && sgB.type === 'gradient' && sgA.hexes[1] === '#ffc371' && sgB.hexes[1] === '#abcdef')
   // nettoyage : retour aux défauts pour la suite du test
   els.btnResetColors.handlers.click()
 

@@ -13,13 +13,33 @@
 // Les anciens saves { min, hex } sont auto-upgradés en flat au chargement.
 const SlimeColors = (() => {
   const KEY = 'slime_tiers'
+  // Défauts publiés (2026-11-01) : palette de l'atelier (21 paliers) — c'est
+  // elle que Netlify sert aux nouveaux visiteurs (aucune sync des couleurs :
+  // l'éditeur n'écrit que le localStorage de l'appareil). Les seuils min sont
+  // indicatifs : jeu et éditeur les recalculent à l'échelle log au chargement
+  // (applyLogMins, 100 pts -> run 9 min prédite).
   const DEFAULTS = [
     { min: 0, type: 'flat', hex: '#3ecb3e' },
     { min: 100, type: 'flat', hex: '#35d0c5' },
-    { min: 200, type: 'flat', hex: '#4a5ed7' },
-    { min: 350, type: 'flat', hex: '#a04fd8' },
-    { min: 500, type: 'flat', hex: '#ef5fa7' },
-    { min: 750, type: 'flat', hex: '#ffd23f' }
+    { min: 134, type: 'flat', hex: '#f6f5f4' },
+    { min: 179, type: 'flat', hex: '#a04fd8' },
+    { min: 240, type: 'flat', hex: '#ef5fa7' },
+    { min: 321, type: 'flat', hex: '#ffd23f' },
+    { min: 430, type: 'flat', hex: '#e01b24' },
+    { min: 576, type: 'gradient', hexes: ['#ff5f6d', '#ffc371'] },
+    { min: 771, type: 'gradient', hexes: ['#f6f5f4', '#e01b24'] },
+    { min: 1032, type: 'multi', hexes: ['#f8e45c', '#2ec27e', '#f8e45c'] },
+    { min: 1382, type: 'gradient', hexes: ['#241f31', '#ffffff'] },
+    { min: 1850, type: 'shine', hex: '#ff5f6d', speed: 0 },
+    { min: 2477, type: 'shine', hex: '#1c71d8', speed: 0 },
+    { min: 3316, type: 'star', hex: '#e01b24' },
+    { min: 4439, type: 'star', hex: '#241f31' },
+    { min: 5943, type: 'star', hex: '#8e24aa' },
+    { min: 7956, type: 'gradient', hexes: ['#c01c28', '#ffffff', '#e01b24', '#ffffff'] },
+    { min: 10652, type: 'multi', hexes: ['#241f31', '#ffffff', '#241f31', '#ffffff'] },
+    { min: 14261, type: 'rainbow', speed: 0.25 },
+    { min: 19093, type: 'rainbow', speed: 0.6 },
+    { min: 25561, type: 'rainbow', speed: 1 }
   ]
   const MAX_STOPS = 6
 

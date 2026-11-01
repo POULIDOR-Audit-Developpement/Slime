@@ -193,6 +193,21 @@ check('normalize null si pas un tableau', SlimeColors.normalize('oops') === null
   check('effectDefaults : scalaires recopiés (flat/rainbow/shine/star)', SlimeColors.effectDefaults('flat').hex === '#3ecb3e' && SlimeColors.effectDefaults('rainbow').speed === 0.15 && SlimeColors.effectDefaults('shine').speed === 0.3 && SlimeColors.effectDefaults('star').hex === '#2b5876')
 }
 
+// ---------- DEFAULTS publiés : palette atelier servie par Netlify ----------
+// 2026-11-01 : les 21 paliers de l'atelier deviennent les défauts du code
+// (les couleurs ne se synchronisent pas — Netlify sert DEFAULTS aux nouveaux
+// visiteurs). Verrouille la palette publiée : entière, saine, art d'origine.
+{
+  const d = SlimeColors.DEFAULTS
+  check('DEFAULTS : palette atelier complète (21 paliers)', d.length === 21)
+  const norm = SlimeColors.normalize(d.map(t => JSON.parse(JSON.stringify(t))))
+  check('DEFAULTS : normalize conserve les 21 paliers à l\'identique', JSON.stringify(norm) === JSON.stringify(d))
+  check('DEFAULTS : palier 0 = art d\'origine verrouillé (vert, min 0)', d[0].min === 0 && d[0].type === 'flat' && d[0].hex === '#3ecb3e')
+  check('DEFAULTS : seuils strictement croissants', d.every((t, i) => i === 0 || t.min > d[i - 1].min))
+  check('DEFAULTS : effets animés présents (shine/star/rainbow)', d.some(t => t.type === 'shine') && d.some(t => t.type === 'star') && d.filter(t => t.type === 'rainbow').length === 3)
+  check('DEFAULTS : copie défensive (load() ne rend pas le tableau du registre)', SlimeColors.load() !== d)
+}
+
 // ---------- tickAnimated : régénération + throttle ----------
 SlimeColors.save([
   { min: 0, type: 'flat', hex: '#3ecb3e' },
