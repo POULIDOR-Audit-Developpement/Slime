@@ -65,6 +65,16 @@ const long = (C => C)(Array(6).fill('SLIME1.abcd.1234.5678').join('.'))
 d = roundTrip(long)
 check('round-trip long code (~104 car.)', !!d && d.data === long)
 
+// 4) decode.html : le bouton « Depuis une photo » doit ouvrir le sélecteur
+//    système (galerie), pas la caméra — un attribut capture= sur
+//    <input type=file> court-circuite le sélecteur Android et force la caméra.
+{
+  const html = readFileSync(new URL('../decode.html', import.meta.url), 'utf8')
+  const m = html.match(/<input id="photo"[^>]*>/)
+  check('decode.html : input photo type=file accept=image/*', !!m && /type="file"/.test(m[0]) && /accept="image\/\*"/.test(m[0]))
+  check('decode.html : input photo SANS capture= (sélecteur -> galerie)', !!m && !/capture=/.test(m[0]))
+}
+
 // 3) tolérance : un module isolé effacé reste décodable (ECC niveau M)
 {
   const qr = qrcode(0, 'M')
